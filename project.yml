@@ -83,6 +83,8 @@ targets:
     sources:
       - GoalPreferenceTests
       - StrandiOS/Cut/CutGoalPreferences.swift
+      - StrandiOS/Cut/ProteinLogStore.swift
+      - Strand/BLE/LiveHeartRateEvidence.swift
       - Strand/Data/Profile.swift
       - Strand/Screens/ProfileAvatarView.swift
       - Strand/System/Platform.swift

@@ -3,9 +3,13 @@ import StrandDesign
 import WhoopStore
 import StrandAnalytics
 
-/// Today shows live activity, with an optional deficit, food log, and weight-loss goal.
+/// Heart metrics and independent protein tracking, with optional weight-loss tools below.
 struct CutTodayView: View {
     @ObservedObject private var goal = CutGoalPreferences.shared
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var visible = false
+    @State private var wantsRealtime = false
     @EnvironmentObject var repo: Repository
     @EnvironmentObject var profile: ProfileStore
     @EnvironmentObject var live: LiveState
@@ -43,24 +47,12 @@ struct CutTodayView: View {
                        onRefresh: { ble.syncNow(); await load() }, lazy: false, topBackground: nil,
                        trailing: { gearMenu }) {
             VStack(spacing: NoopMetrics.sectionGap) {
+                HeartMetricsView()
+                ProteinLogCard()
+                WhoopCollectionCard()
                 if goal.isEnabled {
                     budgetCard
                     fatCard
-                }
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: NoopMetrics.gap),
-                                    GridItem(.flexible(), spacing: NoopMetrics.gap)],
-                          spacing: NoopMetrics.gap) {
-                    tile("Heart rate", icon: "heart.fill", value: hrText, unit: hrText == "–" ? "" : "bpm",
-                         caption: live.connected ? "Live" : "Strap not connected", tint: StrandPalette.liquidHeart)
-                    tile("Battery", icon: batteryIcon, value: batteryText, unit: "",
-                         caption: live.charging == true ? "Charging" : (live.connected ? "Strap" : "Offline"),
-                         tint: StrandPalette.chargeColor)
-                    tile("Burned", icon: "flame.fill", value: format(burnedSoFar), unit: "kcal",
-                         caption: (burned?.activeKcal ?? 0) >= 1
-                            ? "\(format(burned?.activeKcal ?? 0)) from workouts" : "No workout yet",
-                         tint: StrandPalette.metricAmber)
-                    tile("Steps", icon: "figure.walk", value: steps.map { format($0) } ?? "–", unit: "",
-                         caption: "Goal 10,000", tint: StrandPalette.metricCyan)
                 }
                 if goal.isEnabled {
                     foodCard
@@ -68,6 +60,11 @@ struct CutTodayView: View {
                 }
             }
         }
+        .onAppear { visible = true; updateRealtimeInterest() }
+        .onDisappear { visible = false; updateRealtimeInterest() }
+        .onChange(of: scenePhase) { _, _ in updateRealtimeInterest() }
+        .onChange(of: live.connected) { _, _ in rearmLiveFeed() }
+        .onChange(of: live.historyReady) { _, _ in rearmLiveFeed() }
         .task {
             seedPlanIfNeeded()
             while !Task.isCancelled {
@@ -111,6 +108,20 @@ struct CutTodayView: View {
                     }
             }
         }
+    }
+
+    /// Balance one live-feed interest while this Today surface is visible and foregrounded.
+    private func updateRealtimeInterest() {
+        let wanted = visible && scenePhase == .active
+        guard wanted != wantsRealtime else { return }
+        wantsRealtime = wanted
+        if wanted { model.startRealtimeHR(); model.getBattery() }
+        else { model.stopRealtimeHR() }
+    }
+
+    private func rearmLiveFeed() {
+        guard wantsRealtime, live.connected else { return }
+        model.rearmRealtimeIfWanted()
     }
 
     /// With the More tab gone, Devices (pairing) and Settings are reached from here.
@@ -178,7 +189,6 @@ struct CutTodayView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                proteinBar
                 Button { showAddFood = true } label: {
                     Label("Add food", systemImage: "plus")
                         .font(StrandFont.headline)
@@ -189,29 +199,6 @@ struct CutTodayView: View {
                 .buttonBorderShape(.capsule)
                 .tint(StrandPalette.accent)
             }
-        }
-    }
-
-    private var proteinBar: some View {
-        let got = plan.protein(day: dayKey)
-        let target = max(plan.proteinTarget, 1)
-        let tint = StrandPalette.metricPurple
-        return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("Protein", systemImage: "fish.fill")
-                    .font(StrandFont.subhead).foregroundStyle(tint)
-                Spacer()
-                Text("\(Int(got.rounded())) / \(Int(target.rounded())) g")
-                    .font(StrandFont.bodyNumber)
-                    .foregroundStyle(got >= target ? tint : StrandPalette.textPrimary)
-            }
-            ZStack(alignment: .leading) {
-                Capsule().fill(StrandPalette.hairline)
-                GeometryReader { g in
-                    Capsule().fill(tint).frame(width: got > 0 ? max(8, g.size.width * min(got / target, 1)) : 0)
-                }
-            }
-            .frame(height: 8)
         }
     }
 
@@ -783,11 +770,6 @@ private struct CutPlanSheet: View {
                             ForEach([0.0, 0.2, 0.3, 0.4, 0.5], id: \.self) { s in
                                 Text(s == 0 ? "Food only"
                                      : "\(Int(((1 - s) * 100).rounded()))% food · \(Int((s * 100).rounded()))% workout").tag(s)
-                            }
-                        }
-                        Picker("Protein target", selection: $plan.proteinPerKg) {
-                            ForEach([1.6, 2.0, 2.2], id: \.self) { v in
-                                Text(String(format: "%.1f g/kg · %.0f g", v, v * plan.goalKg)).tag(v)
                             }
                         }
                         Picker("Logging buffer", selection: $plan.logBuffer) {

@@ -698,10 +698,17 @@ public final class LiveState: ObservableObject {
     private var heartRateSilenceTimer: DispatchSourceTimer?
     private var heartRateSilenceArmedAt: DispatchTime?
 
+    /// Receipt counter and timestamp remain independent of BPM changes and the watchdog throttle.
+    public private(set) var heartRateEvidence = LiveHeartRateEvidence()
+
     /// A readable heart-rate sample arrived (`BLEManager`'s standard profile, `FrameRouter`'s realtime frames): move the
     /// silence deadline on. One timer, rescheduled at most every tenth of the wait (once a second in use), so it costs
     /// nothing while samples flow and fires once when they stop.
     public func noteReadableHeartRate() {
+        heartRateEvidence.record()
+        if heartRateEvidence.packets == 1 {
+            append(log: AppModel.stamped("WHOOP HR: first readable live heart-rate packet received on this connection"))
+        }
         let now = DispatchTime.now()
         let rearmNanos = UInt64(heartRateSilence / 10 * 1_000_000_000)
         if let armed = heartRateSilenceArmedAt, now.uptimeNanoseconds &- armed.uptimeNanoseconds < rearmNanos { return }
@@ -728,6 +735,7 @@ public final class LiveState: ObservableObject {
     /// R-R strip can't outlive the link. Called on CoreBluetooth disconnect (BLEManager), the twin of
     /// the `charging = nil` / `encryptedBond = false` clears on the same path.
     public func clearBiometrics() {
+        heartRateEvidence = LiveHeartRateEvidence()
         heartRate = nil
         rr.removeAll()
         rrRecent.removeAll()
