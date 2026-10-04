@@ -2,6 +2,15 @@ import GRDB
 import WhoopProtocol
 
 extension WhoopStore {
+    /// Shared by scoring reads and collection evidence, so a transport cannot count as usable only in UI.
+    static func rrWindowSourcePredicate(strictWhoop5: Bool) -> String {
+        strictWhoop5 ? """
+            srcChannel = (SELECT MIN(srcChannel) FROM rrInterval
+                WHERE deviceId = :d AND ts >= :f AND ts <= :t AND srcChannel IN \(Self.scorableWhoop5Channels)
+                AND (tsSuspect IS NULL OR tsSuspect <> 1))
+            """ : "1"
+    }
+
     /// The transports a WHOOP 5 window may be SCORED through, as a SQL list.
     ///
     /// One constant rather than a literal per query. `rrIntervals` pins a window to the lowest of these

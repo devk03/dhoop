@@ -883,6 +883,7 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         // totalSleepMin, is exactly the sequence that was missing.
         log("Oura: offload complete - marking synced so the new history is scored now (not at the next periodic tick)")
         live.lastSyncedAt = now
+        live.lastSyncedDeviceId = deviceId
         // Mirrors BLEManager: persisted so "last offload completed" survives a relaunch. Before this, a
         // ring-only install had no completed-offload timestamp at all and read "No completed offload yet"
         // forever, however many nights it had actually synced.

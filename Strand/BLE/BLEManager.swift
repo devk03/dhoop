@@ -1412,7 +1412,7 @@ public final class BLEManager: NSObject, ObservableObject {
         Task { @MainActor [state] in
             // Never overwrite a value this session earned: a HISTORY_COMPLETE landing while the registry
             // read was in flight is newer than anything persisted, and must win.
-            if state.lastSyncedAt == nil { state.lastSyncedAt = seed }
+            if state.lastSyncedAt == nil { state.lastSyncedAt = seed; state.lastSyncedDeviceId = activeId }
         }
     }
 
@@ -1651,6 +1651,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // and tell the router which decoder to use. Fresh per connection so no stale bytes carry over.
         reassembler = Reassembler(family: model.deviceFamily)
         router.family = model.deviceFamily
+        state.connectedWhoopDeviceId = deviceId
         router.deviceId = deviceId   // #1706: attribute this connection's alarm readback
         // Live 5/MG persistence: point the Collector's decode at the selected family and install the
         // identity clock ref for a 5/MG (its live timestamps are already real unix). WHOOP 4.0 keeps
@@ -2038,6 +2039,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // #1881: the alarm readback attributes through the router's own copy (#1706), which this used to
         // leave pointing at the previous device. Same field, same conflation, one more consumer.
         router.deviceId = id
+        state.connectedWhoopDeviceId = id
     }
 
     /// Record whether a WHOOP is the active device (#1881). Called from the SAME two closures the
@@ -2782,6 +2784,7 @@ public final class BLEManager: NSObject, ObservableObject {
         else if consecutiveAutoContinues == 0 { consecutiveEmptyOffloads += 1 }
         if reason == "HISTORY_COMPLETE" {
             state.lastSyncedAt = Date().timeIntervalSince1970
+            state.lastSyncedDeviceId = deviceId
             // #77 / #91: a sync that COMPLETED but discarded records must not read as a clean
             // "History synced" — the wording distinguishes bytes saved on this Mac from bytes the
             // full archive could not preserve, so "saved" is never claimed falsely.
@@ -4923,6 +4926,7 @@ public final class BLEManager: NSObject, ObservableObject {
         selectedModel = model
         reassembler = Reassembler(family: model.deviceFamily)
         router.family = model.deviceFamily
+        state.connectedWhoopDeviceId = deviceId
         router.deviceId = deviceId   // #1706: attribute this connection's alarm readback
         configureCollectorFamily()
         central.stopScan()
@@ -5535,7 +5539,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // live perf: only publish on a real change so a steady resting HR doesn't re-render the whole
         // Live console every second.
         if readable {
-            state.noteReadableHeartRate()
+            state.noteReadableHeartRate(bpm: m.hr, deviceId: deviceId)
             if state.heartRate != m.hr { state.heartRate = m.hr }
         }
         // Record it continuously — independent of the realtime stream or the open screen.
@@ -6323,6 +6327,7 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         selectedModel = .persisted
         reassembler = Reassembler(family: selectedModel.deviceFamily)
         router.family = selectedModel.deviceFamily
+        state.connectedWhoopDeviceId = deviceId
         router.deviceId = deviceId   // #1706: attribute this connection's alarm readback
         configureCollectorFamily()
         // Collection only runs post-bond, so a restored link was already bonded;

@@ -528,6 +528,18 @@ public final class LiveState: ObservableObject {
     /// Wall time (unix seconds) of the last successfully-completed offload (a sync, even if nothing new
     /// came — i.e. caught up). Drives the sync tile + the staleness nudge.
     @Published public var lastSyncedAt: TimeInterval?
+    /// Attribution for collection evidence; a timestamp from another device must not become this one's.
+    @Published public var lastSyncedDeviceId: String?
+    /// WHOOP link identity, independent of whether it has received a readable heart-rate sample.
+    public var connectedWhoopDeviceId: String?
+
+    public func successfulSyncAt(for deviceId: String) -> TimeInterval? {
+        lastSyncedDeviceId == deviceId ? lastSyncedAt : nil
+    }
+
+    public func historyIsReady(for deviceId: String) -> Bool {
+        connected && activeIsWhoop && connectedWhoopDeviceId == deviceId && historyReady
+    }
 
     /// Set when an offload ended abnormally (the idle watchdog fired — the strap went quiet mid-sync),
     /// so a stalled history download isn't silent. Cleared by the next successful HISTORY_COMPLETE.
@@ -704,8 +716,8 @@ public final class LiveState: ObservableObject {
     /// A readable heart-rate sample arrived (`BLEManager`'s standard profile, `FrameRouter`'s realtime frames): move the
     /// silence deadline on. One timer, rescheduled at most every tenth of the wait (once a second in use), so it costs
     /// nothing while samples flow and fires once when they stop.
-    public func noteReadableHeartRate() {
-        heartRateEvidence.record()
+    public func noteReadableHeartRate(bpm: Int? = nil, deviceId: String? = nil) {
+        heartRateEvidence.record(bpm: bpm, deviceId: deviceId)
         if heartRateEvidence.packets == 1 {
             append(log: AppModel.stamped("WHOOP HR: first readable live heart-rate packet received on this connection"))
         }
@@ -736,6 +748,7 @@ public final class LiveState: ObservableObject {
     /// the `charging = nil` / `encryptedBond = false` clears on the same path.
     public func clearBiometrics() {
         heartRateEvidence = LiveHeartRateEvidence()
+        connectedWhoopDeviceId = nil
         heartRate = nil
         rr.removeAll()
         rrRecent.removeAll()
