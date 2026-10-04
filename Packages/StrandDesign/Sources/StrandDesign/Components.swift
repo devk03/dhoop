@@ -18,6 +18,12 @@ public enum NoopMetrics {
     // so we pin a single height that clears the tallest layout (value + inline sparkline + caption).
     public static let keyMetricTileHeight: CGFloat = 122
     public static let chartHeight: CGFloat = 220
+    /// Compact dashboard plots and scalable numeral bases; views scale these with Dynamic Type.
+    public static let dashboardTraceHeight: CGFloat = 156
+    public static let dashboardTrendHeight: CGFloat = 76
+    public static let dashboardHeroNumber: CGFloat = 64
+    public static let dashboardMetricNumber: CGFloat = 40
+    public static let minimumTouchTarget: CGFloat = 44
     /// Minimum macOS detail-sheet footprint for a scrollable editor/history surface.
     public static let detailSheetMinWidth: CGFloat = 520
     public static let detailSheetMinHeight: CGFloat = 620

@@ -43,13 +43,20 @@ struct CutTodayView: View {
     }
 
     var body: some View {
-        ScreenScaffold(title: "Today", subtitle: LocalizedStringKey(Date().formatted(.dateTime.weekday(.wide).day().month(.wide))),
-                       onRefresh: { ble.syncNow(); await load() }, lazy: false, topBackground: nil,
-                       trailing: { gearMenu }) {
+        ScreenScaffold(title: nil, onRefresh: { ble.syncNow(); if goal.isEnabled { await load() } }, lazy: false, topBackground: nil) {
             VStack(spacing: NoopMetrics.sectionGap) {
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    HStack(alignment: .center, spacing: NoopMetrics.space3) {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                            Text("Today").font(StrandFont.title1).foregroundStyle(StrandPalette.textPrimary)
+                            Text(context.date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                        Spacer(minLength: NoopMetrics.space1)
+                        gearMenu
+                    }
+                }
                 HeartMetricsView()
-                ProteinLogCard()
-                WhoopCollectionCard()
                 if goal.isEnabled {
                     budgetCard
                     fatCard
@@ -68,7 +75,7 @@ struct CutTodayView: View {
         .task {
             seedPlanIfNeeded()
             while !Task.isCancelled {
-                await load()
+                if goal.isEnabled { await load() }
                 try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
             }
         }
@@ -141,9 +148,9 @@ struct CutTodayView: View {
             }
         } label: {
             Image(systemName: "gearshape.fill")
-                .font(.system(size: 17, weight: .semibold))
+                .font(StrandFont.headline)
                 .foregroundStyle(StrandPalette.textSecondary)
-                .frame(width: NoopMetrics.compactControlSize, height: NoopMetrics.compactControlSize)
+                .frame(width: NoopMetrics.minimumTouchTarget, height: NoopMetrics.minimumTouchTarget)
         }
         .accessibilityLabel("Settings")
     }
