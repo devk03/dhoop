@@ -76,6 +76,18 @@ packages:
     url: https://github.com/weichsel/ZIPFoundation.git
     exactVersion: 0.9.20
 targets:
+  DhoopGoalTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - GoalPreferenceTests
+      - StrandiOS/Cut/CutGoalPreferences.swift
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).goal-tests
+        TEST_HOST: ""
   Strand:
     type: application
     platform: macOS
@@ -514,6 +526,14 @@ targets:
 # Explicit schemes so `xcodebuild -scheme Strand …` builds + tests the macOS app (with StrandTests
 # wired in) and `-scheme NOOPiOS …` builds the iOS app. Names match the app-build CI matrix.
 schemes:
+  DhoopGoalTests:
+    build:
+      targets:
+        DhoopGoalTests: [test]
+    test:
+      config: Debug
+      targets:
+        - DhoopGoalTests
   Strand:
     build:
       targets:

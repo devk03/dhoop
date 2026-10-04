@@ -3,9 +3,9 @@ import StrandDesign
 import WhoopStore
 import StrandAnalytics
 
-/// The weight-loss Today screen: calorie budget, battery, live heart rate, calories burned, steps,
-/// a food log and progress toward the goal weight. Nothing else.
+/// Today shows live activity, with an optional deficit, food log, and weight-loss goal.
 struct CutTodayView: View {
+    @ObservedObject private var goal = CutGoalPreferences.shared
     @EnvironmentObject var repo: Repository
     @EnvironmentObject var profile: ProfileStore
     @EnvironmentObject var live: LiveState
@@ -28,7 +28,9 @@ struct CutTodayView: View {
     /// Today's burn: the full day's everyday burn plus workouts the strap has measured so far. The one
     /// figure the Burned tile, the fat card, today's bar and today's expected weight all use.
     private var burnedSoFar: Double {
-        plan.dayBurn(maintenance: budget.maintenance, activeKcal: burned?.activeKcal ?? 0)
+        let maintenance = CutPlanStore.bmr(weightKg: profile.weightKg, heightCm: profile.heightCm,
+                                            age: profile.age, male: male) * 1.2
+        return plan.dayBurn(maintenance: maintenance, activeKcal: burned?.activeKcal ?? 0)
     }
 
     private var budget: CutPlanStore.Budget {
@@ -41,8 +43,10 @@ struct CutTodayView: View {
                        onRefresh: { ble.syncNow(); await load() }, lazy: false, topBackground: nil,
                        trailing: { gearMenu }) {
             VStack(spacing: NoopMetrics.sectionGap) {
-                budgetCard
-                fatCard
+                if goal.isEnabled {
+                    budgetCard
+                    fatCard
+                }
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: NoopMetrics.gap),
                                     GridItem(.flexible(), spacing: NoopMetrics.gap)],
                           spacing: NoopMetrics.gap) {
@@ -58,8 +62,10 @@ struct CutTodayView: View {
                     tile("Steps", icon: "figure.walk", value: steps.map { format($0) } ?? "–", unit: "",
                          caption: "Goal 10,000", tint: StrandPalette.metricCyan)
                 }
-                foodCard
-                goalCard
+                if goal.isEnabled {
+                    foodCard
+                    goalCard
+                }
             }
         }
         .task {
@@ -68,6 +74,16 @@ struct CutTodayView: View {
                 await load()
                 try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
             }
+        }
+        .onChange(of: goal.isEnabled) { _, enabled in
+            if enabled {
+                seedPlanIfNeeded()
+            } else {
+                showAddFood = false
+                showWeight = false
+                showGoal = false
+            }
+            Task { await load() }
         }
         .sheet(isPresented: $showAddFood) { AddFoodSheet(day: dayKey) }
         .sheet(isPresented: $showWeight) { LogWeightSheet() }
@@ -107,7 +123,7 @@ struct CutTodayView: View {
                 Label("Apple Health", systemImage: "heart.text.square")
             }
             Button { showPlan = true } label: {
-                Label("Plan settings", systemImage: "slider.horizontal.3")
+                Label("Goals", systemImage: "slider.horizontal.3")
             }
             Button { showSettings = true } label: {
                 Label("Settings", systemImage: "gearshape")
@@ -559,7 +575,7 @@ struct CutTodayView: View {
     /// First launch: write the owner's stated numbers into the profile once, so every estimate
     /// (calories, HR zones) uses them. Editable afterwards under Edit plan.
     private func seedPlanIfNeeded() {
-        guard !plan.configured else { return }
+        guard goal.isEnabled, !plan.configured else { return }
         profile.weightKg = 83.3
         profile.heightCm = 180
         profile.sex = "male"
@@ -571,11 +587,13 @@ struct CutTodayView: View {
     }
 
     private func load() async {
-        // No scale: the start-of-day estimate IS the weight every calculation uses (BMR, allowance,
-        // strap calorie estimates). Rounded to 0.1 kg so it doesn't churn.
-        let base = plan.estimatedKg(beforeDay: dayKey, heightCm: profile.heightCm, age: profile.age, male: male)
-        let rounded = (base.kg * 10).rounded() / 10
-        if abs(profile.weightKg - rounded) >= 0.05 { profile.weightKg = rounded }
+        goal.performTrackingUpdate {
+            // No scale: the start-of-day estimate IS the weight every calculation uses (BMR, allowance,
+            // strap calorie estimates). Rounded to 0.1 kg so it doesn't churn.
+            let base = plan.estimatedKg(beforeDay: dayKey, heightCm: profile.heightCm, age: profile.age, male: male)
+            let rounded = (base.kg * 10).rounded() / 10
+            if abs(profile.weightKg - rounded) >= 0.05 { profile.weightKg = rounded }
+        }
         let start = Calendar.current.startOfDay(for: Date())
         let from = Int(start.timeIntervalSince1970)
         let to = Int(Date().timeIntervalSince1970)
@@ -588,7 +606,7 @@ struct CutTodayView: View {
             burned = Calories.estimateDayEnergy(hr, profile: up, hrmax: Double(profile.hrMax),
                                                 restingHR: repo.today?.restingHr.map(Double.init))
         }
-        await backfillActive()
+        if goal.isEnabled { await backfillActive() }
 
         let key = dayKey
         let apple = await repo.appleDailyRows(days: 3).filter { $0.day == key }.compactMap { $0.steps }.max()
@@ -605,6 +623,7 @@ struct CutTodayView: View {
         let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
                              age: Double(profile.age), sex: profile.sex)
         for offset in 1..<120 {
+            guard goal.isEnabled else { return }
             guard let start = cal.date(byAdding: .day, value: -offset, to: cal.startOfDay(for: Date())),
                   let end = cal.date(byAdding: .day, value: 1, to: start) else { continue }
             let key = Repository.localDayKey(start)
@@ -612,9 +631,10 @@ struct CutTodayView: View {
             guard plan.activeByDay[key] == nil, !plan.entries(day: key).isEmpty else { continue }
             let hr = await repo.hrSamples(from: Int(start.timeIntervalSince1970),
                                           to: Int(end.timeIntervalSince1970) - 1, limit: 200_000)
+            guard goal.isEnabled else { return }
             let resting = repo.days.last(where: { $0.day == key })?.restingHr.map(Double.init)
             let e = Calories.estimateDayEnergy(hr, profile: up, hrmax: Double(profile.hrMax), restingHR: resting)
-            plan.setActive(e.activeKcal, day: key)
+            goal.performTrackingUpdate { plan.setActive(e.activeKcal, day: key) }
         }
     }
 }
@@ -731,6 +751,7 @@ private struct LogWeightSheet: View {
 }
 
 private struct CutPlanSheet: View {
+    @ObservedObject private var goal = CutGoalPreferences.shared
     @EnvironmentObject var profile: ProfileStore
     @ObservedObject private var plan = CutPlanStore.shared
     @Environment(\.dismiss) private var dismiss
@@ -738,58 +759,65 @@ private struct CutPlanSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("You") {
-                    Stepper(value: $profile.heightCm, in: 120...230, step: 1) {
-                        row("Height", String(format: "%.0f cm", profile.heightCm))
-                    }
-                    Stepper(value: ageBinding, in: 14...100) { row("Age", "\(profile.age)") }
-                    Picker("Sex", selection: $profile.sex) {
-                        Text("Male").tag("male")
-                        Text("Female").tag("female")
-                    }
-                }
-                Section("Goal") {
-                    Stepper(value: $plan.startKg, in: 40...250, step: 0.1) {
-                        row("Starting weight", String(format: "%.1f kg", plan.startKg))
-                    }
-                    Picker("Deficit from", selection: $plan.workoutShare) {
-                        ForEach([0.0, 0.2, 0.3, 0.4, 0.5], id: \.self) { s in
-                            Text(s == 0 ? "Food only"
-                                 : "\(Int(((1 - s) * 100).rounded()))% food · \(Int((s * 100).rounded()))% workout").tag(s)
-                        }
-                    }
-                    Picker("Protein target", selection: $plan.proteinPerKg) {
-                        ForEach([1.6, 2.0, 2.2], id: \.self) { v in
-                            Text(String(format: "%.1f g/kg · %.0f g", v, v * plan.goalKg)).tag(v)
-                        }
-                    }
-                    Picker("Logging buffer", selection: $plan.logBuffer) {
-                        Text("Off").tag(0.0)
-                        Text("+10%").tag(0.10)
-                        Text("+20%").tag(0.20)
-                        Text("+30%").tag(0.30)
-                    }
-                    Picker("Eat back extra workout", selection: $plan.workoutEatBack) {
-                        Text("None").tag(0.0)
-                        Text("Half").tag(0.5)
-                        Text("All").tag(1.0)
-                    }
-                }
                 Section {
-                    let b = plan.budget(weightKg: profile.weightKg, heightCm: profile.heightCm, age: profile.age,
-                                        male: profile.sex != "female", activeKcal: 0, eaten: 0)
-                    row("BMR", "\(Int(b.bmr.rounded())) kcal")
-                    row("Maintenance (no workouts)", "\(Int(b.maintenance.rounded())) kcal")
-                    row("Daily deficit", "\(Int(b.requiredDeficit.rounded())) kcal · \(String(format: "%.2f", b.kgPerWeek)) kg/week")
-                    row("Food allowance", "\(Int(b.allowance.rounded())) kcal")
-                    row("Workout burn target", "\(Int(b.workoutTarget.rounded())) kcal")
-                } header: {
-                    Text("Your numbers")
+                    Toggle("Deficit & weight goal", isOn: $goal.isEnabled)
                 } footer: {
-                    Text("BMR uses Mifflin–St Jeor; maintenance assumes a desk day (×1.2).")
+                    Text("Turn on calorie budgets, food logging, and weight goals. When off, focus on activity and sleep. Your saved plan and entries are kept. Review your goal and date when turning this back on.")
+                }
+                if goal.isEnabled {
+                    Section("You") {
+                        Stepper(value: $profile.heightCm, in: 120...230, step: 1) {
+                            row("Height", String(format: "%.0f cm", profile.heightCm))
+                        }
+                        Stepper(value: ageBinding, in: 14...100) { row("Age", "\(profile.age)") }
+                        Picker("Sex", selection: $profile.sex) {
+                            Text("Male").tag("male")
+                            Text("Female").tag("female")
+                        }
+                    }
+                    Section("Goal") {
+                        Stepper(value: $plan.startKg, in: 40...250, step: 0.1) {
+                            row("Starting weight", String(format: "%.1f kg", plan.startKg))
+                        }
+                        Picker("Deficit from", selection: $plan.workoutShare) {
+                            ForEach([0.0, 0.2, 0.3, 0.4, 0.5], id: \.self) { s in
+                                Text(s == 0 ? "Food only"
+                                     : "\(Int(((1 - s) * 100).rounded()))% food · \(Int((s * 100).rounded()))% workout").tag(s)
+                            }
+                        }
+                        Picker("Protein target", selection: $plan.proteinPerKg) {
+                            ForEach([1.6, 2.0, 2.2], id: \.self) { v in
+                                Text(String(format: "%.1f g/kg · %.0f g", v, v * plan.goalKg)).tag(v)
+                            }
+                        }
+                        Picker("Logging buffer", selection: $plan.logBuffer) {
+                            Text("Off").tag(0.0)
+                            Text("+10%").tag(0.10)
+                            Text("+20%").tag(0.20)
+                            Text("+30%").tag(0.30)
+                        }
+                        Picker("Eat back extra workout", selection: $plan.workoutEatBack) {
+                            Text("None").tag(0.0)
+                            Text("Half").tag(0.5)
+                            Text("All").tag(1.0)
+                        }
+                    }
+                    Section {
+                        let b = plan.budget(weightKg: profile.weightKg, heightCm: profile.heightCm, age: profile.age,
+                                            male: profile.sex != "female", activeKcal: 0, eaten: 0)
+                        row("BMR", "\(Int(b.bmr.rounded())) kcal")
+                        row("Maintenance (no workouts)", "\(Int(b.maintenance.rounded())) kcal")
+                        row("Daily deficit", "\(Int(b.requiredDeficit.rounded())) kcal · \(String(format: "%.2f", b.kgPerWeek)) kg/week")
+                        row("Food allowance", "\(Int(b.allowance.rounded())) kcal")
+                        row("Workout burn target", "\(Int(b.workoutTarget.rounded())) kcal")
+                    } header: {
+                        Text("Your numbers")
+                    } footer: {
+                        Text("BMR uses Mifflin–St Jeor; maintenance assumes a desk day (×1.2).")
+                    }
                 }
             }
-            .navigationTitle("Plan")
+            .navigationTitle("Goals")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
