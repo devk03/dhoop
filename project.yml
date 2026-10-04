@@ -83,6 +83,12 @@ targets:
     sources:
       - GoalPreferenceTests
       - StrandiOS/Cut/CutGoalPreferences.swift
+      - Strand/Data/Profile.swift
+      - Strand/Screens/ProfileAvatarView.swift
+      - Strand/System/Platform.swift
+    dependencies:
+      - package: StrandAnalytics
+      - package: StrandDesign
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

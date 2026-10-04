@@ -192,6 +192,13 @@ final class ProfileStore: ObservableObject {
         dateOfBirth(forAge: 100)...dateOfBirth(forAge: 13)
     }
 
+    /// Daily strain uses the same unrounded HRmax as AnalyticsEngine: override, then age formula.
+    /// Adopted from ryanbr/noop #2461; Android already resolves this input the same way.
+    var effortHRmax: Double? {
+        if hrMaxOverride > 0 { return Double(hrMaxOverride) }
+        return age > 0 ? StrainScorer.tanakaHRmax(age: Double(age)) : nil
+    }
+
     /// Tanaka estimate unless overridden.
     var hrMax: Int { hrMaxOverride > 0 ? hrMaxOverride : Int((208 - 0.7 * Double(age)).rounded()) }
 
