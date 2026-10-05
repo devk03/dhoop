@@ -615,6 +615,25 @@ extension WhoopStore {
 
     // MARK: - Reads
 
+    /// Uncapped sleep-window read by wake timestamp, including nights that began before the range.
+    public func sleepSessionsByWake(deviceId: String, from: Int, to: Int) async throws -> [CachedSleepSession] {
+        try syncRead { try Self.readSleepSessionsByWake(db: $0, deviceId: deviceId, from: from, to: to) }
+    }
+
+    static func readSleepSessionsByWake(db: Database, deviceId: String, from: Int, to: Int) throws -> [CachedSleepSession] {
+        try Row.fetchAll(db, sql: """
+            SELECT startTs, endTs, efficiency, restingHr, avgHrv, stagesJSON, userEdited,
+                   startTsAdjusted, stagingSparse FROM sleepSession
+            WHERE deviceId = ? AND endTs >= ? AND endTs <= ?
+            ORDER BY endTs ASC, startTs ASC
+            """, arguments: [deviceId, from, to]).map {
+                CachedSleepSession(startTs: $0["startTs"], endTs: $0["endTs"],
+                    efficiency: $0["efficiency"], restingHr: $0["restingHr"], avgHrv: $0["avgHrv"],
+                    stagesJSON: $0["stagesJSON"], userEdited: $0["userEdited"],
+                    startTsAdjusted: $0["startTsAdjusted"], stagingSparse: $0["stagingSparse"], deviceId: deviceId)
+            }
+    }
+
     /// Cached sleep sessions overlapping [from, to] (by startTs), oldest first.
     public func sleepSessions(deviceId: String, from: Int, to: Int, limit: Int) async throws -> [CachedSleepSession] {
         try syncRead { db in

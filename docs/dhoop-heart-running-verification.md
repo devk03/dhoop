@@ -131,3 +131,36 @@ zero. Build 426 was installed and launched with the stable identifiers. Imperial
 preferences were confirmed before installation. The new inline capture has not
 yet been physically exercised on this build; the reused 60-second lease tests
 pass, and earlier hardware stream verification is recorded separately above.
+
+## Build 427: Sleep date-range statistics
+
+Sleep uses the shared Today, 7-day, 30-day, 90-day, All history and inclusive
+custom-date control. Duration averages exclude missing records and show coverage.
+Charts, latest dated record, and stage averages use the same frozen range. Stages
+match both the duration date and source; unknown stages remain unknown and actual
+zero values remain zero. Imported and on-device sources retain their labels.
+Main-window reads use exact wake timestamps without a row cap, so sessions that
+began before the range remain eligible. Clock averages wrap around midnight.
+Presentation-only habitual-window learning is bounded to the recent 30 days;
+this does not change persisted sleep analytics. No migration or data rewrite was
+introduced. These are iOS presentation changes; Android UI was not changed.
+
+Verification: 58 DhoopGoalTests and two sleep-window storage tests passed,
+including buffer-date exclusion, same-source stage ownership, missing versus zero,
+midnight clock averages, exact wake bounds and a 4,001-row uncapped fixture. iOS
+device and simulator builds, the shared macOS build, source hygiene and diff
+whitespace checks passed. Simulator checks with the archived real phone snapshot
+confirmed 7-day (7 recorded dates), 30-day (30 dates), and custom Sep 5–Oct 1
+(27 dates) controls update averages, chart and latest record together. Independent
+read-only SQL reproduced the displayed rounded means: 7h49m, 11h36m and 12h01m.
+Those longer stored Apple Health totals are not physiological validation; imported
+source aggregation/deduplication was not audited in this change. Apple Health
+aggregate provenance does not establish Eight Sleep as the specific source.
+No WHOOP-versus-Eight-Sleep comparison was added. Matching-source sleep windows
+were absent in this snapshot and correctly remained unavailable.
+
+Build 427 was installed and launched on the phone with unchanged bundle/team
+identifiers. Imperial preferences and no active Running draft were confirmed
+before installation. Full spoken VoiceOver, physical-phone filter interaction
+and physiological stage accuracy remain unverified. No new BLE behavior or
+continuous dashboard refresh was added.

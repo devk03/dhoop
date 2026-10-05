@@ -1,236 +1,166 @@
 import SwiftUI
 import StrandDesign
-import WhoopStore
 
-/// The simple Sleep tab: last night, the past seven nights against the need, and weekly averages.
+/// Sleep statistics use the same inclusive date-range control as the heart dashboard.
 struct CutSleepView: View {
-    @EnvironmentObject var repo: Repository
-    @EnvironmentObject var ble: BLEManager
-
-    /// Main (longest) sleep block per local wake day, newest last.
-    @State private var nights: [String: CachedSleepSession] = [:]
-    @State private var lastNight: CachedSleepSession?
-
-    private var need: Double { SleepModel.debtNeedMin(days: repo.days) }
-
-    private struct Night: Identifiable {
-        let id: String
-        let letter: String
-        let asleepMin: Double?
-        let isToday: Bool
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var ble: BLEManager
+    @StateObject private var history = SleepRangeModel()
+    @State private var selection = MetricRangeSelection()
+    @State private var capturedAt = Date()
+    @State private var refreshToken = 0
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
+    private var window: MetricDateWindow { selection.window(now: capturedAt) }
+    private var result: SleepRangeSnapshot? {
+        guard let result = history.snapshot, result.deviceId == repo.deviceId, result.window == window else { return nil }
+        return result
     }
-
-    private var week: [Night] {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let byDay = Dictionary(repo.days.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
-        return (0..<7).reversed().compactMap { back in
-            guard let date = cal.date(byAdding: .day, value: -back, to: today) else { return nil }
-            let k = Repository.localDayKey(date)
-            let asleep = back == 0 ? repo.today?.totalSleepMin : byDay[k]?.totalSleepMin
-            return Night(id: k, letter: String(date.formatted(.dateTime.weekday(.narrow))),
-                         asleepMin: asleep, isToday: back == 0)
-        }
+    private var layout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3)) : AnyLayout(DashboardPairLayout())
     }
 
     var body: some View {
-        ScreenScaffold(title: "Sleep", onRefresh: { ble.syncNow(); await load() }) {
-            VStack(spacing: NoopMetrics.sectionGap) {
-                LastNightCard(day: repo.today, need: need, night: lastNight)
-                weekCard
-                averagesCard
+        ScreenScaffold(title: "Sleep", onRefresh: { ble.syncNow(); capturedAt = Date(); refreshToken += 1 }) {
+            MetricRangeControl(selection: $selection, now: capturedAt)
+            averageCard
+            if let latest = result?.readings.last { latestCard(latest) }
+            if result != nil {
+                timingCard
+                stageAverages
             }
+            if let error = history.error {
+                Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+            }
+            Text("Ranges follow recorded wake dates. Missing records are excluded from averages.")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
-        .task { await load() }
+        .onAppear { capturedAt = Date() }
+        .task(id: "\(repo.deviceId)|\(window.identity)|\(refreshToken)") { await history.load(repo: repo, window: window) }
     }
 
-    private var weekCard: some View {
-        let w = week
-        let peak = max(w.compactMap(\.asleepMin).max() ?? need, need) * 1.1
-        let barH: CGFloat = 120
-        return NoopCard {
+    private var averageCard: some View {
+        NoopCard(tint: StrandPalette.restColor) {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                HStack {
-                    Text("7 NIGHTS").font(StrandFont.overline).tracking(1.6).foregroundStyle(StrandPalette.textSecondary)
-                    Spacer()
-                    HStack(spacing: NoopMetrics.space1) {
-                        Rectangle().fill(StrandPalette.textTertiary).frame(width: 12, height: 2)
-                        Text("need \(sleepHM(need))").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                Text("Average recorded sleep").font(StrandFont.headline).foregroundStyle(StrandPalette.restColor)
+                Text(result?.averageSleep.map(sleepHM) ?? "—")
+                    .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                if let result {
+                    Text(window.coverage(result.readings.count)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    Text(sources(result.readings)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    if result.readings.isEmpty {
+                        Text("No sleep recorded in this range").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    } else {
+                        sleepChart(result.readings)
                     }
+                } else if history.error == nil {
+                    ProgressView("Reading saved sleep…")
                 }
-                ZStack(alignment: .bottom) {
-                    HStack(alignment: .bottom, spacing: NoopMetrics.space2) {
-                        ForEach(w) { n in
-                            VStack(spacing: NoopMetrics.space1) {
-                                Text(n.asleepMin.map { String(format: "%.1f", $0 / 60) } ?? "")
-                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                                ZStack(alignment: .bottom) {
-                                    Capsule().fill(StrandPalette.hairline).frame(height: barH)
-                                    if let m = n.asleepMin {
-                                        Capsule()
-                                            .fill(m >= need ? StrandPalette.restColor : StrandPalette.restColor.opacity(0.55))
-                                            .frame(height: max(6, barH * m / peak))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity)
-                                Text(n.letter).font(StrandFont.caption)
-                                    .foregroundStyle(n.isToday ? StrandPalette.textPrimary : StrandPalette.textTertiary)
-                            }
-                        }
-                    }
-                    // Need line, positioned against the bar area (bars sit above the day letters).
-                    GeometryReader { g in
-                        let y = g.size.height - dayLetterHeight - barH * need / peak
-                        Path { p in
-                            p.move(to: CGPoint(x: 0, y: y))
-                            p.addLine(to: CGPoint(x: g.size.width, y: y))
-                        }
-                        .stroke(StrandPalette.textTertiary, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                    }
-                    .allowsHitTesting(false)
+                let need = SleepModel.debtNeedMin(days: repo.days)
+                Text("Current sleep need · \(sleepHM(need))").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
+        }
+    }
+
+    private func latestCard(_ reading: SleepRangeReading) -> some View {
+        NoopCard(tint: StrandPalette.restColor) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Latest record in range · \(displayDate(reading.total.day))").font(StrandFont.headline)
+                Text(sleepHM(reading.total.value)).font(StrandFont.title2).foregroundStyle(StrandPalette.textPrimary)
+                Text(source(reading.total.source)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                if let clock = result?.mainWindows[reading.total.day] {
+                    Text("Main sleep window · \(sleepClock(clock.start)) → \(sleepClock(clock.end))")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }
+                layout {
+                    stageValue("Deep", reading.deep, StrandPalette.sleepDeep)
+                    stageValue("REM", reading.rem, StrandPalette.sleepREM)
+                    stageValue("Light", reading.light, StrandPalette.sleepLight)
                 }
             }
         }
     }
 
-    /// Height of the day-letter row plus its spacing under the bars.
-    private var dayLetterHeight: CGFloat { 16 + NoopMetrics.space1 }
-
-    private var averagesCard: some View {
-        let asleep = week.compactMap(\.asleepMin)
-        let blocks = Array(nights.values)
-        return NoopCard {
-            HStack {
-                avg("moon.fill", asleep.isEmpty ? "–" : sleepHM(asleep.reduce(0, +) / Double(asleep.count)), "avg sleep")
-                Spacer()
-                avg("bed.double.fill", averageClock(blocks.map(\.effectiveStartTs)), "avg bedtime")
-                Spacer()
-                avg("sun.max.fill", averageClock(blocks.map(\.endTs)), "avg wake")
+    private var timingCard: some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Average main sleep timing").font(StrandFont.headline)
+                let clocks = Array(result?.mainWindows.values ?? Dictionary<String, (start: Int, end: Int)>().values)
+                layout {
+                    stageValue("Bedtime", nil, StrandPalette.restColor, value: meanClock(clocks.map(\.start)))
+                    stageValue("Wake", nil, StrandPalette.restColor, value: meanClock(clocks.map(\.end)))
+                }
+                Text("\(clocks.count) recorded dates with matching-source sleep windows")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
         }
     }
 
-    private func avg(_ icon: String, _ value: String, _ label: String) -> some View {
-        VStack(spacing: NoopMetrics.space1) {
-            Image(systemName: icon).foregroundStyle(StrandPalette.restColor)
-            Text(value).font(StrandFont.number(18, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-                .lineLimit(1).minimumScaleFactor(0.7)
-            Text(label).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    /// Mean clock time of timestamps, wrapped around noon so 23:30 and 00:30 average to midnight.
-    private func averageClock(_ ts: [Int]) -> String {
-        guard !ts.isEmpty else { return "–" }
-        let cal = Calendar.current
-        let mins = ts.map { t -> Int in
-            let c = cal.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(t)))
-            let m = (c.hour ?? 0) * 60 + (c.minute ?? 0)
-            return m < 12 * 60 ? m + 24 * 60 : m
-        }
-        let mean = (mins.reduce(0, +) / mins.count) % (24 * 60)
-        let date = cal.date(bySettingHour: mean / 60, minute: mean % 60, second: 0, of: Date()) ?? Date()
-        return date.formatted(date: .omitted, time: .shortened)
-    }
-
-    private func load() async {
-        let blocks = await repo.allSleepSessions(days: 8)
-        var byDay: [String: CachedSleepSession] = [:]
-        for b in blocks {
-            let k = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(b.endTs)))
-            if let cur = byDay[k], cur.endTs - cur.effectiveStartTs >= b.endTs - b.effectiveStartTs { continue }
-            byDay[k] = b
-        }
-        nights = byDay
-        lastNight = LastNightCard.pick(blocks)
-    }
-}
-
-/// Last night: hours asleep against the need (ring), bed → wake, and a stage bar.
-struct LastNightCard: View {
-    /// Last night's main block: the longest session that ended in the past 20 hours. The one rule
-    /// both Today and the Sleep tab use, so the two cards cannot disagree.
-    static func pick(_ blocks: [CachedSleepSession], now: Date = Date()) -> CachedSleepSession? {
-        let to = Int(now.timeIntervalSince1970)
-        return blocks
-            .filter { $0.endTs >= to - 20 * 3600 && $0.endTs <= to + 3600 }
-            .max { ($0.endTs - $0.effectiveStartTs) < ($1.endTs - $1.effectiveStartTs) }
-    }
-
-    let day: DailyMetric?
-    let need: Double
-    let night: CachedSleepSession?
-
-    var body: some View {
-        let asleep = day?.totalSleepMin
-        let pct = asleep.map { min($0 / max(need, 1), 1) } ?? 0
-        let inBed = night.map { Double($0.endTs - $0.effectiveStartTs) / 60 }
-        let awake = max((inBed ?? 0) - (asleep ?? 0), 0)
-        let tint = StrandPalette.restColor
-        return NoopCard(tint: tint) {
-            VStack(alignment: .leading, spacing: NoopMetrics.space4) {
-                Text("LAST NIGHT").font(StrandFont.overline).tracking(1.6).foregroundStyle(StrandPalette.textSecondary)
-                if let asleep {
-                    HStack(spacing: NoopMetrics.space5) {
-                        ZStack {
-                            Circle().stroke(StrandPalette.hairline, lineWidth: 10)
-                            Circle().trim(from: 0, to: pct)
-                                .stroke(tint, style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                            Text("\(Int((asleep / max(need, 1) * 100).rounded()))%")
-                                .font(StrandFont.number(20, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-                        }
-                        .frame(width: 84, height: 84)
-                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                            Text(sleepHM(asleep)).font(StrandFont.number(34, weight: .bold))
-                                .foregroundStyle(StrandPalette.textPrimary)
-                            Text("of \(sleepHM(need)) needed").font(StrandFont.subhead)
-                                .foregroundStyle(StrandPalette.textSecondary)
-                            if let n = night {
-                                Label("\(sleepClock(n.effectiveStartTs)) → \(sleepClock(n.endTs))", systemImage: "bed.double.fill")
-                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                            }
-                        }
+    private var stageAverages: some View {
+        let groups = Dictionary(grouping: result?.readings ?? [], by: { $0.total.source })
+        return ForEach(groups.keys.sorted(), id: \.self) { id in
+            let records = groups[id] ?? []
+            NoopCard {
+                VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                    Text("Average stages · \(source(id))").font(StrandFont.headline)
+                    layout {
+                        stageAverage("Deep", values: records.map(\.deep), tint: StrandPalette.sleepDeep)
+                        stageAverage("REM", values: records.map(\.rem), tint: StrandPalette.sleepREM)
+                        stageAverage("Light", values: records.map(\.light), tint: StrandPalette.sleepLight)
                     }
-                    stageBar([(day?.deepMin ?? 0, StrandPalette.sleepDeep, "Deep"),
-                              (day?.remMin ?? 0, StrandPalette.sleepREM, "REM"),
-                              (day?.lightMin ?? 0, StrandPalette.sleepLight, "Light"),
-                              (awake, StrandPalette.sleepAwake, "Awake")])
-                } else {
-                    Label("No sleep recorded last night", systemImage: "moon.zzz")
-                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textTertiary)
+                    Text("Stages stay with their recorded source; unavailable stages remain unknown.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
             }
         }
     }
 
-    private func stageBar(_ parts: [(min: Double, color: Color, name: String)]) -> some View {
-        let shown = parts.filter { $0.min > 0 }
-        let total = max(shown.reduce(0) { $0 + $1.min }, 1)
-        return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-            GeometryReader { g in
-                HStack(spacing: 2) {
-                    ForEach(shown, id: \.name) { p in
-                        Rectangle().fill(p.color)
-                            .frame(width: max(2, (g.size.width - CGFloat(shown.count - 1) * 2) * p.min / total))
-                    }
-                }
-                .clipShape(Capsule())
-            }
-            .frame(height: 12)
-            HStack(spacing: NoopMetrics.space3) {
-                ForEach(shown, id: \.name) { p in
-                    HStack(spacing: NoopMetrics.space1) {
-                        Circle().fill(p.color).frame(width: 7, height: 7)
-                        Text(p.name).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                        Text(sleepHM(p.min)).font(StrandFont.caption).foregroundStyle(StrandPalette.textPrimary)
-                    }
-                    .lineLimit(1)
-                }
-            }
-            .minimumScaleFactor(0.8)
+    private func stageAverage(_ title: String, values: [Double?], tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+            stageValue(title, SleepRangeProjection.mean(values), tint)
+            Text("\(values.compactMap { $0 }.count) recorded dates").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
+        .accessibilityElement(children: .combine)
+    }
+    private func stageValue(_ title: String, _ minutes: Double?, _ tint: Color, value: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+            Text(title).font(StrandFont.caption).foregroundStyle(tint)
+            Text(value ?? minutes.map(sleepHM) ?? "—").font(StrandFont.title2).foregroundStyle(StrandPalette.textPrimary)
+        }
+        .fixedSize(horizontal: false, vertical: true).accessibilityElement(children: .combine)
+    }
+    private func source(_ id: String) -> String {
+        if id == Repository.appleHealthSource { return "Apple Health" }
+        if id.hasSuffix("-noop") { return "On-device estimates" }
+        return "WHOOP records"
+    }
+    private func sources(_ records: [SleepRangeReading]) -> String {
+        let labels = Set(records.map { source($0.total.source) }).sorted()
+        return labels.count > 1 ? "Mixed sources · \(labels.joined(separator: ", "))" : labels.first ?? "Source unavailable"
+    }
+    private func displayDate(_ day: String) -> String {
+        HeartDashboardProjection.date(day)?.formatted(date: .abbreviated, time: .omitted) ?? day
+    }
+    private func meanClock(_ timestamps: [Int]) -> String {
+        let minutes = timestamps.map { ts -> Double in
+            let fields = Calendar.current.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: Double(ts)))
+            return Double((fields.hour ?? 0) * 60 + (fields.minute ?? 0))
+        }
+        guard let mean = SleepRangeProjection.clockMeanMinutes(minutes) else { return "—" }
+        var format = Date.FormatStyle(date: .omitted, time: .shortened)
+        format.timeZone = TimeZone(secondsFromGMT: 0)!
+        return Date(timeIntervalSince1970: Double(mean * 60)).formatted(format)
+    }
+    private func sleepChart(_ records: [SleepRangeReading]) -> some View {
+        let points = records.compactMap { row -> TrendPoint? in
+            guard let date = HeartDashboardProjection.date(row.total.day) else { return nil }
+            return TrendPoint(date: date, value: row.total.value / 60, segment: row.total.source)
+        }
+        let start = window.days == nil ? (points.first?.date ?? window.end) : window.start
+        let high = max(1, (points.map(\.value).max() ?? 0) * 1.1)
+        return DashboardChart(points: DashboardTraceSampling.reduce(points), domain: start...max(start.addingTimeInterval(1), window.through),
+            range: 0...high, tint: StrandPalette.restColor, style: .bars, height: NoopMetrics.chartHeight,
+            label: "Recorded sleep hours by wake date in the selected range; missing dates have no bars")
     }
 }
 
