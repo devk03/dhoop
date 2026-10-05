@@ -21,6 +21,9 @@ public enum NoopMetrics {
     /// Compact dashboard plots and scalable numeral bases; views scale these with Dynamic Type.
     public static let dashboardTraceHeight: CGFloat = 156
     public static let dashboardTrendHeight: CGFloat = 76
+    /// Small history preview inside a two-column dashboard tile.
+    public static let dashboardTileChartHeight: CGFloat = 48
+    public static let dashboardTileMinimumWidth: CGFloat = 160
     public static let dashboardHeroNumber: CGFloat = 64
     public static let dashboardMetricNumber: CGFloat = 40
     public static let minimumTouchTarget: CGFloat = 44

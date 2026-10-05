@@ -16,6 +16,21 @@ struct HeartMetricsView: View, Equatable {
     @State private var battery: Double?
     @State private var showCollection = false
     @State private var showLive = false
+    @State private var showDetailLive = false
+    @State private var expandedMetric: Metric?
+
+    private enum Metric: String, Identifiable {
+        case heartRate, hrv, steps, vo2
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .heartRate: return "Heart rate"
+            case .hrv: return "HRV"
+            case .steps: return "Steps"
+            case .vo2: return "VO₂ max"
+            }
+        }
+    }
     @State private var capturedAt = Date()
     @ScaledMetric(relativeTo: .title) private var metricSize = NoopMetrics.dashboardMetricNumber
 
@@ -23,18 +38,20 @@ struct HeartMetricsView: View, Equatable {
         lhs.model === rhs.model && lhs.deviceId == rhs.deviceId && lhs.refreshToken == rhs.refreshToken
     }
     private var loadIdentity: String { "\(deviceId)|\(refreshToken)|\(Repository.localDayKey(historyDate))" }
-    private var pairLayout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: NoopMetrics.gap)) : AnyLayout(DashboardPairLayout())
-    }
 
     var body: some View {
         VStack(spacing: NoopMetrics.sectionGap) {
             statusRow
-            heartCard
-            hrvCard(now: capturedAt)
-            stepsCard(now: capturedAt)
-            ProteinLogCard(day: Repository.localDayKey(capturedAt))
-            vo2Card(now: capturedAt)
+            liveButton
+                .frame(maxWidth: .infinity, alignment: .leading)
+            heartTile
+            DashboardGridLayout(columns: dynamicTypeSize.isAccessibilitySize ? 1 : 2,
+                                squareMinimum: !dynamicTypeSize.isAccessibilitySize) {
+                hrvTile
+                stepsTile
+                ProteinLogCard(day: Repository.localDayKey(capturedAt))
+                vo2Tile
+            }
             if let error = dashboard.error {
                 Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -43,13 +60,7 @@ struct HeartMetricsView: View, Equatable {
         .frame(maxWidth: .infinity)
         .sheet(isPresented: $showCollection) { DashboardCollectionSheet() }
         .sheet(isPresented: $showLive) { HeartRateSessionSheet(expectedDeviceId: deviceId) }
-                .sheet(isPresented: $showHistoryDate) {
-            NavigationStack {
-                Form { DatePicker("Heart-rate history date", selection: $historyDate, in: ...Date(), displayedComponents: .date) }
-                    .navigationTitle("Heart-rate history")
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showHistoryDate = false } } }
-            }
-        }
+        .sheet(item: $expandedMetric) { metric in metricDetail(metric) }
         .task(id: loadIdentity) { await refresh() }
     }
 
@@ -94,13 +105,165 @@ struct HeartMetricsView: View, Equatable {
         .accessibilityHint("Opens current device and collection evidence")
     }
 
+    private var heartTile: some View {
+        metricTile(.heartRate, icon: "heart.fill", tint: StrandPalette.liquidHeart, fillHeight: false) {
+            let snapshot = data(capturedAt)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
+                    numeric(snapshot?.averageHR.map(number) ?? "—", unit: "avg bpm")
+                    historyDateLabel.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                    numeric(snapshot?.averageHR.map(number) ?? "—", unit: "avg bpm")
+                    historyDateLabel
+                }
+            }
+            let lower = snapshot?.fromDay ?? Calendar.current.startOfDay(for: historyDate)
+            let upper = max(lower.addingTimeInterval(1), snapshot?.through ?? capturedAt)
+            plot(snapshot?.measuredHR ?? [], domain: lower...upper, tint: StrandPalette.liquidHeart,
+                 height: NoopMetrics.dashboardTrendHeight, label: "Saved heart-rate preview, one-minute averages with gaps", compact: true,
+                 empty: snapshot == nil ? "Loading history…" : "No saved readings")
+            Text(snapshot.map { "\($0.hrSampleCount.formatted()) saved readings" } ?? "Reading stored history…")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+        }
+    }
+
+    private var historyDateLabel: some View {
+        Text(data(capturedAt).map { dateLabel($0.historyDay) } ?? dateLabel(Repository.localDayKey(historyDate)))
+            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+    }
+
+    private var hrvTile: some View {
+        metricTile(.hrv, icon: "waveform.path.ecg", tint: StrandPalette.metricCyan) {
+            numeric(data(capturedAt)?.hrv.map { number($0.value) } ?? "—", unit: "ms")
+            metricCaption(data(capturedAt)?.hrv, empty: "Needs R–R and sleep data")
+            plot(dailyPoints(data(capturedAt)?.hrvMonth ?? []), domain: monthDomain(capturedAt),
+                 tint: StrandPalette.metricCyan, height: NoopMetrics.dashboardTileChartHeight,
+                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: true, empty: "No HRV history")
+        }
+    }
+
+    private var stepsTile: some View {
+        metricTile(.steps, icon: "figure.walk", tint: StrandPalette.metricCyan) {
+            numeric(data(capturedAt)?.steps.map { number($0.value) } ?? "—", unit: "")
+            metricCaption(data(capturedAt)?.steps, empty: "No steps record today")
+            plot(dailyPoints(data(capturedAt)?.stepsWeek ?? []), domain: weekDomain(capturedAt),
+                 tint: StrandPalette.metricCyan, style: .bars,
+                 range: 0...max(1, (data(capturedAt)?.stepsWeek.map(\.value).max() ?? 0) * 1.1),
+                 height: NoopMetrics.dashboardTileChartHeight,
+                 label: "Seven-day steps preview; missing days have no bars", compact: true, empty: "No steps history")
+        }
+    }
+
+    private var vo2Tile: some View {
+        metricTile(.vo2, icon: "chart.bar.fill", tint: StrandPalette.metricCyan) {
+            numeric(data(capturedAt)?.vo2.map { $0.value.formatted(.number.precision(.fractionLength(1))) } ?? "—", unit: "mL/kg/min")
+            metricCaption(data(capturedAt)?.vo2, empty: "No VO₂ max record")
+            let history = vo2History(capturedAt)
+            plot(history.points, domain: history.domain, tint: StrandPalette.metricCyan,
+                 height: NoopMetrics.dashboardTileChartHeight,
+                 label: "VO₂ max preview; method and source changes remain gaps", compact: true, empty: "Needs a measurement or estimate")
+        }
+    }
+
+    private func metricTile<Content: View>(_ metric: Metric, icon: String, tint: Color, fillHeight: Bool = true,
+                                          @ViewBuilder content: @escaping () -> Content) -> some View {
+        Button { expandedMetric = metric } label: {
+            NoopCard(tint: tint, fillHeight: fillHeight) {
+                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                    HStack(alignment: .top, spacing: NoopMetrics.space1) {
+                        Label(metric.title, systemImage: icon).font(StrandFont.subhead).foregroundStyle(tint)
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).accessibilityHidden(true)
+                    }
+                    content()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens expanded \(metric.title) history and source details")
+    }
+
+    private func metricCaption(_ reading: DashboardDailyReading?, empty: String) -> some View {
+        Text(reading.map(caption) ?? empty).font(StrandFont.caption)
+            .foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func metricDetail(_ metric: Metric) -> some View {
+        NavigationStack {
+            ScreenScaffold(title: nil, lazy: false) {
+                switch metric {
+                case .heartRate:
+                    heartCard
+                    Button { showDetailLive = true } label: { Label("Live HR · 60s", systemImage: "waveform.path.ecg") }
+                        .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.liquidHeart)
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    Text("Saved WHOOP readings · one-minute averages. Missing intervals remain gaps.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    if let resting = data(capturedAt)?.restingHR {
+                        Text("Resting HR source: \(HeartDashboardModel.source(resting))")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                case .hrv:
+                    hrvCard(now: capturedAt)
+                    recordList(data(capturedAt)?.hrvMonth ?? [], unit: "ms")
+                case .steps:
+                    stepsCard(now: capturedAt)
+                    recordList(data(capturedAt)?.stepsWeek ?? [], unit: "steps")
+                case .vo2:
+                    vo2Card(now: capturedAt)
+                    recordList(data(capturedAt)?.vo2History ?? [], unit: "mL/kg/min", decimals: 1)
+                }
+            }
+            .navigationTitle(metric.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { expandedMetric = nil } } }
+        }
+        .sheet(isPresented: $showDetailLive) { HeartRateSessionSheet(expectedDeviceId: deviceId) }
+        .sheet(isPresented: $showHistoryDate) {
+            NavigationStack {
+                Form { DatePicker("Heart-rate history date", selection: $historyDate, in: ...Date(), displayedComponents: .date) }
+                    .navigationTitle("Heart-rate history")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showHistoryDate = false } } }
+            }
+        }
+    }
+
+    private func recordList(_ rows: [DashboardDailyReading], unit: String, decimals: Int = 0) -> some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Recorded history").font(StrandFont.headline)
+                if rows.isEmpty {
+                    Text("No records in this window").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }
+                ForEach(rows.reversed(), id: \.day) { reading in
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                        Text("\(reading.value.formatted(.number.precision(.fractionLength(decimals)))) \(unit)")
+                            .font(StrandFont.bodyNumber).foregroundStyle(StrandPalette.textPrimary)
+                        Text(caption(reading)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
+    }
+
+    private func vo2History(_ now: Date) -> (points: [TrendPoint], domain: ClosedRange<Date>) {
+        let rows = data(now)?.vo2History ?? []
+        let end = rows.last.flatMap { HeartDashboardProjection.date($0.day) } ?? now
+        let start = Calendar.current.date(byAdding: .day, value: -89, to: end) ?? end
+        let points = dailyPoints(rows.filter { (HeartDashboardProjection.date($0.day) ?? .distantPast) >= start })
+        return (points, start...end.addingTimeInterval(86_400))
+    }
+
     private var heartCard: some View {
         NoopCard(tint: StrandPalette.liquidHeart) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                ViewThatFits(in: .horizontal) {
-                    HStack { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); Spacer(); historyButton; liveButton }
-                    VStack(alignment: .leading, spacing: NoopMetrics.space1) { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); HStack { historyButton; liveButton } }
-                }
+                HStack { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); Spacer(); historyButton }
                 let snapshot = data(capturedAt)
                 HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
                     Text(snapshot?.averageHR.map(number) ?? "—").font(StrandFont.number(metricSize, weight: .bold))
@@ -111,6 +274,7 @@ struct HeartMetricsView: View, Equatable {
                             Text("Resting \(number(resting.value)) bpm").font(StrandFont.captionNumber)
                             Text(dateLabel(resting.day)).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                         }
+                        .accessibilityElement(children: .ignore)
                         .accessibilityLabel("Resting HR \(number(resting.value)) beats per minute, \(caption(resting))")
                     }
                 }
@@ -118,7 +282,7 @@ struct HeartMetricsView: View, Equatable {
                 let lower = snapshot?.fromDay ?? Calendar.current.startOfDay(for: historyDate)
                 let upper = max(lower.addingTimeInterval(1), snapshot?.through ?? capturedAt)
                 plot(snapshot?.measuredHR ?? [], domain: lower...upper, tint: StrandPalette.liquidHeart,
-                     height: NoopMetrics.dashboardTrendHeight, label: "Historical measured HR, one-minute averages with missing readings kept as gaps",
+                     height: NoopMetrics.chartHeight, label: "Historical measured HR, one-minute averages with missing readings kept as gaps",
                      empty: snapshot == nil ? "Loading saved heart-rate history…" : "No saved HR readings for this date")
                 Text(snapshot.map { "\($0.hrSampleCount.formatted()) saved readings · 1-minute averages · \(dateLabel($0.historyDay))" } ?? "Reading stored history…")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -147,7 +311,7 @@ struct HeartMetricsView: View, Equatable {
 
     private func hrvCard(now: Date) -> some View {
         NoopCard(tint: StrandPalette.metricCyan) {
-            pairLayout {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                     title("HRV", "waveform.path.ecg", StrandPalette.metricCyan)
                     numeric(data(now)?.hrv.map { number($0.value) } ?? "—", unit: "ms")
@@ -155,14 +319,14 @@ struct HeartMetricsView: View, Equatable {
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
                 plot(dailyPoints(data(now)?.hrvMonth ?? []), domain: monthDomain(now), tint: StrandPalette.metricCyan,
-                     label: "Thirty-day HRV records; source and method changes break the line", empty: "No HRV history in this window")
+                     height: NoopMetrics.chartHeight, label: "Thirty-day HRV records; source and method changes break the line", empty: "No HRV history in this window")
             }
         }
     }
 
     private func stepsCard(now: Date) -> some View {
         NoopCard(tint: StrandPalette.metricCyan) {
-            pairLayout {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                     title("Steps", "figure.walk", StrandPalette.metricCyan)
                     numeric(data(now)?.steps.map { number($0.value) } ?? "—", unit: "")
@@ -171,26 +335,23 @@ struct HeartMetricsView: View, Equatable {
                 }
                 plot(dailyPoints(data(now)?.stepsWeek ?? []), domain: weekDomain(now), tint: StrandPalette.metricCyan,
                      style: .bars, range: 0...max(1, (data(now)?.stepsWeek.map(\.value).max() ?? 0) * 1.1),
-                     label: "Seven-day steps; missing days have no bars", dailyLabels: true, empty: "No steps history yet")
+                     height: NoopMetrics.chartHeight, label: "Seven-day steps; missing days have no bars", dailyLabels: true, empty: "No steps history yet")
             }
         }
     }
 
     private func vo2Card(now: Date) -> some View {
         NoopCard(tint: StrandPalette.metricCyan) {
-            pairLayout {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                     title("VO₂ max", "chart.bar.fill", StrandPalette.metricCyan)
                     numeric(data(now)?.vo2.map { $0.value.formatted(.number.precision(.fractionLength(1))) } ?? "—", unit: "mL/kg/min")
                     Text(data(now)?.vo2.map(caption) ?? "No VO₂ max record available")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
-                let rows = data(now)?.vo2History ?? []
-                let end = rows.last.flatMap { HeartDashboardProjection.date($0.day) } ?? now
-                let start = Calendar.current.date(byAdding: .day, value: -89, to: end) ?? end
-                let points = dailyPoints(rows.filter { (HeartDashboardProjection.date($0.day) ?? .distantPast) >= start })
-                plot(points, domain: start...end.addingTimeInterval(86_400), tint: StrandPalette.metricCyan,
-                     label: "VO₂ max records; estimator and source changes break the line", empty: "Available after a recorded measurement or supported estimate")
+                let history = vo2History(now)
+                plot(history.points, domain: history.domain, tint: StrandPalette.metricCyan,
+                     height: NoopMetrics.chartHeight, label: "VO₂ max records; estimator and source changes break the line", empty: "Available after a recorded measurement or supported estimate")
             }
         }
     }
@@ -241,17 +402,17 @@ struct HeartMetricsView: View, Equatable {
     @ViewBuilder private func plot(_ points: [TrendPoint], domain: ClosedRange<Date>, tint: Color,
                                    style: DashboardChart.Style = .line, range: ClosedRange<Double>? = nil,
                                    height: CGFloat = NoopMetrics.dashboardTrendHeight, label: String,
-                                   dailyLabels: Bool = false, empty: String) -> some View {
+                                   dailyLabels: Bool = false, compact: Bool = false, empty: String) -> some View {
         if points.isEmpty {
             Text(empty).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: min(height, NoopMetrics.dashboardTrendHeight), alignment: .leading)
         } else {
             let values = points.map(\.value)
             let minValue = values.min() ?? 0
             let maxValue = values.max() ?? 1
             let padding = max(1, (maxValue - minValue) * 0.15)
             DashboardChart(points: points, domain: domain, range: range ?? max(0, minValue - padding)...(maxValue + padding),
-                           tint: tint, style: style, height: height, label: label, dailyLabels: dailyLabels)
+                           tint: tint, style: style, height: height, label: label, dailyLabels: dailyLabels, compact: compact)
         }
     }
 }

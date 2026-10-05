@@ -13,16 +13,18 @@ public struct DashboardChart: View {
     let height: CGFloat
     let label: String
     let dailyLabels: Bool
+    let compact: Bool
     let singletonSegments: Set<String>
 
     public init(points: [TrendPoint], domain: ClosedRange<Date>, range: ClosedRange<Double>, tint: Color,
                 style: Style = .line, height: CGFloat = NoopMetrics.dashboardTrendHeight,
-                label: String, dailyLabels: Bool = false) {
+                label: String, dailyLabels: Bool = false, compact: Bool = false) {
         // Callers prepare chronological, gap-preserving display points once with their snapshot.
         self.points = points
         self.singletonSegments = Set(Dictionary(grouping: points, by: \.segment).filter { $0.value.count == 1 }.keys)
         self.domain = domain; self.range = range; self.tint = tint; self.style = style
         self.height = height; self.label = label; self.dailyLabels = dailyLabels
+        self.compact = compact
     }
 
     public var body: some View {
@@ -47,25 +49,27 @@ public struct DashboardChart: View {
         .chartYScale(domain: range)
         .chartLegend(.hidden)
         .chartXAxis {
-            if dailyLabels {
-                AxisMarks(values: .stride(by: .day)) { _ in
-                    AxisValueLabel(format: .dateTime.weekday(.narrow))
-                        .foregroundStyle(StrandPalette.textSecondary).font(StrandFont.caption)
-                }
-            } else {
-                AxisMarks(values: .automatic(desiredCount: 3)) { value in
-                    AxisValueLabel {
-                        if let date = value.as(Date.self) {
-                            Text(date, format: domain.upperBound.timeIntervalSince(domain.lowerBound) <= 86_400
-                                 ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day())
-                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            if !compact {
+                if dailyLabels {
+                    AxisMarks(values: .stride(by: .day)) { _ in
+                        AxisValueLabel(format: .dateTime.weekday(.narrow))
+                            .foregroundStyle(StrandPalette.textSecondary).font(StrandFont.caption)
+                    }
+                } else {
+                    AxisMarks(values: .automatic(desiredCount: 3)) { value in
+                        AxisValueLabel {
+                            if let date = value.as(Date.self) {
+                                Text(date, format: domain.upperBound.timeIntervalSince(domain.lowerBound) <= 86_400
+                                     ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day())
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
                         }
                     }
                 }
             }
         }
         .chartYAxis {
-            if style == .line {
+            if !compact && style == .line {
                 AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
                     AxisGridLine().foregroundStyle(StrandPalette.hairline)
                     AxisValueLabel().foregroundStyle(StrandPalette.textSecondary).font(StrandFont.caption)

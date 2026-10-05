@@ -8,36 +8,40 @@ struct ProteinLogCard: View {
     @StateObject private var protein = ProteinLogStore()
     @ObservedObject private var food = CutPlanStore.shared
     @State private var showEditor = false
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
 
     var body: some View {
         let grams = protein.total(day: logDay, foodProtein: food.protein(day: logDay))
         let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
-        NoopCard {
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
-                : AnyLayout(DashboardPairLayout(spacing: NoopMetrics.space3))
-            layout {
+        Button { logDay = Repository.localDayKey(Date()); showEditor = true } label: {
+            NoopCard(tint: StrandPalette.statusPositive, fillHeight: true) {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    Label("Protein", systemImage: "fork.knife").font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.statusPositive)
+                    HStack(alignment: .top, spacing: NoopMetrics.space1) {
+                        Label("Protein", systemImage: "fork.knife").font(StrandFont.subhead)
+                            .foregroundStyle(StrandPalette.statusPositive)
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).accessibilityHidden(true)
+                    }
                     Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
                         .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-            Text(protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)")
+                    Text(protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let target = protein.targetGrams {
                         ProgressView(value: min(grams, target), total: target).tint(StrandPalette.statusPositive)
                     }
+                    Label("Log protein", systemImage: "plus").font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.statusPositive)
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget, alignment: .leading)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
-                Button { logDay = Repository.localDayKey(Date()); showEditor = true } label: { Label("Log protein", systemImage: "plus") }
-                    .font(StrandFont.subhead).buttonStyle(.bordered).buttonBorderShape(.capsule)
-                        .tint(StrandPalette.statusPositive).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens protein totals, entries, optional target and logging")
         .onChange(of: day) { _, value in logDay = value }
         .sheet(isPresented: $showEditor, onDismiss: { logDay = Repository.localDayKey(Date()) }) { ProteinEntrySheet(store: protein) }
     }
@@ -61,6 +65,14 @@ private struct ProteinEntrySheet: View {
             Form {
                 Section("Logged today") {
                     let day = Repository.localDayKey(Date())
+                    let total = store.total(day: day, foodProtein: food.protein(day: day))
+                    Text("\(total.formatted(.number.precision(.fractionLength(0)))) g protein")
+                        .font(StrandFont.title2).foregroundStyle(StrandPalette.textPrimary)
+                    if let target = store.targetGrams {
+                        Text("Target \(target.formatted(.number.precision(.fractionLength(0)))) g")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        ProgressView(value: min(total, target), total: target).tint(StrandPalette.statusPositive)
+                    }
                     if food.protein(day: day) > 0 {
                         Text("Includes \(food.protein(day: day).formatted()) g from your food log.")
                     }

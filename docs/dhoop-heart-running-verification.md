@@ -81,3 +81,23 @@ override correction from upstream PR #2461 was adopted separately. WHOOP 5
 500 ms R–R filler quarantine was excluded because adopting it requires a new
 schema migration and its Android twin; migration approval has not been granted.
 No broad upstream merge was made.
+
+## Build 425: expandable cards
+
+Heart rate remains a compact full-width horizontal card. HRV, Steps, Protein and
+VO₂ max use two equal columns with square minimums and content-driven row
+heights. Narrow widths and accessibility text sizes use one column. Each metric
+opens a larger detail view; Protein opens its existing entries/target editor with
+the same store instance. Preview charts omit crowded axes; expanded charts keep
+their axes, dates, sources and gaps. Empty detail charts do not reserve a large
+blank plotting area. Live HR remains a separate 60-second action.
+
+The final iOS device and simulator builds passed, as did the shared macOS build.
+Build 425 was installed with unchanged signing and bundle identifiers; imperial
+preferences were preserved. Simulator checks used an existing copied on-device
+snapshot, without demo readings: all five metric detail presentations, nested
+HR date selection, protein entries/target controls, light/dark appearance and
+accessibility text layout were inspected. The resting-HR detail resolves as one
+accessibility element. Full spoken VoiceOver navigation, reduced-motion modal
+behavior and physical-phone scrolling performance remain unverified. No new
+live subscription, collection polling or database migration was added.
