@@ -91,7 +91,7 @@ public struct DashboardChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(summary)
-        .chartInspection(inspectionData, label: label, tint: tint, dailyBuckets: style == .bars)
+        .chartInspection(inspectionData, label: label, tint: tint, dailyBuckets: style == .bars, readoutBelow: compact)
     }
 
     private var summary: String {

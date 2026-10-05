@@ -25,8 +25,8 @@ public extension View {
     func chartInspectionAccessibility(_ data: [ChartScrubDatum], label: String) -> some View {
         modifier(ChartInspectionAccessibility(index: ChartScrubIndex(data), label: label))
     }
-    func chartInspection(_ data: [ChartScrubDatum], dateAxis: Bool = true, label: String = "Chart", tint: Color = StrandPalette.accent, dailyBuckets: Bool = false) -> some View {
-        modifier(ChartInspectionModifier(data: data, dateAxis: dateAxis, label: label, tint: tint, dailyBuckets: dailyBuckets))
+    func chartInspection(_ data: [ChartScrubDatum], dateAxis: Bool = true, label: String = "Chart", tint: Color = StrandPalette.accent, dailyBuckets: Bool = false, readoutBelow: Bool = false) -> some View {
+        modifier(ChartInspectionModifier(data: data, dateAxis: dateAxis, label: label, tint: tint, dailyBuckets: dailyBuckets, readoutBelow: readoutBelow))
     }
 }
 
@@ -66,17 +66,22 @@ private struct ChartInspectionModifier: ViewModifier {
     let label: String
     let tint: Color
     let dailyBuckets: Bool
+    let readoutBelow: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
     let index: ChartScrubIndex
     @State private var selectedX: Double?
-    init(data: [ChartScrubDatum], dateAxis: Bool, label: String, tint: Color, dailyBuckets: Bool) {
+    init(data: [ChartScrubDatum], dateAxis: Bool, label: String, tint: Color, dailyBuckets: Bool, readoutBelow: Bool) {
         self.data = data; self.dateAxis = dateAxis; self.label = label; self.tint = tint; self.dailyBuckets = dailyBuckets
         self.index = ChartScrubIndex(data)
+        self.readoutBelow = readoutBelow
     }
     func body(content: Content) -> some View {
         let index = index
         let selection = selectedX.flatMap { x in
             return index.selection(at: x, exact: dailyBuckets)
         }
+        let inlineReadout = readoutBelow || typeSize.isAccessibilitySize
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
         content
             .chartOverlay { proxy in
                 GeometryReader { geometry in
@@ -96,20 +101,11 @@ private struct ChartInspectionModifier: ViewModifier {
                                         HighlightDot(color: tint).position(x: plot.minX + position, y: plot.minY + y)
                                     }
                                 }
-                                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                    if selection.data.isEmpty {
-                                        Text("No recorded value").foregroundStyle(StrandPalette.textSecondary)
-                                        Text(rawDate.formatted(date: .abbreviated, time: .omitted))
-                                    } else if selection.isGap { Text("Gap · nearest recorded point").foregroundStyle(StrandPalette.textSecondary) }
-                                    ForEach(selection.data) { datum in
-                                        Text(datum.value).font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textPrimary)
-                                        Text(datum.context).foregroundStyle(StrandPalette.textSecondary)
-                                    }
+                                if !inlineReadout {
+                                    readout(selection)
+                                        .frame(maxWidth: min(geometry.size.width, NoopMetrics.detailSheetMinWidth / 2), alignment: .leading)
+                                        .allowsHitTesting(false)
                                 }
-                                .font(StrandFont.caption).padding(NoopMetrics.space2)
-                                .frame(maxWidth: min(geometry.size.width, NoopMetrics.detailSheetMinWidth / 2), alignment: .leading)
-                                .background(StrandPalette.surfaceOverlay, in: RoundedRectangle(cornerRadius: NoopMetrics.space2))
-                                .allowsHitTesting(false)
                             }
                         }
                     }
@@ -123,6 +119,10 @@ private struct ChartInspectionModifier: ViewModifier {
                     }
                 }
             }
+            if inlineReadout, let selection {
+                readout(selection).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
             .accessibilityValue(selection.map { value in
@@ -132,6 +132,21 @@ private struct ChartInspectionModifier: ViewModifier {
             .accessibilityAdjustableAction { direction in selectedX = index.adjacent(to: selectedX, forward: direction == .increment) }
             .accessibilityAction(named: Text("Clear selection")) { selectedX = nil }
             .onChange(of: data.map(\.id)) { _ in selectedX = nil }
+    }
+    private func readout(_ selection: ChartScrubSelection) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+            if selection.data.isEmpty {
+                Text("No recorded value").foregroundStyle(StrandPalette.textSecondary)
+                Text(Date(timeIntervalSince1970: selection.x).formatted(date: .abbreviated, time: .omitted))
+            } else if selection.isGap { Text("Gap · nearest recorded point").foregroundStyle(StrandPalette.textSecondary) }
+            ForEach(selection.data) { datum in
+                Text(datum.value).font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textPrimary)
+                Text(datum.context).foregroundStyle(StrandPalette.textSecondary)
+            }
+        }
+        .font(StrandFont.caption).fixedSize(horizontal: false, vertical: true)
+        .padding(NoopMetrics.space2)
+        .background(StrandPalette.surfaceOverlay, in: RoundedRectangle(cornerRadius: NoopMetrics.space2))
     }
     private func select(_ location: CGPoint?, proxy: ChartProxy, plot: CGRect) {
         guard let location, plot.contains(location) else { selectedX = nil; return }
