@@ -2,15 +2,17 @@ import SwiftUI
 import StrandDesign
 
 struct MetricHistoryView: View {
-    let repo: Repository
+    @ObservedObject var repo: Repository
     let deviceId: String
     let metric: DashboardHistoryMetric
     let now: Date
     @Binding var selection: MetricRangeSelection
     @StateObject private var history = MetricRangeModel()
+    @State private var refreshedAt: Date?
+    private var referenceDate: Date { refreshedAt ?? now }
     @Environment(\.dismiss) private var dismiss
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
-    private var window: MetricDateWindow { selection.window(now: now) }
+    private var window: MetricDateWindow { selection.window(now: referenceDate) }
     private var result: MetricRangeSnapshot? {
         guard let result = history.snapshot, result.deviceId == deviceId, result.metric == metric,
               result.window == window else { return nil }
@@ -20,7 +22,7 @@ struct MetricHistoryView: View {
     var body: some View {
         NavigationStack {
             ScreenScaffold(title: nil) {
-                MetricRangeControl(selection: $selection, now: now)
+                MetricRangeControl(selection: $selection, now: referenceDate)
                 NoopCard(tint: tint) {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Text(metric == .heartRate ? "Average recorded HR" : "Average \(metric.title.lowercased())")
@@ -71,14 +73,15 @@ struct MetricHistoryView: View {
                 }
                 Text(metric == .heartRate ? "Only recorded measurements contribute. Missing intervals are not filled. The trend shows daily averages." : metric == .steps ? "Unrecorded days are excluded." : "Unrecorded days are excluded. Different methods are averaged separately.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                if window.toDay == Repository.localDayKey(now) {
+                if window.toDay == Repository.localDayKey(referenceDate) {
                     Text("Includes today’s partial data.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
             }
             .navigationTitle(metric.title).navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
-        .task(id: "\(deviceId)|\(metric.rawValue)|\(window.identity)") {
+        .onChange(of: repo.refreshSeq) { _, _ in refreshedAt = Date() }
+        .task(id: "\(deviceId)|\(metric.rawValue)|\(window.identity)|\(repo.refreshSeq)") {
             await history.load(repo: repo, deviceId: deviceId, metric: metric, window: window)
         }
     }
@@ -108,6 +111,7 @@ struct MetricHistoryView: View {
                 from: window.start.timeIntervalSince1970, through: window.through.timeIntervalSince1970, gapSeconds: 90_000)
                 .map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) }
             let points = DashboardTraceSampling.reduce(trace)
+            let segments = Dictionary(trace.map { ($0.date, $0.segment) }, uniquingKeysWith: { first, _ in first })
             let start = window.days == nil ? (points.first?.date ?? window.end) : window.start
             let upper = max(start.addingTimeInterval(1), window.through)
             let values = rows.map(\.value)
@@ -122,7 +126,7 @@ struct MetricHistoryView: View {
                     let unit = metric == .steps ? "steps" : metric == .heartRate ? "bpm" : metric == .hrv ? "ms" : "mL/kg/min"
                     return ChartScrubDatum(id: "\(row.source)|\(row.day)", x: date.timeIntervalSince1970, y: row.value,
                         value: "\(row.value.formatted(.number.precision(.fractionLength(0...1)))) \(unit)",
-                        context: "\(date.formatted(date: .abbreviated, time: .omitted)) · \(HeartDashboardModel.source(row))", segment: trace.first { $0.date == date }?.segment ?? "default")
+                        context: "\(date.formatted(date: .abbreviated, time: .omitted)) · \(HeartDashboardModel.source(row))", segment: segments[date] ?? "default")
                 })
         }
     }

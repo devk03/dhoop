@@ -83,6 +83,19 @@ private struct CutTodayDashboard: View, Equatable {
             capturedAt = Date()
             if goal.isEnabled { await load() }
         }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            while !Task.isCancelled {
+                let delay = DashboardSnapshotCadence.delay(after: capturedAt, now: Date())
+                do { try await Task.sleep(nanoseconds: UInt64(max(0.01, delay) * 1_000_000_000)) }
+                catch { return }
+                guard !Task.isCancelled else { return }
+                let now = Date()
+                guard DashboardSnapshotCadence.delay(after: capturedAt, now: now) == 0 else { continue }
+                capturedAt = now; refreshToken += 1
+                if goal.isEnabled { await load() }
+            }
+        }
         .onReceive(repo.objectWillChange.receive(on: RunLoop.main)) {
             let id = repo.deviceId
             if id != activeDeviceId { activeDeviceId = id; capturedAt = Date(); refreshToken += 1 }
@@ -586,6 +599,9 @@ private struct CutTodayDashboard: View, Equatable {
     }
 
     private func load() async {
+        guard !Task.isCancelled else { return }
+        guard goal.isEnabled else { burned = nil; steps = nil; return }
+        let deviceID = repo.deviceId
         goal.performTrackingUpdate {
             // No scale: the start-of-day estimate IS the weight every calculation uses (BMR, allowance,
             // strap calorie estimates). Rounded to 0.1 kg so it doesn't churn.
@@ -597,6 +613,7 @@ private struct CutTodayDashboard: View, Equatable {
         let from = Int(start.timeIntervalSince1970)
         let to = Int(Date().timeIntervalSince1970)
         let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
+        guard !Task.isCancelled, goal.isEnabled, repo.deviceId == deviceID else { return }
         if hr.isEmpty {
             burned = nil
         } else {
@@ -606,10 +623,13 @@ private struct CutTodayDashboard: View, Equatable {
                                                 restingHR: repo.today?.restingHr.map(Double.init))
         }
         if goal.isEnabled { await backfillActive() }
+        guard !Task.isCancelled, goal.isEnabled, repo.deviceId == deviceID else { return }
 
         let key = dayKey
         let apple = await repo.appleDailyRows(days: 3).filter { $0.day == key }.compactMap { $0.steps }.max()
-        let est = await repo.exploreSeries(key: "steps_est", source: "my-whoop", days: 3).last { $0.day == key }?.value
+        guard !Task.isCancelled, goal.isEnabled, repo.deviceId == deviceID else { return }
+        let est = await repo.exploreSeries(key: "steps_est", source: deviceID, days: 3).last { $0.day == key }?.value
+        guard !Task.isCancelled, goal.isEnabled, repo.deviceId == deviceID else { return }
         let measured = repo.today?.day == key ? repo.today?.steps : nil
         steps = measured.map(Double.init) ?? apple.map(Double.init) ?? est
 
@@ -618,11 +638,12 @@ private struct CutTodayDashboard: View, Equatable {
     /// Workout kcal for past logged days since the plan started (up to 120 days back) that have no
     /// stored value, computed once from each whole day's heart rate so the fat totals count them.
     private func backfillActive() async {
+        let deviceID = repo.deviceId
         let cal = Calendar.current
         let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm,
                              age: Double(profile.age), sex: profile.sex)
         for offset in 1..<120 {
-            guard goal.isEnabled else { return }
+            guard goal.isEnabled, !Task.isCancelled, repo.deviceId == deviceID else { return }
             guard let start = cal.date(byAdding: .day, value: -offset, to: cal.startOfDay(for: Date())),
                   let end = cal.date(byAdding: .day, value: 1, to: start) else { continue }
             let key = Repository.localDayKey(start)
@@ -630,7 +651,7 @@ private struct CutTodayDashboard: View, Equatable {
             guard plan.activeByDay[key] == nil, !plan.entries(day: key).isEmpty else { continue }
             let hr = await repo.hrSamples(from: Int(start.timeIntervalSince1970),
                                           to: Int(end.timeIntervalSince1970) - 1, limit: 200_000)
-            guard goal.isEnabled else { return }
+            guard goal.isEnabled, !Task.isCancelled, repo.deviceId == deviceID else { return }
             let resting = repo.days.last(where: { $0.day == key })?.restingHr.map(Double.init)
             let e = Calories.estimateDayEnergy(hr, profile: up, hrmax: Double(profile.hrMax), restingHR: resting)
             goal.performTrackingUpdate { plan.setActive(e.activeKcal, day: key) }

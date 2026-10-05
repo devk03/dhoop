@@ -38,7 +38,10 @@ final class HeartDashboardModel: ObservableObject {
         let midnight = calendar.startOfDay(for: now)
         let weekStart = Repository.localDayKey(calendar.date(byAdding: .day, value: -6, to: midnight) ?? midnight)
         let monthStart = Repository.localDayKey(calendar.date(byAdding: .day, value: -29, to: midnight) ?? midnight)
-        guard let store = await repo.storeHandle() else { error = "Local storage is unavailable"; return }
+        guard let store = await repo.storeHandle() else {
+            guard generation == self.generation, id == repo.deviceId, !Task.isCancelled else { return }
+            error = "Local storage is unavailable"; return
+        }
         let historyStart = calendar.startOfDay(for: historyDate)
         let historyDay = Repository.localDayKey(historyStart)
         let historyEnd = min(now, (calendar.date(byAdding: .day, value: 1, to: historyStart) ?? now).addingTimeInterval(-1))
