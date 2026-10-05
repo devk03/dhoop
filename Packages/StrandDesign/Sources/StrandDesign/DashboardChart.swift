@@ -2,7 +2,7 @@
 import SwiftUI
 import Charts
 
-/// A compact, linear chart. Each measured run is reduced separately so gaps and isolated points survive.
+/// A compact, linear chart of prepared observations; distinct runs keep gaps and isolated points visible.
 public struct DashboardChart: View {
     public enum Style { case line, bars }
     let points: [TrendPoint]
@@ -18,12 +18,9 @@ public struct DashboardChart: View {
     public init(points: [TrendPoint], domain: ClosedRange<Date>, range: ClosedRange<Double>, tint: Color,
                 style: Style = .line, height: CGFloat = NoopMetrics.dashboardTrendHeight,
                 label: String, dailyLabels: Bool = false) {
-        let sorted = points.sorted { $0.date < $1.date }
-        self.points = hrGapRuns(segments: sorted.map(\.segment)).flatMap { run in
-            ChartDownsample.minMaxBucketed(Array(sorted[run]), threshold: ChartDownsample.markThreshold,
-                                           targetCount: ChartDownsample.targetVertices)
-        }
-        self.singletonSegments = Set(Dictionary(grouping: sorted, by: \.segment).filter { $0.value.count == 1 }.keys)
+        // Callers prepare chronological, gap-preserving display points once with their snapshot.
+        self.points = points
+        self.singletonSegments = Set(Dictionary(grouping: points, by: \.segment).filter { $0.value.count == 1 }.keys)
         self.domain = domain; self.range = range; self.tint = tint; self.style = style
         self.height = height; self.label = label; self.dailyLabels = dailyLabels
     }

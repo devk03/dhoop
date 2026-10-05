@@ -3,186 +3,138 @@ import StrandDesign
 import StrandAnalytics
 
 /// The mockup's hierarchy, backed by dated records and one shared collection observation.
-struct HeartMetricsView: View {
-    @EnvironmentObject private var repo: Repository
-    @EnvironmentObject private var profile: ProfileStore
-    @EnvironmentObject private var live: LiveState
-    @EnvironmentObject private var model: AppModel
+struct HeartMetricsView: View, Equatable {
+    let model: AppModel
+    let deviceId: String
+    let refreshToken: Int
+    private var repo: Repository { model.repo }
+    private var profile: ProfileStore { model.profile }
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
     @AppStorage(DayCycleMode.storageKey) private var dayCycleModeRaw = DayCycleMode.sleepOnset.rawValue
-    @AppStorage(PuffinExperiment.keepRealtimeForDataKey) private var continuousHrvEnabled = false
     @StateObject private var dashboard = HeartDashboardModel()
-    @StateObject private var collection = WhoopCollectionModel()
-    @StateObject private var liveSession = TimedHeartRateSession()
+    @State private var observation: CollectionProof?
+    @State private var storedCount: Int?
+    @State private var battery: Double?
     @State private var showCollection = false
-    @State private var chartMode = "Today"
+    @State private var showLive = false
+    @State private var capturedAt = Date()
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize = NoopMetrics.dashboardHeroNumber
     @ScaledMetric(relativeTo: .title) private var metricSize = NoopMetrics.dashboardMetricNumber
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model && lhs.deviceId == rhs.deviceId && lhs.refreshToken == rhs.refreshToken
+    }
     private var scale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
-    private var loadIdentity: String { "\(repo.deviceId)|\(repo.refreshSeq)|\(dayCycleModeRaw)|\(profile.hrMaxOverride)|\(profile.age)|\(profile.sex)" }
+    private var loadIdentity: String { "\(deviceId)|\(refreshToken)|\(dayCycleModeRaw)" }
     private var pairLayout: AnyLayout {
         dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: NoopMetrics.gap)) : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.gap))
     }
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let status = live.heartRateEvidence.status(connected: live.connected, isWhoop: live.activeIsWhoop,
-                heartRate: live.heartRate, at: context.date.timeIntervalSince1970,
-                silenceSeconds: LiveState.heartRateSilenceSeconds, expectedDeviceId: repo.deviceId, connectionDeviceId: live.connectedWhoopDeviceId)
-            VStack(spacing: NoopMetrics.sectionGap) {
-                statusRow(status)
-                heartCard(status, now: context.date)
-                pairLayout {
-                    strainCard(now: context.date)
-                    hrvCard(now: context.date)
-                }
-                stepsCard(now: context.date)
-                ProteinLogCard()
-                vo2Card(now: context.date)
-                if let error = dashboard.error {
-                    Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+        VStack(spacing: NoopMetrics.sectionGap) {
+            statusRow
+            heartCard
+            pairLayout {
+                strainCard(now: capturedAt)
+                hrvCard(now: capturedAt)
+            }
+            stepsCard(now: capturedAt)
+            ProteinLogCard(day: Repository.localDayKey(capturedAt))
+            vo2Card(now: capturedAt)
+            if let error = dashboard.error {
+                Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .sheet(isPresented: $showCollection) { WhoopCollectionCard(collection: collection) }
-        .onDisappear { liveSession.stop() }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { liveSession.stop() } }
-        .onChange(of: repo.deviceId) { _, _ in liveSession.stop() }
-        .onChange(of: live.activeIsWhoop) { _, _ in rearmLiveSession() }
-        .onChange(of: live.connected) { _, _ in rearmLiveSession() }
-        .onChange(of: live.connectedWhoopDeviceId) { _, _ in rearmLiveSession() }
-        .onChange(of: live.bonded) { _, _ in rearmLiveSession() }
-        .onChange(of: live.historyReady) { _, _ in rearmLiveSession() }
-        .task(id: repo.deviceId) {
-            while !Task.isCancelled {
-                if scenePhase == .active { await collection.refresh(repo: repo, live: live) }
-                try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
-            }
-        }
-        .task(id: loadIdentity) {
-            while !Task.isCancelled {
-                if scenePhase == .active { await dashboard.refresh(repo: repo, profile: profile) }
-                try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
-            }
-        }
+        .frame(maxWidth: .infinity)
+        .sheet(isPresented: $showCollection) { DashboardCollectionSheet() }
+        .sheet(isPresented: $showLive) { HeartRateSessionSheet(expectedDeviceId: deviceId) }
+        .task(id: loadIdentity) { await refresh() }
     }
 
-    private func statusRow(_ status: LiveHeartRateStatus) -> some View {
+    private func refresh() async {
+        let now = Date()
+        let id = deviceId
+        if dashboard.data?.deviceId != id { observation = nil; storedCount = nil; battery = nil }
+        await dashboard.refresh(repo: repo, profile: profile, now: now)
+        guard !Task.isCancelled, id == repo.deviceId else { return }
+        let collection = WhoopCollectionModel()
+        await collection.refresh(repo: repo, live: model.live, now: now)
+        guard !Task.isCancelled, id == repo.deviceId else { return }
+        capturedAt = now
+        observation = collection.proof(live: model.live, now: Date(), deviceId: id)
+        storedCount = collection.snapshot?.heartRate.count
+        battery = model.live.reportedBattery(for: id)
+    }
+
+    private var statusRow: some View {
         Button { showCollection = true } label: {
             NoopCard(padding: NoopMetrics.space3) {
                 HStack(spacing: NoopMetrics.space3) {
-                    Circle().fill(status.isReceiving ? StrandPalette.statusPositive : StrandPalette.textTertiary)
+                    Circle().fill(observation?.connected == true ? StrandPalette.statusPositive : StrandPalette.textTertiary)
                         .frame(width: NoopMetrics.space3, height: NoopMetrics.space3).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                        Text("\(collection.deviceName(for: repo.deviceId)) · \(status.isReceiving ? "Receiving HR" : !status.isWhoop ? "Other source selected" : status.connected ? "Connected" : "Disconnected")").font(StrandFont.subhead)
-                        Text(age(status))
+                        Text("\(observation?.deviceName ?? "WHOOP") · \(observation?.connected == true ? "Connected at check" : "Connection not confirmed")")
+                            .font(StrandFont.subhead)
+                        Text(observation?.lastLiveHRAt.map { "Last HR received \(Date(timeIntervalSince1970: $0).formatted(.dateTime.hour().minute().second()))" } ?? "No readable HR at last check")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: NoopMetrics.space1)
-                    if let battery = live.reportedBattery(for: repo.deviceId) {
-                        Label("\(Int(battery.rounded()))%", systemImage: "battery.100")
-                            .font(StrandFont.captionNumber)
-                            .accessibilityLabel("Last reported battery \(Int(battery.rounded())) percent")
+                        if let battery {
+                        Label("\(Int(battery.rounded()))%", systemImage: "battery.100").font(StrandFont.captionNumber)
+                            .accessibilityLabel("Battery at last check \(Int(battery.rounded())) percent")
                     }
                     Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
-                .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                .foregroundStyle(StrandPalette.textPrimary)
+                .frame(minHeight: NoopMetrics.minimumTouchTarget).foregroundStyle(StrandPalette.textPrimary)
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens device identity, streaming freshness and stored sample evidence")
+        .buttonStyle(.plain).accessibilityElement(children: .combine)
+        .accessibilityHint("Opens current device and collection evidence")
     }
 
-    private func heartCard(_ status: LiveHeartRateStatus, now: Date) -> some View {
+    private var heartCard: some View {
         NoopCard(tint: StrandPalette.liquidHeart) {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 ViewThatFits(in: .horizontal) {
-                    HStack { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); Spacer(); chartPicker }
-                    VStack(alignment: .leading, spacing: NoopMetrics.space2) { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); chartPicker }
+                    HStack { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); Spacer(); liveButton }
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); liveButton }
                 }
-                Button {
-                    if liveSession.isActive {
-                        liveSession.stop()
-                    } else if scenePhase == .active && live.activeIsWhoop && live.connected
-                                && live.connectedWhoopDeviceId == repo.deviceId {
-                        let owner = model
-                        if liveSession.start(deviceId: repo.deviceId, request: { owner.startRealtimeHR() },
-                                             release: { owner.stopRealtimeHR() }) {
-                            chartMode = "Live"
-                        }
-                    }
-                } label: {
-                    Label(liveSession.isActive ? "Stop · \(liveSession.remainingSeconds())s remaining" : "Live HR · 60 seconds",
-                          systemImage: liveSession.isActive ? "stop.circle.fill" : "waveform.path.ecg")
-                        .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                }
-                .buttonStyle(.bordered).buttonBorderShape(.capsule).tint(StrandPalette.liquidHeart)
-                .disabled(!liveSession.isActive && (!status.connected || scenePhase != .active))
-                .accessibilityHint(liveSession.isActive ? "Ends this live session immediately" : "Requests live heart rate for sixty seconds, then ends automatically")
-                Text(liveSession.isActive ? "60-second session requested · incoming data shown below" : "Tap to start a short live session. History sync continues.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if continuousHrvEnabled {
-                    Text("Continuous HRV capture is enabled in Settings and may continue after this session.")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                let latest = data(capturedAt)?.measuredHR.last
                 HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
-                    Text(status.bpm.map(String.init) ?? "—").font(StrandFont.number(heroSize, weight: .bold))
+                    Text(latest.map { number($0.value) } ?? "—").font(StrandFont.number(heroSize, weight: .bold))
                     Text("bpm").font(StrandFont.title2).foregroundStyle(StrandPalette.textSecondary)
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Current heart rate")
-                .accessibilityValue(status.bpm.map { "\($0) beats per minute, fresh live WHOOP sample" } ?? "Unavailable; no fresh readable sample")
-                Text(status.isReceiving ? "Fresh HR · \(age(status))" : "Waiting for a fresh readable sample")
+                .accessibilityLabel("Latest saved measured heart rate")
+                .accessibilityValue(latest.map { "\(number($0.value)) beats per minute, saved \($0.date.formatted())" } ?? "No measured heart rate saved today")
+                Text(latest.map { "Last saved HR · \($0.date.formatted(.dateTime.hour().minute().second()))" } ?? "No measured HR saved today")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                if let resting = data(now)?.restingHR {
+                if let resting = data(capturedAt)?.restingHR {
                     Text("Resting \(number(resting.value)) bpm · \(caption(resting))")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
-                let points = heartPoints(now: now)
-                let lower = chartMode == "Live" ? now.addingTimeInterval(-LiveHeartRateEvidence.chartWindowSeconds) : Calendar.current.startOfDay(for: now)
-                plot(points, domain: lower...max(lower.addingTimeInterval(1), now), tint: StrandPalette.liquidHeart,
-                     height: NoopMetrics.dashboardTraceHeight, label: chartMode == "Live" ? "Actual live heart-rate receipts, last five minutes" : "Measured WHOOP heart rate today",
-                     empty: chartMode == "Live" ? "No readable live samples in the last five minutes" : "No measured HR samples stored today")
-                Text(chartMode == "Live" ? "Actual receipts · last 5 minutes · gaps kept" : "Measured samples · chart checked \(data(now)?.through.formatted(.dateTime.hour().minute().second()) ?? "not yet")")
+                let lower = Calendar.current.startOfDay(for: capturedAt)
+                plot(data(capturedAt)?.measuredHR ?? [], domain: lower...max(lower.addingTimeInterval(1), capturedAt),
+                     tint: StrandPalette.liquidHeart, height: NoopMetrics.dashboardTraceHeight,
+                     label: "Measured WHOOP heart rate today, saved snapshot", empty: "No measured HR samples stored today")
+                Text("Snapshot · \(capturedAt.formatted(.dateTime.hour().minute().second())) · pull to refresh")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                if let snapshot = collection.snapshot, snapshot.deviceId == repo.deviceId,
-                   snapshot.fromTs == Int(Calendar.current.startOfDay(for: now).timeIntervalSince1970) {
-                    Label("\(snapshot.heartRate.count.formatted()) HR samples saved today", systemImage: "externaldrive.fill")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                } else {
-                    Label("Stored sample count not yet checked", systemImage: "externaldrive")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
+                Label(storedCount.map { "\($0.formatted()) HR samples saved today" } ?? "Stored sample count not yet checked", systemImage: "externaldrive.fill")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
             .foregroundStyle(StrandPalette.textPrimary)
         }
     }
 
-    private func rearmLiveSession() {
-        guard scenePhase == .active else { liveSession.stop(); return }
-        liveSession.rearmIfValid(deviceId: repo.deviceId,
-            connected: live.connected && live.connectedWhoopDeviceId == repo.deviceId,
-            isWhoop: live.activeIsWhoop, rearm: { model.rearmRealtimeIfWanted() })
-    }
-
-    private var chartPicker: some View {
-        Picker("Heart-rate timeline", selection: $chartMode) {
-            Text("Today").tag("Today")
-            Text("Live").tag("Live")
+    private var liveButton: some View {
+        Button { showLive = true } label: {
+            Label("Live · 60 seconds", systemImage: "waveform.path.ecg")
+                .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
-        .pickerStyle(.segmented)
-        .fixedSize(horizontal: true, vertical: false)
-        .frame(minHeight: NoopMetrics.minimumTouchTarget)
+        .buttonStyle(.bordered).buttonBorderShape(.capsule).tint(StrandPalette.liquidHeart)
+        .accessibilityHint("Opens a separate live heart-rate session that ends automatically after sixty seconds")
     }
 
     private func strainCard(now: Date) -> some View {
@@ -281,12 +233,6 @@ struct HeartMetricsView: View {
         HeartDashboardProjection.date(day)?.formatted(.dateTime.month(.abbreviated).day().year()) ?? day
     }
     private func caption(_ reading: DashboardDailyReading) -> String { "\(HeartDashboardModel.source(reading)) · \(dateLabel(reading.day))" }
-    private func age(_ status: LiveHeartRateStatus) -> String {
-        guard let seconds = status.sampleAge else { return "No readable HR on this connection" }
-        if seconds < 60 { return "Last readable HR \(Int(seconds))s ago" }
-        if seconds < 3600 { return "Last readable HR \(Int(seconds / 60))m ago" }
-        return "Last readable HR \(Int(seconds / 3600))h ago"
-    }
     private func weekDomain(_ now: Date) -> ClosedRange<Date> {
         let end = Calendar.current.startOfDay(for: now)
         return (Calendar.current.date(byAdding: .day, value: -6, to: end) ?? end)...(Calendar.current.date(byAdding: .day, value: 1, to: end) ?? now)
@@ -296,18 +242,9 @@ struct HeartMetricsView: View {
         return (Calendar.current.date(byAdding: .day, value: -29, to: end) ?? end)...(Calendar.current.date(byAdding: .day, value: 1, to: end) ?? now)
     }
     private func data(_ now: Date) -> HeartDashboardSnapshot? {
-        guard let data = dashboard.data, data.deviceId == repo.deviceId,
+        guard let data = dashboard.data, data.deviceId == deviceId,
               data.calendarDay == Repository.localDayKey(now) else { return nil }
         return data
-    }
-    private func heartPoints(now: Date) -> [TrendPoint] {
-        if chartMode == "Today" { return data(now)?.measuredHR ?? [] }
-        guard live.activeIsWhoop, live.heartRateEvidence.sourceDeviceId == repo.deviceId else { return [] }
-        return HeartDashboardProjection.trace(live.heartRateEvidence.samples.map {
-            DashboardTraceSample(time: $0.receivedAt, value: Double($0.bpm))
-        }, from: now.timeIntervalSince1970 - LiveHeartRateEvidence.chartWindowSeconds,
-           through: now.timeIntervalSince1970, gapSeconds: 1.5)
-            .map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) }
     }
     private func dailyPoints(_ rows: [DashboardDailyReading], gapSeconds: Double = 90_000) -> [TrendPoint] {
         let samples = rows.compactMap { row -> DashboardTraceSample? in

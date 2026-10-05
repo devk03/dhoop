@@ -65,8 +65,11 @@ final class HeartDashboardModel: ObservableObject {
 
         let strainRows = HeartDashboardProjection.bounded(map((await strains).points), from: weekStart, through: day)
         let stored = strainRows.last { $0.day == scoreDay }
-        let calculated = StrainScorer.strain(await effortHR, maxHR: maxHR, restingHR: resting,
-                                            method: PuffinExperiment.effortMethod, sex: sex)
+        let effortSamples = await effortHR
+        let effortMethod = PuffinExperiment.effortMethod
+        let calculated = await Task.detached(priority: .userInitiated) {
+            StrainScorer.strain(effortSamples, maxHR: maxHR, restingHR: resting, method: effortMethod, sex: sex)
+        }.value
         let strain = StrainScorer.effectiveEffort(live: calculated, stored: stored?.value)
         let strainSource = calculated != nil && (calculated ?? 0) >= (stored?.value ?? 0)
             ? "On-device estimate" : stored.map(Self.source) ?? "Needs more heart-rate data"
@@ -82,25 +85,30 @@ final class HeartDashboardModel: ObservableObject {
         let hrvRows = nightlyHRV.isEmpty ? allHRV : nightlyHRV
         let restingRows = map((await rests).points)
         let stepRows = HeartDashboardProjection.bounded(map((await steps).points), from: weekStart, through: day)
+        let estimatePoints = (await vo2Estimates).points.filter { $0.day <= day && $0.value.isFinite && $0.value > 0 }
+        let applePoints = (await appleVo2).points.filter { $0.day <= day && $0.value.isFinite && $0.value > 0 }
+        let latestVo2Day = (estimatePoints + applePoints).map(\.day).max() ?? day
+        let latestVo2Date = HeartDashboardProjection.date(latestVo2Day) ?? now
+        let vo2From = Repository.localDayKey(calendar.date(byAdding: .day, value: -89, to: latestVo2Date) ?? latestVo2Date)
         var vo2ByDay: [String: DashboardDailyReading] = [:]
-        for point in (await vo2Estimates).points where point.day <= day && point.value.isFinite && point.value > 0 {
+        for point in estimatePoints where point.day >= vo2From {
             let tag = await repo.scoreProvenanceTag(resolvedSource: point.source, day: point.day, metricKey: "vo2max_est")
             vo2ByDay[point.day] = DashboardDailyReading(day: point.day, value: point.value, source: point.source,
                                                        key: point.sourceKey, method: tag ?? "unknown")
         }
-        for point in (await appleVo2).points where point.day <= day && point.value.isFinite && point.value > 0 {
+        for point in applePoints where point.day >= vo2From {
             vo2ByDay[point.day] = DashboardDailyReading(day: point.day, value: point.value, source: point.source, key: point.sourceKey)
         }
         let vo2Rows = vo2ByDay.values.sorted { $0.day < $1.day }
         let raw: [TrendPoint]
         do {
             let samples = try await rawHR
-            let traces = HeartDashboardProjection.trace(samples.map { DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm)) },
-                from: midnight.timeIntervalSince1970, through: now.timeIntervalSince1970, gapSeconds: 1)
-            let all = traces.map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) }
-            raw = hrGapRuns(segments: all.map(\.segment)).flatMap {
-                ChartDownsample.minMaxBucketed(Array(all[$0]), threshold: ChartDownsample.markThreshold, targetCount: ChartDownsample.targetVertices)
-            }
+            raw = await Task.detached(priority: .userInitiated) {
+                let traces = HeartDashboardProjection.trace(samples.map { DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm)) },
+                    from: midnight.timeIntervalSince1970, through: now.timeIntervalSince1970, gapSeconds: 1)
+                let all = traces.map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) }
+                return DashboardTraceSampling.reduce(all)
+            }.value
         } catch {
             guard generation == self.generation, id == repo.deviceId else { return }
             self.error = "Stored heart rate could not be read: \(error.localizedDescription)"

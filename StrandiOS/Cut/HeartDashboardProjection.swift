@@ -1,6 +1,6 @@
 import Foundation
 
-struct DashboardDailyReading: Equatable {
+struct DashboardDailyReading: Equatable, Sendable {
     let day: String
     let value: Double
     let source: String
@@ -8,13 +8,13 @@ struct DashboardDailyReading: Equatable {
     var method: String? = nil
 }
 
-struct DashboardTraceSample: Equatable {
+struct DashboardTraceSample: Equatable, Sendable {
     let time: TimeInterval
     let value: Double
     var provenance: String = ""
 }
 
-struct DashboardTracePoint: Equatable {
+struct DashboardTracePoint: Equatable, Sendable {
     let time: TimeInterval
     let value: Double
     let segment: String

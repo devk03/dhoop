@@ -2,6 +2,9 @@ import SwiftUI
 import StrandDesign
 
 struct ProteinLogCard: View {
+    let day: String
+    @State private var logDay: String
+    init(day: String) { self.day = day; _logDay = State(initialValue: day) }
     @StateObject private var protein = ProteinLogStore()
     @ObservedObject private var food = CutPlanStore.shared
     @State private var showEditor = false
@@ -9,34 +12,33 @@ struct ProteinLogCard: View {
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            let day = Repository.localDayKey(context.date)
-            let grams = protein.total(day: day, foodProtein: food.protein(day: day))
-            NoopCard {
-                let layout = dynamicTypeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
-                    : AnyLayout(HStackLayout(spacing: NoopMetrics.space3))
-                layout {
-                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                        Label("Protein", systemImage: "fork.knife").font(StrandFont.headline)
-                            .foregroundStyle(StrandPalette.statusPositive)
-                        Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
-                            .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-                        Text(protein.targetGrams.map { "Logged today · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged today")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        if let target = protein.targetGrams {
-                            ProgressView(value: min(grams, target), total: target).tint(StrandPalette.statusPositive)
-                        }
+        let grams = protein.total(day: logDay, foodProtein: food.protein(day: logDay))
+        let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
+        NoopCard {
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
+                : AnyLayout(HStackLayout(spacing: NoopMetrics.space3))
+            layout {
+                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                    Label("Protein", systemImage: "fork.knife").font(StrandFont.headline)
+                        .foregroundStyle(StrandPalette.statusPositive)
+                    Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
+                        .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+            Text(protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    if let target = protein.targetGrams {
+                        ProgressView(value: min(grams, target), total: target).tint(StrandPalette.statusPositive)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityElement(children: .combine)
-                    Button { showEditor = true } label: { Label("Log protein", systemImage: "plus") }
-                        .font(StrandFont.subhead).buttonStyle(.bordered).buttonBorderShape(.capsule)
-                        .tint(StrandPalette.statusPositive).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                Button { logDay = Repository.localDayKey(Date()); showEditor = true } label: { Label("Log protein", systemImage: "plus") }
+                    .font(StrandFont.subhead).buttonStyle(.bordered).buttonBorderShape(.capsule)
+                        .tint(StrandPalette.statusPositive).frame(minHeight: NoopMetrics.minimumTouchTarget)
             }
         }
-        .sheet(isPresented: $showEditor) { ProteinEntrySheet(store: protein) }
+        .onChange(of: day) { _, value in logDay = value }
+        .sheet(isPresented: $showEditor, onDismiss: { logDay = Repository.localDayKey(Date()) }) { ProteinEntrySheet(store: protein) }
     }
 }
 

@@ -5,11 +5,27 @@ import StrandAnalytics
 
 /// Heart metrics and independent protein tracking, with optional weight-loss tools below.
 struct CutTodayView: View {
+    @EnvironmentObject private var model: AppModel
+    var body: some View { CutTodayDashboard(model: model).equatable() }
+}
+
+private struct CutTodayDashboard: View, Equatable {
+    let model: AppModel
+    private var repo: Repository { model.repo }
+    private var profile: ProfileStore { model.profile }
+    private var ble: BLEManager { model.ble }
+    private var live: LiveState { model.live }
+    @State private var refreshToken = 0
+    @State private var capturedAt = Date()
+    @State private var activeDeviceId = ""
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var wasBackgrounded = false
+    init(model: AppModel) {
+        self.model = model
+        _activeDeviceId = State(initialValue: model.repo.deviceId)
+    }
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model }
     @ObservedObject private var goal = CutGoalPreferences.shared
-    @EnvironmentObject var repo: Repository
-    @EnvironmentObject var profile: ProfileStore
-    @EnvironmentObject var live: LiveState
-    @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var router: NavRouter
     @ObservedObject private var plan = CutPlanStore.shared
 
@@ -39,20 +55,19 @@ struct CutTodayView: View {
     }
 
     var body: some View {
-        ScreenScaffold(title: nil, onRefresh: { ble.syncNow(); if goal.isEnabled { await load() } }, lazy: false, topBackground: nil) {
+        ScreenScaffold(title: nil, onRefresh: { ble.syncNow(); capturedAt = Date(); refreshToken += 1; if goal.isEnabled { await load() } }, lazy: false, topBackground: nil) {
             VStack(spacing: NoopMetrics.sectionGap) {
-                TimelineView(.periodic(from: .now, by: 60)) { context in
-                    HStack(alignment: .center, spacing: NoopMetrics.space3) {
-                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                            Text("Today").font(StrandFont.title1).foregroundStyle(StrandPalette.textPrimary)
-                            Text(context.date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                        }
-                        Spacer(minLength: NoopMetrics.space1)
-                        gearMenu
+                HStack(alignment: .center, spacing: NoopMetrics.space3) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                        Text("Today").font(StrandFont.title1).foregroundStyle(StrandPalette.textPrimary)
+                        Text(capturedAt.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     }
+                    Spacer(minLength: NoopMetrics.space1)
+                    gearMenu
                 }
-                HeartMetricsView()
+                HeartMetricsView(model: model, deviceId: activeDeviceId.isEmpty ? repo.deviceId : activeDeviceId,
+                                 refreshToken: refreshToken).equatable()
                 if goal.isEnabled {
                     budgetCard
                     fatCard
@@ -65,9 +80,17 @@ struct CutTodayView: View {
         }
         .task {
             seedPlanIfNeeded()
-            while !Task.isCancelled {
-                if goal.isEnabled { await load() }
-                try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
+            capturedAt = Date()
+            if goal.isEnabled { await load() }
+        }
+        .onReceive(repo.objectWillChange.receive(on: RunLoop.main)) {
+            let id = repo.deviceId
+            if id != activeDeviceId { activeDeviceId = id; capturedAt = Date(); refreshToken += 1 }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { wasBackgrounded = true }
+            if phase == .active, wasBackgrounded {
+                wasBackgrounded = false; capturedAt = Date(); refreshToken += 1
             }
         }
         .onChange(of: goal.isEnabled) { _, enabled in
@@ -82,7 +105,7 @@ struct CutTodayView: View {
         }
         .sheet(isPresented: $showAddFood) { AddFoodSheet(day: dayKey) }
         .sheet(isPresented: $showWeight) { LogWeightSheet() }
-        .sheet(isPresented: $showPlan) { CutPlanSheet() }
+        .sheet(isPresented: $showPlan, onDismiss: { capturedAt = Date(); refreshToken += 1 }) { CutPlanSheet() }
         .sheet(isPresented: $showGoal) { GoalSheet(currentKg: estimate.kg) }
         .sheet(isPresented: $showHealth, onDismiss: { Task { await load() } }) {
             NavigationStack {
@@ -95,7 +118,7 @@ struct CutTodayView: View {
                     }
             }
         }
-        .sheet(isPresented: $showSettings) {
+        .sheet(isPresented: $showSettings, onDismiss: { capturedAt = Date(); refreshToken += 1 }) {
             NavigationStack {
                 SettingsView()
                     .navigationBarTitleDisplayMode(.inline)
