@@ -92,7 +92,7 @@ public struct OverviewHRChart: View {
         xRange: ClosedRange<Date>? = nil,
         height: CGFloat = 220,
         showsHover: Bool = true,
-        touchScrub: Bool = false,
+        touchScrub: Bool = true,
         workoutTint: Color = StrandPalette.strain033,
         zoomDomain: Binding<ClosedRange<Date>?> = .constant(nil),
         zoomBounds: ClosedRange<Date>? = nil,
@@ -383,38 +383,6 @@ public struct OverviewHRChart: View {
         }
     }
 
-    #if os(iOS)
-    /// Touch-and-hold-then-drag scrub (#979 spin-off). The stationary hold (0.25 s within 8 pt) is the
-    /// gate that separates scrubbing from the pan drag (min 6 pt) and pinch that own immediate movement.
-    /// LongPressGesture reports no location, so the crosshair appears from the drag phase's coordinates —
-    /// in practice the first micro-movement of a held finger, which is immediate; the engage haptic marks
-    /// the mode switch the instant the hold lands. Drives the SAME `hoverX` the Mac pointer hover drives,
-    /// so the readout (crosshair + dot + tooltip) is byte-identical across input methods.
-    private var touchScrubGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.25, maximumDistance: 8)
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-            .onChanged { value in
-                guard case .second(true, let drag) = value else { return }
-                if !scrubEngaged {
-                    scrubEngaged = true
-                    StrandHaptic.selection.play()
-                }
-                if let drag {
-                    // Non-animating transaction, same reason as hover (TrendChart #104 flicker).
-                    var tx = Transaction()
-                    tx.disablesAnimations = true
-                    withTransaction(tx) { hoverX = drag.location.x }
-                }
-            }
-            .onEnded { _ in
-                scrubEngaged = false
-                var tx = Transaction()
-                tx.disablesAnimations = true
-                withTransaction(tx) { hoverX = nil }
-            }
-    }
-    #endif
-
     // MARK: Body
 
     public var body: some View {
@@ -468,7 +436,10 @@ public struct OverviewHRChart: View {
                 // what keeps zoom/pan untouched: an immediate drag exceeds the hold's max distance and
                 // still pans (ZoomPanModifier), pinch still zooms, double-tap still resets. `.subviews`
                 // masks the gesture entirely on the call sites that don't opt in.
-                .gesture(touchScrubGesture, including: (touchScrub && showsHover) ? .all : .subviews)
+                .chartTouchScrub(enabled: touchScrub && showsHover) { location in
+                    scrubEngaged = location != nil
+                    hoverX = location.flatMap { plot.contains($0) ? $0.x : nil }
+                }
                 #endif
             }
         }
@@ -515,6 +486,8 @@ public struct OverviewHRChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Heart rate, 24 hours"))
         .accessibilityValue(Text(accessibilitySummary))
+        .chartInspectionAccessibility(points.map { ChartScrubDatum(id: String($0.date.timeIntervalSince1970), x: $0.date.timeIntervalSince1970, y: $0.value,
+            value: "\(valueFormat($0.value)) bpm", context: dateFormat($0.date)) }, label: "Heart-rate history")
     }
 
     /// One-line VoiceOver summary: the day's HR (count, mean, range) plus the band/marker context the
@@ -640,6 +613,7 @@ private struct ZoomPanModifier: ViewModifier {
         // the 6–8 pt overlap band is what let a held-then-dragged finger begin panning during a scrub.
         let drag = DragGesture(minimumDistance: 10)
             .onChanged { value in
+                guard !ChartScrubActivity.blocksNavigation else { return }
                 let base = anchor ?? current()
                 if anchor == nil { anchor = base }
                 apply(pan(base, value.translation.width, plotWidth, bounds))

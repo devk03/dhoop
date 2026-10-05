@@ -132,8 +132,8 @@ public struct Sparkline: View {
                     )
                 }
             }
-            .animation(StrandMotion.fade, value: hoverX)
             .contentShape(Rectangle())
+            .chartTouchScrub(enabled: showsHover) { hoverX = $0?.x }
             .onContinuousHover(coordinateSpace: .local) { phase in
                 guard showsHover else { return }
                 switch phase {
@@ -145,6 +145,13 @@ public struct Sparkline: View {
             // spoken summary of the series so the trend isn't silent on iPhone.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(axSummary))
+            .accessibilityValue(hoverX.flatMap { ChartHoverMath.nearestIndex(toX: $0, count: values.count, width: geo.size.width) }.map { "\(valueFormat(values[$0])), \(indexLabel?($0) ?? "Recorded sample \($0 + 1)")" } ?? "Adjust to inspect.")
+            .accessibilityAdjustableAction { direction in
+                guard !values.isEmpty else { return }
+                let current = hoverX.flatMap { ChartHoverMath.nearestIndex(toX: $0, count: values.count, width: geo.size.width) } ?? (direction == .increment ? -1 : values.count)
+                let next = min(values.count - 1, max(0, current + (direction == .increment ? 1 : -1)))
+                hoverX = values.count > 1 ? CGFloat(next) / CGFloat(values.count - 1) * geo.size.width : geo.size.width / 2
+            }
         }
     }
 

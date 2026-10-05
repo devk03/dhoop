@@ -425,16 +425,14 @@ public struct TrendChart: View {
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard showsHover, showsBars else { return }
-                        let x = min(max(value.location.x, plot.minX), plot.maxX)
+                .chartTouchScrub(enabled: showsHover) { location in
+                    if let location, plot.contains(location) {
+                        let x = location.x
                         selectedPoint = nearestPoint(toX: x, proxy: proxy, plot: plot)
-                        holdingBar = true
+                        holdingBar = showsBars
                         hoverX = largeSelection ? nil : x
-                    }
-                    .onEnded { _ in holdingBar = false; hoverX = nil },
-                    including: showsHover && showsBars ? .all : .none)
+                    } else { holdingBar = false; hoverX = nil }
+                }
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     guard showsHover else { return }
                     // Update the hover position in a NON-animating transaction. Otherwise entering or
@@ -466,7 +464,13 @@ public struct TrendChart: View {
         // double-announced; the crisp interactive copy passes showsHover:true (default) and speaks.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel.map(Text.init) ?? Text("Trend", bundle: .module))
-        .accessibilityValue(Text(a11ySummary))
+        .accessibilityValue(Text(currentSelection.map { "\(valueFormat($0.value)), \(dateFormat($0.date))" } ?? a11ySummary))
+        .accessibilityHint("Touch and hold, then drag to inspect recorded values.")
+        .accessibilityAdjustableAction { direction in
+            guard !points.isEmpty else { return }
+            let index = currentSelection.flatMap { p in points.firstIndex { $0.date == p.date } } ?? (direction == .increment ? -1 : points.count)
+            selectedPoint = points[min(points.count - 1, max(0, index + (direction == .increment ? 1 : -1)))]
+        }
         .accessibilityHidden(!showsHover && accessibilityLabel == nil)
         }
         .onChange(of: points.map(\.date)) { _ in

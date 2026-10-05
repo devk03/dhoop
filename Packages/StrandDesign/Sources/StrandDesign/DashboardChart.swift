@@ -15,16 +15,27 @@ public struct DashboardChart: View {
     let dailyLabels: Bool
     let compact: Bool
     let singletonSegments: Set<String>
+    let inspectionData: [ChartScrubDatum]
 
     public init(points: [TrendPoint], domain: ClosedRange<Date>, range: ClosedRange<Double>, tint: Color,
                 style: Style = .line, height: CGFloat = NoopMetrics.dashboardTrendHeight,
-                label: String, dailyLabels: Bool = false, compact: Bool = false) {
+                label: String, dailyLabels: Bool = false, compact: Bool = false,
+                valueFormat: @escaping (Double) -> String = { $0.formatted(.number.precision(.fractionLength(0...2))) },
+                inspectionData: [ChartScrubDatum]? = nil) {
         // Callers prepare chronological, gap-preserving display points once with their snapshot.
         self.points = points
         self.singletonSegments = Set(Dictionary(grouping: points, by: \.segment).filter { $0.value.count == 1 }.keys)
         self.domain = domain; self.range = range; self.tint = tint; self.style = style
         self.height = height; self.label = label; self.dailyLabels = dailyLabels
         self.compact = compact
+        self.inspectionData = inspectionData ?? points.map {
+            ChartScrubDatum(id: "\($0.segment)|\($0.date.timeIntervalSince1970)", x: $0.date.timeIntervalSince1970,
+                y: $0.value, value: valueFormat($0.value),
+                context: style == .bars || domain.upperBound.timeIntervalSince(domain.lowerBound) > 86_400
+                    ? $0.date.formatted(date: .abbreviated, time: .omitted)
+                    : $0.date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute().second()),
+                segment: $0.segment)
+        }
     }
 
     public var body: some View {
@@ -80,6 +91,7 @@ public struct DashboardChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(summary)
+        .chartInspection(inspectionData, label: label, tint: tint, dailyBuckets: style == .bars)
     }
 
     private var summary: String {

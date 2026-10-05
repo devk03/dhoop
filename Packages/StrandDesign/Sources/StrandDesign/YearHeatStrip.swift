@@ -181,6 +181,7 @@ public struct YearHeatStrip: View {
         .frame(width: gridWidth, height: gridHeight, alignment: .topLeading)
         .overlay(hoverOverlay(weeks: weeks, gridSize: CGSize(width: gridWidth, height: gridHeight)))
         .contentShape(Rectangle())
+        .chartTouchScrub(enabled: showsHover) { hoverCell = $0.flatMap { cellIndex(at: $0, weekCount: weeks.count) } }
         .onContinuousHover(coordinateSpace: .local) { phase in
             guard showsHover else { return }
             switch phase {
@@ -196,6 +197,18 @@ public struct YearHeatStrip: View {
         // contributor. `children: .ignore` collapses the grid to this single summary at O(1) node cost.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(axSummary))
+        .accessibilityValue(selectedDescription)
+        .accessibilityAdjustableAction { direction in
+            let cells = weeks.enumerated().flatMap { w, week in week.cells.indices.compactMap { r in week.cells[r] == nil ? nil : (week: w, row: r) } }
+            guard !cells.isEmpty else { return }
+            let current = cells.firstIndex { $0.week == hoverCell?.week && $0.row == hoverCell?.row } ?? (direction == .increment ? -1 : cells.count)
+            hoverCell = cells[min(cells.count - 1, max(0, current + (direction == .increment ? 1 : -1)))]
+        }
+    }
+
+    private var selectedDescription: String {
+        guard let h = hoverCell, let day = weeks[h.week].cells[h.row] else { return "Adjust to inspect dates." }
+        return "\(day.score.map(valueFormat) ?? "No recorded value"), \(DateFormatterCache.day.string(from: day.date))"
     }
 
     /// A spoken one-line summary of the whole strip for VoiceOver.
@@ -251,7 +264,7 @@ public struct YearHeatStrip: View {
     @ViewBuilder
     private func hoverOverlay(weeks: [Week], gridSize: CGSize) -> some View {
         if showsHover, let h = hoverCell, h.week < weeks.count,
-           let day = weeks[h.week].cells[h.row], let score = day.score {
+           let day = weeks[h.week].cells[h.row] {
             let center = cellCenter(week: h.week, row: h.row)
             ZStack(alignment: .topLeading) {
                 // subtle highlight ring on the hovered cell
@@ -263,9 +276,9 @@ public struct YearHeatStrip: View {
                     anchor: center,
                     container: gridSize,
                     tooltip: ChartTooltip(
-                        value: valueFormat(score),
-                        label: "\(DateFormatterCache.day.string(from: day.date)) · \(StrandPalette.recoveryState(score))",
-                        accent: StrandPalette.recoveryColor(score)
+                        value: day.score.map(valueFormat) ?? "No recorded value",
+                        label: DateFormatterCache.day.string(from: day.date),
+                        accent: day.score.map(StrandPalette.recoveryColor) ?? StrandPalette.textSecondary
                     )
                 )
             }
