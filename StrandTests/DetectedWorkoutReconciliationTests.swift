@@ -2,6 +2,7 @@ import XCTest
 import Foundation
 import WhoopProtocol
 import WhoopStore
+import GRDB
 import StrandAnalytics
 @testable import Strand
 
@@ -79,6 +80,30 @@ final class DetectedWorkoutReconciliationTests: XCTestCase {
                 autoDismissedTokens: ["3000:3900"],
                 detectedDismissedTokens: ["990:1910"]),
             "a candidate dismissed through either historical contract must never reappear")
+    }
+
+    func testDetectedSaveReportsOnlyDurableSuccess() async throws {
+        let candidate = DetectedWorkout(startSec: 1000, endSec: 1900, avgBpm: 130, peakBpm: 150, durationMin: 15)
+        let store = try await WhoopStore.inMemory()
+        let repo = Repository(deviceId: deviceId)
+        repo.setStoreForTesting(store)
+        let saved = await repo.saveDetectedWorkout(candidate)
+        XCTAssertTrue(saved)
+        let rows = try await store.workouts(deviceId: deviceId, from: 0, to: 10000, limit: 100)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.startTs, 1000)
+    }
+
+    func testDetectedSaveDoesNotClaimSuccessWhenSQLiteRejectsWrite() async throws {
+        let candidate = DetectedWorkout(startSec: 1000, endSec: 1900, avgBpm: 130, peakBpm: 150, durationMin: 15)
+        let store = try await WhoopStore.inMemory()
+        let repo = Repository(deviceId: deviceId)
+        repo.setStoreForTesting(store)
+        try await store.registryWriter.write { db in try db.execute(sql: "PRAGMA query_only = ON") }
+        let saved = await repo.saveDetectedWorkout(candidate)
+        XCTAssertFalse(saved, "Keep the suggestion available when its row was not persisted")
+        let rows = try await store.workouts(deviceId: deviceId, from: 0, to: 10000, limit: 100)
+        XCTAssertTrue(rows.isEmpty)
     }
 
     func testLegacyRowsAreRemovedFromTheirArchivedComputedOwner() async throws {

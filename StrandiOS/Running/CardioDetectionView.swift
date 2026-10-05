@@ -8,10 +8,11 @@ struct CardioDetectionView: View {
     let localSpans: [(start: Int, end: Int)]
     let sessionActive: Bool
     @State private var candidate: DetectedWorkout?
+    @State private var candidateDeviceID: String?
     @State private var saving = false
     @State private var message: String?
     private var loadKey: String {
-        "\(repo.refreshSeq)|\(enabled)|\(sessionActive)|\(localSpans.map { "\($0.start):\($0.end)" }.joined(separator: ","))"
+        "\(repo.deviceId)|\(repo.refreshSeq)|\(enabled)|\(sessionActive)|\(localSpans.map { "\($0.start):\($0.end)" }.joined(separator: ","))"
     }
     var body: some View {
         NoopCard {
@@ -35,18 +36,24 @@ struct CardioDetectionView: View {
             }
         }
         .task(id: loadKey) {
-            guard enabled, !sessionActive else { candidate = nil; return }
+            let deviceID = repo.deviceId
+            candidate = nil; candidateDeviceID = nil
+            guard enabled, !sessionActive else { return }
             let next = await repo.autoDetectCandidate(excluding: localSpans.map { SavedWorkoutSpan(startSec: $0.start, endSec: $0.end) })
-            guard !Task.isCancelled else { return }
-            candidate = next
+            guard !Task.isCancelled, repo.deviceId == deviceID else { return }
+            candidateDeviceID = deviceID; candidate = next
         }
     }
     private func save(_ value: DetectedWorkout) {
+        guard candidateDeviceID == repo.deviceId, enabled, !sessionActive else { return }
+        let deviceID = repo.deviceId
         saving = true
         Task {
+            guard candidateDeviceID == deviceID, repo.deviceId == deviceID else { saving = false; return }
             let success = await repo.saveDetectedWorkout(value)
             await repo.refresh()
             saving = false
+            guard deviceID == repo.deviceId else { return }
             if success { candidate = nil; message = "Activity saved. Find it in Cardio history." }
             else { message = "Could not save this activity. Try again." }
         }

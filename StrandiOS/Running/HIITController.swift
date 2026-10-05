@@ -94,13 +94,11 @@ final class HIITController: ObservableObject {
         release(); persist()
         run.finish()
         do {
-            let data = try JSONEncoder().encode(run)
-            let name = "workout-\(Int(run.startedAt.timeIntervalSince1970))-\(run.id.uuidString).json"
-            try data.write(to: directory.appendingPathComponent(name), options: .atomic)
-            try Data("null".utf8).write(to: directory.appendingPathComponent("active.json"), options: .atomic)
+            let cleanupError = try HIITWorkoutFiles(directory: directory).save(run)
             historyRevision += 1
             working = nil; session = nil; currentBPM = nil
-            message = "\(selectedKind.title) saved on this phone."
+            message = cleanupError.map { "\(selectedKind.title) saved. Draft cleanup could not finish: \($0)" }
+                ?? "\(selectedKind.title) saved on this phone."
         } catch { message = "Could not save workout: \(error.localizedDescription). Your session remains open." }
     }
     private var ready: Bool {

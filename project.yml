@@ -50,6 +50,9 @@ packages:
     path: Packages/WhoopProtocol
   WhoopStore:
     path: Packages/WhoopStore
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    exactVersion: 6.29.3
   StrandAnalytics:
     path: Packages/StrandAnalytics
   StrandImport:
@@ -91,6 +94,7 @@ targets:
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
       - StrandiOS/Running/RunningZoneSession.swift
       - StrandiOS/Running/HIITSession.swift
+      - StrandiOS/Running/HIITWorkoutFiles.swift
       - StrandiOS/Running/CardioHistoryProjection.swift
       - StrandiOS/Cut/TimedHeartRateSession.swift
       - Strand/BLE/LiveHeartRateEvidence.swift
@@ -213,6 +217,7 @@ targets:
       Debug: Strand/Oura/OuraConfig.xcconfig
       Release: Strand/Oura/OuraConfig.xcconfig
     dependencies:
+      - package: GRDB
       - target: Strand
       - package: WhoopProtocol
       - package: WhoopStore

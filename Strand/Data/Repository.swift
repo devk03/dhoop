@@ -2957,21 +2957,23 @@ final class Repository: ObservableObject {
     ///    then retires the stale strap row. A failed write therefore preserves the original;
     ///  - an IMPORTED row is never passed here as `replacing` (duplicating one is a pure add), so its
     ///    history is never touched.
-    func saveManualWorkout(_ row: WorkoutRow, replacing old: WorkoutRow? = nil) async {
-        guard let store = await ensureStore() else { return }
+    @discardableResult
+    func saveManualWorkout(_ row: WorkoutRow, replacing old: WorkoutRow? = nil) async -> Bool {
+        let owner = deviceId
+        guard let store = await ensureStore() else { return false }
         if let old, WorkoutSource.classify(old.source) == .detected {
             // Write the replacement first. If that insert fails, the grandfathered source row and its
             // visibility remain untouched; a failed explicit edit must not turn into data loss.
-            do { _ = try await store.upsertWorkouts([row], deviceId: deviceId) }
-            catch { return }
+            do { _ = try await store.upsertWorkouts([row], deviceId: owner) }
+            catch { return false }
             await dismissDetected(old)
-            return
+            return true
         } else if let old, old.startTs != row.startTs || old.sport != row.sport {
             // Write the replacement before deleting anything. If SQLite rejects the insert, leave both the
             // original row and its route untouched; if the later delete fails, the recoverable result is two
             // rows rather than lost history.
-            do { _ = try await store.upsertWorkouts([row], deviceId: deviceId) }
-            catch { return }
+            do { _ = try await store.upsertWorkouts([row], deviceId: owner) }
+            catch { return false }
             // #10: the GPS route lives in RouteStore keyed by the natural key (startTs + sport), NOT in the
             // DB row. Copy it only after the replacement row is durable. Keep the old copy until the old
             // DB row is successfully retired, so a delete failure preserves both complete versions.
@@ -2980,7 +2982,7 @@ final class Repository: ObservableObject {
                 RouteStore.store(route, startTs: row.startTs, sport: row.sport)
             }
             do {
-                _ = try await store.deleteWorkouts(deviceId: deviceId, sport: old.sport,
+                _ = try await store.deleteWorkouts(deviceId: owner, sport: old.sport,
                                                    from: old.startTs, to: old.startTs)
                 if oldRoute != nil {
                     RouteStore.remove(startTs: old.startTs, sport: old.sport)
@@ -2988,9 +2990,10 @@ final class Repository: ObservableObject {
             } catch {
                 // Replacement and both route keys remain available; retrying the edit is safe.
             }
-            return
+            return true
         }
-        _ = try? await store.upsertWorkouts([row], deviceId: deviceId)
+        do { _ = try await store.upsertWorkouts([row], deviceId: owner); return true }
+        catch { return false }
     }
 
     /// Re-label a legacy detected bout: copy it to a manual strap row with the chosen sport, then delete
@@ -3261,8 +3264,7 @@ final class Repository: ObservableObject {
         guard let row = WorkoutSource.buildManualRow(start: start, durationMin: durationMin,
                                                      sport: "Workout", avgHr: w.avgBpm,
                                                      energyKcal: nil) else { return false }
-        await saveManualWorkout(row)
-        return true
+        return await saveManualWorkout(row)
     }
 
     /// DISMISS a suggested window: record its span durably so it never re-prompts. Idempotent.
