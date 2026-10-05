@@ -159,6 +159,7 @@ final class RunningSessionController: ObservableObject {
     }
 
     func start() {
+        if app?.activeWorkout != nil { statusMessage = "End the other active workout before starting a zone run."; return }
         updateConnection()
         guard !hasSession, isConnected, let app, let target = chosenTarget,
               let run = RunningZoneSession(deviceId: app.repo.deviceId, target: target, goalSeconds: Double(targetMinutes * 60)) else { return }
@@ -173,7 +174,7 @@ final class RunningSessionController: ObservableObject {
 
     func resume() {
         updateConnection()
-        guard isConnected, let app, var run = workingSession, run.phase == .paused,
+        guard isConnected, let app, app.activeWorkout == nil, !hiit.hasSession, var run = workingSession, run.phase == .paused,
               run.deviceId == app.repo.deviceId else {
             if workingSession != nil { statusMessage = "Connect the WHOOP used for this session before resuming." }
             return
@@ -248,6 +249,7 @@ final class RunningSessionController: ObservableObject {
     private func processIncoming() {
         updateConnection()
         guard let app, var run = workingSession, run.phase == .running else { return }
+        guard app.activeWorkout == nil else { pause(reason: "Paused because another workout started."); return }
         guard isConnected, app.repo.deviceId == run.deviceId else {
             pause(reason: "Paused: WHOOP disconnected or the selected device changed.")
             if configuredDeviceId != app.repo.deviceId {
@@ -309,9 +311,11 @@ final class RunningSessionController: ObservableObject {
             pause(reason: "Run paused at the 24-hour activity limit. End and save this session.")
             return
         }
-        if bpm == nil && statusMessage != "Waiting for fresh readable WHOOP heart rate." {
-            statusMessage = "Waiting for fresh readable WHOOP heart rate."
-        }
+        let displayStatus: String
+        if let bpm {
+            displayStatus = run.target.contains(bpm) ? "In target zone" : bpm < run.target.lowerBPM ? "Below target zone" : "Above target zone"
+        } else { displayStatus = "Waiting for fresh readable WHOOP heart rate." }
+        if statusMessage != displayStatus { statusMessage = displayStatus }
         let uptime = ProcessInfo.processInfo.systemUptime
         if uptime - lastPersistUptime >= 5 { lastPersistUptime = uptime; persistDraft() }
     }

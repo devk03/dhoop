@@ -2729,9 +2729,17 @@ final class Repository: ObservableObject {
     /// Dismissed spans are still filtered HERE so every consumer (Workouts, Today, Coach) preserves the
     /// user's prior "not a workout" decisions and the confirmation card cannot resurrect those windows.
     func workoutRows(days: Int = 4000) async -> [WorkoutRow] {
-        guard let store = await ensureStore() else { return [] }
         let now = Int(Date().timeIntervalSince1970)
-        let lo = now - days * 86_400, hi = now + 86_400
+        return await workoutRows(from: now - days * 86_400, to: now + 86_400, limit: 5000)
+    }
+
+    /// Explicit start-date window for browsing all saved cardio history without a row cap.
+    func cardioWorkoutRows(from: Int, to: Int) async -> [WorkoutRow] {
+        await workoutRows(from: from, to: to, limit: -1)
+    }
+
+    private func workoutRows(from lo: Int, to hi: Int, limit: Int) async -> [WorkoutRow] {
+        guard let store = await ensureStore() else { return [] }
         // UNION every registered WHOOP + canonical (and computed siblings) so workouts banked before a
         // re-add remain visible alongside every retained strap's live workouts.
         // De-dup identical same-source rows that appear under both union ids by natural key (the cross-SOURCE
@@ -2742,7 +2750,7 @@ final class Repository: ObservableObject {
         // sessions (Hevy / Liftosaur) and imported activity FILES (#29: FIT / GPX / TCX, or a successful
         // file import never appears here at all). HR is reconciled from the strap trace at the end.
         for id in Self.workoutNamespaces(rawIds: rawPhysiologyReadIds(store: store)) {
-            rows += (try? await store.workouts(deviceId: id, from: lo, to: hi, limit: 5000)) ?? []
+            rows += (try? await store.workouts(deviceId: id, from: lo, to: hi, limit: limit)) ?? []
         }
         rows = Self.dedupWorkoutsByNaturalKey(rows)
         let spans = WorkoutSource.parseDismissedSpans(dismissedDetectedSpans)
@@ -3191,7 +3199,7 @@ final class Repository: ObservableObject {
     /// candidate to suggest , newest first , that is NOT already saved and NOT previously dismissed.
     /// Returns nil when the toggle is off, there's nothing to suggest, or detection finds nothing.
     /// PURE READ: never writes a workout. The window scans from `daysBack` days ago to now.
-    func autoDetectCandidate(daysBack: Int = 2) async -> DetectedWorkout? {
+    func autoDetectCandidate(daysBack: Int = 2, excluding localSessions: [SavedWorkoutSpan] = []) async -> DetectedWorkout? {
         guard PuffinExperiment.autoDetectWorkoutsEnabled else { return nil }
         let now = Int(Date().timeIntervalSince1970)
         let from = now - daysBack * 86_400
@@ -3204,7 +3212,7 @@ final class Repository: ObservableObject {
 
         // Exclude every already-saved workout window (any source , strap, manual, imported, detected).
         let saved = await workoutRows()
-        let savedSpans = saved.map { SavedWorkoutSpan(startSec: $0.startTs, endSec: $0.endTs) }
+        let savedSpans = saved.map { SavedWorkoutSpan(startSec: $0.startTs, endSec: $0.endTs) } + localSessions
 
         // Workouts & GPS test mode: the published 12-minute result remains byte-identical. Aggregate,
         // local-only comparisons include that 12-minute baseline plus the 10- and 15-minute alternatives.

@@ -7,7 +7,6 @@ struct HIITWorkoutView: View {
     let zones: [RunningZoneTarget]
     let canStart: Bool
     let testBuzz: () -> Void
-    @State private var selected: HIITSession?
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = NoopMetrics.dashboardHeroNumber
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
@@ -21,14 +20,13 @@ struct HIITWorkoutView: View {
         }
         Text("Keep your phone nearby and Dhoop open for reliable cues. HIIT pauses if iOS interrupts timing or WHOOP disconnects.")
             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-        if !controller.saved.isEmpty { history }
     }
     private var setup: some View {
         Group {
             NoopCard {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                     HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
-                        Text("Custom intervals").font(StrandFont.headline)
+                        Text(controller.selectedKind == .hiit ? "Custom HIIT" : "Interval workout").font(StrandFont.headline)
                         Spacer(minLength: NoopMetrics.space1)
                         Text(clock(Double(controller.plan.totalSeconds))).font(StrandFont.headline).monospacedDigit()
                     }
@@ -41,9 +39,9 @@ struct HIITWorkoutView: View {
             }
             NoopCard {
                 VStack(spacing: NoopMetrics.space3) {
-                    Stepper("Warm-up · \(clock(Double(controller.plan.warmupSeconds)))", value: $controller.plan.warmupSeconds, in: 0...900, step: 30)
+                    Stepper("Warm-up · \(clock(Double(controller.plan.warmupSeconds)))", value: $controller.plan.warmupSeconds, in: 0...900, step: 5)
                     Divider()
-                    Stepper("Cool-down · \(clock(Double(controller.plan.cooldownSeconds)))", value: $controller.plan.cooldownSeconds, in: 0...900, step: 30)
+                    Stepper("Cool-down · \(clock(Double(controller.plan.cooldownSeconds)))", value: $controller.plan.cooldownSeconds, in: 0...900, step: 5)
                     Divider()
                     Stepper("Rounds · \(controller.plan.rounds)", value: $controller.plan.rounds, in: 1...30)
                 }.font(StrandFont.body).monospacedDigit()
@@ -59,7 +57,7 @@ struct HIITWorkoutView: View {
                 }
             }
             Button { controller.start(zones: zones, otherSessionActive: !canStart) } label: {
-                Label("Start HIIT", systemImage: "play.fill").font(StrandFont.headline)
+                Label("Start \(controller.selectedKind.title)", systemImage: "play.fill").font(StrandFont.headline)
                     .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
             }.buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan).disabled(!canStart || !controller.plan.isValid)
             if !canStart { Text("Connect and pair your WHOOP to start.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
@@ -72,13 +70,13 @@ struct HIITWorkoutView: View {
                 Label(title, systemImage: title == "Work" ? "flame.fill" : "wind").font(StrandFont.headline).foregroundStyle(tint)
                 Text(clock(Double(value.wrappedValue))).font(StrandFont.number(numberSize, weight: .bold)).monospacedDigit()
                 HStack {
-                    Button { value.wrappedValue = max(15, value.wrappedValue - 15) } label: {
+                    Button { value.wrappedValue = max(5, value.wrappedValue - 5) } label: {
                         Image(systemName: "minus").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
-                    }.accessibilityLabel("Decrease \(title.lowercased()) by 15 seconds").disabled(value.wrappedValue <= 15)
+                    }.accessibilityLabel("Decrease \(title.lowercased()) by 5 seconds").disabled(value.wrappedValue <= 5)
                     Spacer(minLength: NoopMetrics.space1)
-                    Button { value.wrappedValue = min(600, value.wrappedValue + 15) } label: {
+                    Button { value.wrappedValue = min(600, value.wrappedValue + 5) } label: {
                         Image(systemName: "plus").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
-                    }.accessibilityLabel("Increase \(title.lowercased()) by 15 seconds").disabled(value.wrappedValue >= 600)
+                    }.accessibilityLabel("Increase \(title.lowercased()) by 5 seconds").disabled(value.wrappedValue >= 600)
                 }.buttonStyle(.bordered).tint(tint)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
@@ -104,7 +102,7 @@ struct HIITWorkoutView: View {
                 Button { controller.pause() } label: { Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
                     .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan)
             } else if run.state == .paused {
-                Button { controller.resume() } label: { Label("Resume HIIT", systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
+                Button { controller.resume() } label: { Label("Resume \(controller.selectedKind.title)", systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
                     .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan).disabled(!canStart)
             }
             Button { controller.save() } label: { Label("End and save", systemImage: "stop.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
@@ -120,27 +118,6 @@ struct HIITWorkoutView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).accessibilityElement(children: .combine)
         }
     }
-    private var history: some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                Text("Recent HIIT workouts").font(StrandFont.headline)
-                ForEach(controller.saved.prefix(20)) { run in
-                    Button { selected = run } label: {
-                        HStack(spacing: NoopMetrics.space2) {
-                            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                Text(run.startedAt.formatted(date: .abbreviated, time: .shortened)).font(StrandFont.subhead)
-                                Text("\(run.plan.rounds) rounds planned · \(clock(run.elapsed)) · \(run.state == .completed ? "complete" : "ended early")")
-                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            }
-                            Spacer(minLength: NoopMetrics.space1)
-                            Image(systemName: "chevron.right")
-                        }.frame(minHeight: NoopMetrics.minimumTouchTarget)
-                    }.buttonStyle(.plain)
-                }
-            }
-        }
-        .sheet(item: $selected) { HIITReviewView(run: $0) }
-    }
     private func nextLabel(_ run: HIITSession) -> String {
         guard let current = run.interval, let next = run.plan.intervals.first(where: { $0.index == current.index + 1 }) else { return "Finish this interval" }
         return "Next · \(next.kind.label) for \(clock(Double(next.duration)))"
@@ -148,7 +125,7 @@ struct HIITWorkoutView: View {
     private func clock(_ seconds: Double) -> String { String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60) }
 }
 
-private struct HIITReviewView: View {
+struct HIITReviewView: View {
     let run: HIITSession
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -198,7 +175,7 @@ private struct HIITReviewView: View {
                 Text("WHOOP heart-rate response, not a validated strain or calorie score. Missing HR remains unknown.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
-            .navigationTitle("HIIT effort").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("\((run.kind ?? .hiit).title) effort").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }

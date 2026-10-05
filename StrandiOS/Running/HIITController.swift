@@ -5,9 +5,10 @@ import UIKit
 @MainActor
 final class HIITController: ObservableObject {
     @Published var plan = HIITPlan()
+    @Published private(set) var selectedKind: HIITWorkoutKind = .hiit
+    @Published private(set) var historyRevision = 0
     @Published var cuesEnabled = true
     @Published private(set) var session: HIITSession?
-    @Published private(set) var saved: [HIITSession] = []
     @Published private(set) var currentBPM: Int?
     @Published private(set) var message: String?
     private var app: AppModel?
@@ -34,17 +35,14 @@ final class HIITController: ObservableObject {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
                 .filter { $0.lastPathComponent.hasPrefix("workout-") }.sorted { $0.lastPathComponent > $1.lastPathComponent }
-            saved = files.prefix(20).compactMap { url in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return try? JSONDecoder().decode(HIITSession.self, from: data)
-            }.sorted { $0.startedAt > $1.startedAt }
             if let data = try? Data(contentsOf: directory.appendingPathComponent("active.json")),
                var restored = try? JSONDecoder().decode(HIITSession.self, from: data),
-               !saved.contains(where: { $0.id == restored.id }) {
+               !files.contains(where: { $0.lastPathComponent.hasSuffix("-\(restored.id.uuidString).json") }) {
                 restored.pause(); working = restored; session = restored
-                message = "HIIT restored paused. Resume when ready, or save the session."
+                selectedKind = restored.kind ?? .hiit; plan = restored.plan
+                message = "Interval workout restored paused. Resume when ready, or save the session."
             }
-        } catch { message = "HIIT storage unavailable: \(error.localizedDescription)" }
+        } catch { message = "Interval storage unavailable: \(error.localizedDescription)" }
     }
 
     deinit {
@@ -61,12 +59,22 @@ final class HIITController: ObservableObject {
             .sink { [weak self] _ in self?.persist() }.store(in: &subscriptions)
     }
 
+    func selectKind(_ kind: HIITWorkoutKind) {
+        guard !hasSession, selectedKind != kind else { return }
+        if let data = try? JSONEncoder().encode(plan) { UserDefaults.standard.set(data, forKey: configurationKey) }
+        selectedKind = kind
+        if let data = UserDefaults.standard.data(forKey: configurationKey),
+           let saved = try? JSONDecoder().decode(HIITPlan.self, from: data), saved.isValid { plan = saved }
+        else { plan = kind == .hiit ? HIITPlan() : HIITPlan(rounds: 4, workSeconds: 240, restSeconds: 120, warmupSeconds: 300, cooldownSeconds: 300) }
+    }
+    private var configurationKey: String { selectedKind == .hiit ? "dhoop.hiit.plan.v1" : "dhoop.intervals.plan.v1" }
+
     func start(zones: [RunningZoneTarget], otherSessionActive: Bool) {
         if app?.activeWorkout != nil { message = "End the other active workout before starting HIIT."; return }
         guard !hasSession, !otherSessionActive, ready, app?.activeWorkout == nil,
-              let app, let run = HIITSession(deviceId: app.repo.deviceId, plan: plan, zones: zones) else { return }
+              let app, let run = HIITSession(deviceId: app.repo.deviceId, plan: plan, zones: zones, kind: selectedKind) else { return }
         working = run; session = run; lastReceipt = run.startedAt.timeIntervalSince1970
-        if let data = try? JSONEncoder().encode(plan) { UserDefaults.standard.set(data, forKey: "dhoop.hiit.plan.v1") }
+        if let data = try? JSONEncoder().encode(plan) { UserDefaults.standard.set(data, forKey: configurationKey) }
         UserDefaults.standard.set(cuesEnabled, forKey: "dhoop.hiit.cues")
         acquire(); cue(run.interval); persist()
     }
@@ -90,10 +98,10 @@ final class HIITController: ObservableObject {
             let name = "workout-\(Int(run.startedAt.timeIntervalSince1970))-\(run.id.uuidString).json"
             try data.write(to: directory.appendingPathComponent(name), options: .atomic)
             try Data("null".utf8).write(to: directory.appendingPathComponent("active.json"), options: .atomic)
-            saved.removeAll { $0.id == run.id }; saved.insert(run, at: 0)
+            historyRevision += 1
             working = nil; session = nil; currentBPM = nil
-            message = "HIIT saved on this phone."
-        } catch { message = "Could not save HIIT: \(error.localizedDescription). Your session remains open." }
+            message = "\(selectedKind.title) saved on this phone."
+        } catch { message = "Could not save workout: \(error.localizedDescription). Your session remains open." }
     }
     private var ready: Bool {
         guard let app else { return false }
@@ -161,6 +169,6 @@ final class HIITController: ObservableObject {
     private func persist() {
         guard let working else { return }
         do { try JSONEncoder().encode(working).write(to: directory.appendingPathComponent("active.json"), options: .atomic) }
-        catch { message = "HIIT save failed: \(error.localizedDescription)" }
+        catch { message = "Workout save failed: \(error.localizedDescription)" }
     }
 }

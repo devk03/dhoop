@@ -77,7 +77,7 @@ struct RootTabView: View {
 
     @ViewBuilder private var runningTabRoot: some View {
         if let runningSession { RunningView(controller: runningSession) }
-        else { Text("Loading running program…").font(StrandFont.body) }
+        else { Text("Loading cardio…").font(StrandFont.body) }
     }
 
     /// Native tab selection binding. SwiftUI sends taps on the already-selected item through the
@@ -138,7 +138,7 @@ struct RootTabView: View {
         TabView(selection: nativeTabSelection) {
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(CutSleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            tab(runningTabRoot, "Running", "figure.run", path: $tabPaths[5], scrollSignal: scrollTop[5]).tag(5)
+            tab(runningTabRoot, "Cardio", "heart.fill", path: $tabPaths[5], scrollSignal: scrollTop[5]).tag(5)
         }
         .tint(StrandPalette.accent)
         .onAppear { if runningSession == nil { runningSession = RunningSessionController() } }

@@ -16,47 +16,70 @@ struct RunningView: View {
 private struct RunningContent: View, Equatable {
     @ObservedObject var controller: RunningSessionController
     @ObservedObject var hiit: HIITController
-    @State private var workoutMode = "Zone goal"
+    @State private var workoutMode = "Zone run"
+    @State private var section = "Train"
+    @State private var historyRange: MetricRangeSelection = { var range = MetricRangeSelection(); range.preset = .month; return range }()
+    @State private var capturedAt = Date()
+    @StateObject private var history = CardioHistoryModel()
+    @EnvironmentObject private var repo: Repository
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.controller === rhs.controller }
 
     var body: some View {
-        ScreenScaffold(title: "Running", subtitle: "Zone goals and interval workouts") {
-            if controller.session == nil && !hiit.hasSession {
-                Picker("Workout type", selection: $workoutMode) {
-                    Text("Zone goal").tag("Zone goal")
-                    Text("HIIT").tag("HIIT")
+        ScreenScaffold(title: nil, onRefresh: { capturedAt = Date(); await repo.refresh() }) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Cardio").font(StrandFont.title1)
+                Picker("Cardio section", selection: $section) {
+                    Text("Train").tag("Train")
+                    Text("History").tag("History")
                 }.pickerStyle(.segmented).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                if section == "History" {
+                    CardioHistoryView(model: history, range: $historyRange, now: capturedAt)
+                } else {
+                    if controller.session == nil && !hiit.hasSession {
+                        Picker("Workout type", selection: $workoutMode) {
+                            Text("Zone run").tag("Zone run")
+                            Text("HIIT").tag("HIIT")
+                            Text("Intervals").tag("Intervals")
+                        }.pickerStyle(.segmented).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    }
+                    if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
+                        HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
+                            testBuzz: { controller.testBuzz() })
+                    } else {
+                        if let run = controller.session { sessionCard(run) } else { setupCard }
+                        alertsCard
+                        if let message = controller.statusMessage {
+                            Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                    CardioDetectionView(localSpans: history.localSpans, sessionActive: controller.hasSession || history.loading)
+                    Button { section = "History" } label: {
+                        Label("View all cardio history", systemImage: "clock.arrow.circlepath")
+                            .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
+                    }.buttonStyle(.bordered).font(StrandFont.subhead)
+                }
             }
-            if hiit.hasSession || (controller.session == nil && workoutMode == "HIIT") {
-                HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
-                    testBuzz: { controller.testBuzz() })
-            } else {
-                if let run = controller.session { sessionCard(run) } else { setupCard }
-                alertsCard
-            }
-            if workoutMode == "Zone goal", let message = controller.statusMessage {
-                Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if workoutMode == "Zone goal", !controller.summaries.isEmpty { historyCard }
-            if workoutMode == "Zone goal" && !hiit.hasSession {
-            Text("Only adjacent fresh WHOOP readings count. Missing readings and pauses add no in-zone time. Running uses live HR only while a session is explicitly active; Today remains a historical snapshot.")
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("Keep your phone nearby and Dhoop connected for WHOOP zone alerts.")
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
+        }
+        .onAppear { capturedAt = Date() }
+        .onChange(of: section) { _, value in if value == "History" { capturedAt = Date() } }
+        .onChange(of: controller.summaries.count) { _, _ in capturedAt = Date() }
+        .onChange(of: hiit.historyRevision) { _, _ in capturedAt = Date() }
+        .onChange(of: repo.refreshSeq) { _, _ in capturedAt = Date() }
+        .onChange(of: workoutMode) { _, mode in
+            if mode != "Zone run" { hiit.selectKind(mode == "Intervals" ? .intervals : .hiit) }
+        }
+        .task(id: "\(repo.refreshSeq)|\(repo.deviceId)|\(controller.summaries.count)|\(hiit.historyRevision)|\(historyRange.window(now: capturedAt).identity)") {
+            await history.load(repo: repo, zones: controller.summaries, window: historyRange.window(now: capturedAt))
         }
     }
 
     private var setupCard: some View {
         NoopCard(tint: StrandPalette.metricCyan) {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
-                Label("In-zone goal", systemImage: "figure.run")
+                Label(controller.chosenTarget?.name ?? "Zone run", systemImage: "figure.run")
                     .font(StrandFont.title2).foregroundStyle(StrandPalette.metricCyan)
                 if !controller.zones.isEmpty {
                     Toggle("Choose a manual BPM target", isOn: $controller.useManualTarget).font(StrandFont.body)
@@ -82,19 +105,24 @@ private struct RunningContent: View, Equatable {
                     Text(target.rangeLabel).font(StrandFont.title2).foregroundStyle(StrandPalette.textPrimary)
                         .accessibilityLabel("Target range \(target.rangeLabel)")
                 }
-                Text(controller.baselineDescription).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !controller.useManualTarget && controller.selectedZone != 2 && controller.zones.count >= 2 {
+                    Button("Use Zone 2 for a steady run") { controller.selectedZone = 2 }.font(StrandFont.subhead)
+                }
+                DisclosureGroup("Zone method") {
+                    Text(controller.baselineDescription).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }.font(StrandFont.subhead)
                 Stepper("Goal: \(controller.targetMinutes) minutes in-zone", value: $controller.targetMinutes, in: 1...180)
                     .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 Button { controller.start() } label: {
-                    Label("Start run", systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
+                    Label("Start zone run", systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
                 }
                 .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan)
                 .disabled(!controller.isConnected || controller.chosenTarget == nil)
                 if !controller.isConnected {
                     Text("Connect and pair your WHOOP to start.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
-                Text("The goal counts time inside the target only; elapsed run time is shown separately.")
+                Text("The goal counts measured time inside the target. Elapsed time is shown separately. Zone 2 is an HR target, not a prescribed running speed.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -179,27 +207,6 @@ private struct RunningContent: View, Equatable {
                     Text("Workout haptics are off in Settings. Zone alerts respect that preference.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private var historyCard: some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: NoopMetrics.space4) {
-                Text("Recent runs").font(StrandFont.headline)
-                ForEach(controller.summaries.prefix(5)) { summary in
-                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                        Text(summary.startedAt.formatted(date: .abbreviated, time: .shortened)).font(StrandFont.subhead)
-                        Text("\(summary.target.name) · \(summary.target.rangeLabel) · \(clock(summary.inZoneSeconds)) in-zone")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(summary.goalMet ? "Goal reached" : "\(clock(summary.elapsedSeconds)) elapsed · goal not reached")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                        Text(summary.target.method).font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .accessibilityElement(children: .combine)
                 }
             }
         }

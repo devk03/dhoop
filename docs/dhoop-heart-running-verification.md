@@ -284,3 +284,62 @@ installation. Live Eight Sleep provider retrieval on the phone, full spoken
 VoiceOver navigation and physiological agreement on a paired overnight record
 remain unverified. No successful live WHOOP/Apple comparison is claimed from
 non-overlapping archived dates.
+
+## Build 430: unified Cardio, interval editing and older sessions
+
+The former Running tab is Cardio. Train offers Zone run, HIIT and Intervals;
+History presents local zone summaries, every saved HIIT/interval JSON file and
+repository workouts through one date-filtered index. HIIT and timed Intervals
+share the explicit vibration/HR engine but retain separate editable plans and
+saved kind labels. Intervals starts with a four-by-four-minute editable plan.
+All duration controls use five-second steps; work/recovery permit five seconds
+and optional warm-up/cool-down permit zero. Older files without a kind decode
+as HIIT without rewriting them. No new haptic command was introduced.
+
+Zone runs retain observed time-in-target goals and the existing gated below/above
+WHOOP cues after first entering target. Zone 2 remains selectable using the dated
+HRR/custom-zone method; a manual BPM target remains available. The fresh status
+now says Below/In/Above target instead of leaving the initial waiting message
+visible after readings arrive. Another manual workout prevents starting or
+continuing a zone/interval session concurrently.
+
+History includes all local saved files, reading the metadata off-main and full
+interval detail on demand. There is no 20-file history cutoff. Shared workout
+reads use an explicit start-date window and SQLite's uncapped limit while retaining
+source union, dismissed-span filtering, existing source dedup and bounded HR
+enrichment. Date/type filters, search, month groups and 40-row display pages make
+older sessions accessible. Saved sessions advance the history date anchor, so a
+new workout is not hidden behind the screen's original opening time. Known
+strength aliases and dedicated lifting-source rows are excluded; generic activity
+remains honestly labeled. Local/imported representations link only with effectively
+identical start/end boundaries (within two seconds and one unambiguous local
+candidate), and both details stay accessible. Overlap alone does not merge sessions.
+
+The phone's noopAutoDetectWorkouts preference was read as true. Cardio now exposes
+that toggle and the review/save suggestion which the custom Today page omitted.
+Detection scans saved HR after refresh, uses the existing sustained-activity
+threshold and excludes local zone/HIIT/interval spans as well as shared workouts.
+It never saves a suggestion without the user's Save action. Short intervals can
+fall below the detector threshold; explicit recording remains available.
+
+The built-in imagegen reference is assets/dhoop-cardio-ui-reference.png, with exact
+prompt in assets/dhoop-cardio-ui-prompt.txt. The implementation uses existing
+StrandDesign tokens, compact mode/navigation controls, grouped history and source
+details. Demo figures, the mockup's Apple Watch attribution, notes and delete
+controls were not introduced into the app. This is iOS fork functionality; no
+database migration, shared stored workout formula or Android schema was changed.
+
+Verification: 84 DhoopGoalTests passed, including five history tests and two added
+interval/legacy-decoding tests. Tests cover all 101 indexed fixtures, date/type/
+search composition, conservative linking, imported strength aliases, five-second
+phase progression and older HIIT files. Final signed iOS/simulator builds and
+the shared macOS build passed, plus source hygiene and diff whitespace checks.
+Simulator launch and the renamed Cardio tab were observed; coordinate control
+continues to fail with noWindowsAvailable, preventing full Cardio UI navigation.
+Five-second physical cue timing and end-to-end on-phone history/detection review
+remain unverified.
+
+Installation is held: two preference reads show a zone-session draft marked
+running. The user was asked to end and save it before updating. Build 430 has
+not been installed on the phone yet; build 429 remains the last confirmed install.
+Imperial settings and existing local session storage are preserved.
