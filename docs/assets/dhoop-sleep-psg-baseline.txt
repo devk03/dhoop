@@ -1,0 +1,72 @@
+
+================================================================================
+2. DATASET
+================================================================================
+PhysioNet sleep-accel v1.0.0 — Walch, Huang, Forger & Goldstein, SLEEP 42(12) zsz180 (2019).
+Licence: Open Data Commons Attribution v1.0. Root: /private/tmp/dhoop-sleep-validation/dataset
+
+subjects              31
+PSG-scored epochs     26773
+scored night length   median  476.0 min   range 208.5–490.5 min
+
+The R-R stream is EMPTY for every subject — this dataset carries no beat-to-beat intervals — so the
+recipe's RSA respiration term returns nil on every epoch and contributes exactly 0.0 to every emission.
+Five of the recipe's six inputs are live here; the sixth is silent, not wrong.
+
+================================================================================
+3. SHIPPED SleepStagerV2 vs PSG TRUTH
+================================================================================
+Four-class agreement over every PSG-scored epoch. `SleepStagerV2` fits no parameters to data — every
+coefficient is fixed a priori — so there is no train/test split to make here: the recipe sees each
+subject exactly once and has never seen any of them. The leave-one-subject-out machinery in section 6
+exists for the fitted comparison models, which do need it.
+
+epochs scored     26773
+accuracy           59.67 %
+Cohen's kappa      0.363   (per-subject mean  0.351 ± 0.127)
+
+per stage             precision   recall       F1   support
+      wake                 0.674    0.308    0.423   2429
+      light                0.690    0.631    0.659   14775
+      deep                 0.430    0.592    0.498   3685
+      rem                  0.526    0.633    0.575   5884
+
+STAGE FRACTIONS — reported as a first-class result, not an appendix.
+Kappa does not constrain them: PR #348 raised kappa on all three of its benchmarks and was reverted
+48 h later for re-scoring a healthy night from 6 % to 23 % awake.
+
+stage        predicted %   truth %      bias pp   (pooled over all scored epochs)
+      wake            4.15      9.07       -4.92
+      light          50.47     55.19       -4.71
+      deep           18.94     13.76        5.17
+      rem            26.44     21.98        4.46
+
+    stage        predicted %   truth %      bias pp   (mean of per-subject percentages)
+      wake            4.17      9.30       -5.13
+      light          50.20     54.61       -4.40
+      deep           19.24     14.76        4.47
+      rem            26.39     21.33        5.05
+
+FIRST-REM LATENCY — minutes from staged sleep onset to the first REM epoch.
+nights with no REM in the prediction: 0 of 31
+
+                    predicted     truth
+  median               102.0      88.5  min
+  mean                 113.1     104.7  min
+  MAE (paired)          49.9            min  (n = 30)
+
+SELF-CHECK against the previous harness's reported figures
+Printed to expose disagreement, not to be matched. Nothing here is tuned to these numbers. Stage
+fractions use the per-subject-mean convention, which is the one those figures were reported on.
+
+quantity                        measured   previously      delta
+      subjects                           31           31          0
+      PSG-scored epochs               26773        26773          0
+      kappa (4-class)                 0.363        0.349      0.014
+      REM F1                          0.575        0.515      0.060
+      REM % of night                  26.39        20.80       5.59
+      deep % predicted                19.24        19.25      -0.01
+      deep % truth                    14.76        14.76       0.00
+      first-REM predicted, min        102.0        142.0      -40.0
+      first-REM truth, min             88.5         88.5        0.0
+
