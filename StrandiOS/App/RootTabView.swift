@@ -46,17 +46,18 @@ struct RootTabView: View {
     /// Selected tab — bound so tab switches can crossfade (README §Motion: ~240ms opacity swap
     /// between tab roots, calm easing). Defaults to Today.
     @State private var selectedTab: Int = 0
+    @State private var runningSession: RunningSessionController?
     /// One `NavigationPath` per tab, indexed by tab tag. Re-tapping the already-active tab pops
     /// that tab's stack to its root (#135) by clearing its path — an animated pop that leaves the
     /// root view alive, so an at-root re-tap keeps scroll position and never re-runs `.task`
     /// (#198; the #197 resetID/`.id()` rebuild reset both). Requires the tab roots' first-hop
     /// links to push `TabRoute`/`MoreDestination` VALUES — closure-destination links bypass the path.
-    @State private var tabPaths: [NavigationPath] = Array(repeating: NavigationPath(), count: 5)
+    @State private var tabPaths: [NavigationPath] = Array(repeating: NavigationPath(), count: 6)
     /// One scroll-to-top token per tab. Bumped when the user re-taps the active tab while it's ALREADY
     /// at its root — the other half of the iOS convention #197/#198 left unserved (an at-root re-tap was
     /// a no-op). Threaded into each tab's root via `\.scrollToTopSignal`; ScreenScaffold / LiquidTodayView
     /// scroll to their top anchor when their tab's token changes.
-    @State private var scrollTop: [Int] = Array(repeating: 0, count: 5)
+    @State private var scrollTop: [Int] = Array(repeating: 0, count: 6)
     /// Which More-tab groups are expanded (S2). Insights + Body stay open at rest; Data + App collapse to
     /// just their header until tapped. Persisted (#860 item 2): the user's open/closed choice must SURVIVE
     /// leaving and re-entering the More tab (and relaunch), not reset to the seed every visit. Backed by an
@@ -72,6 +73,11 @@ struct RootTabView: View {
     /// The Today tab root: the personal weight-loss screen.
     @ViewBuilder private var todayTabRoot: some View {
         CutTodayView()
+    }
+
+    @ViewBuilder private var runningTabRoot: some View {
+        if let runningSession { RunningView(controller: runningSession) }
+        else { Text("Loading running program…").font(StrandFont.body) }
     }
 
     /// Native tab selection binding. SwiftUI sends taps on the already-selected item through the
@@ -123,7 +129,7 @@ struct RootTabView: View {
     }
 
     /// Tags of the tabs this build shows.
-    private static let shownTabs = [0, 2]
+    private static let shownTabs = [0, 2, 5]
 
     var body: some View {
         // The platform tab bar is intentionally left fully native. iOS 26 supplies Liquid Glass and
@@ -132,12 +138,14 @@ struct RootTabView: View {
         TabView(selection: nativeTabSelection) {
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(CutSleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
+            tab(runningTabRoot, "Running", "figure.run", path: $tabPaths[5], scrollSignal: scrollTop[5]).tag(5)
         }
         .tint(StrandPalette.accent)
+        .onAppear { if runningSession == nil { runningSession = RunningSessionController() } }
         // Switching Coach off while STANDING on it leaves `selectedTab` pointing at a tag no tab claims
         // any more, which renders as an empty tab rather than as an error. Send that wearer to Today, and
         // only in that case, so a flip made from anywhere else does not move them.
-        // Only Today (0) and Sleep (2) remain; a route to a removed tab (Trends, Coach) lands on Today.
+        // Today (0), Sleep (2) and Running (5) remain; removed tab routes land on Today.
         .onChangeCompat(of: selectedTab) { tag in
             if !Self.shownTabs.contains(tag) { selectedTab = 0 }
         }

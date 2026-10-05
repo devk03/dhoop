@@ -719,11 +719,15 @@ public final class LiveState: ObservableObject {
     /// Receipt counter and timestamp remain independent of BPM changes and the watchdog throttle.
     public private(set) var heartRateEvidence = LiveHeartRateEvidence()
 
+    /// Receipt events serve explicit live sessions without invalidating the Today snapshot.
+    public let readableHeartRateReceipts = PassthroughSubject<Void, Never>()
+
     /// A readable heart-rate sample arrived (`BLEManager`'s standard profile, `FrameRouter`'s realtime frames): move the
     /// silence deadline on. One timer, rescheduled at most every tenth of the wait (once a second in use), so it costs
     /// nothing while samples flow and fires once when they stop.
     public func noteReadableHeartRate(bpm: Int? = nil, deviceId: String? = nil) {
         heartRateEvidence.record(bpm: bpm, deviceId: deviceId)
+        readableHeartRateReceipts.send(())
         if heartRateEvidence.packets == 1 {
             append(log: AppModel.stamped("WHOOP HR: first readable live heart-rate packet received on this connection"))
         }
