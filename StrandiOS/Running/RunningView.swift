@@ -20,6 +20,7 @@ private struct RunningContent: View, Equatable {
     @State private var section = "Train"
     @State private var historyRange: MetricRangeSelection = { var range = MetricRangeSelection(); range.preset = .month; return range }()
     @State private var capturedAt = Date()
+    @State private var discardRunID: UUID?
     @StateObject private var history = CardioHistoryModel()
     @EnvironmentObject private var repo: Repository
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -36,7 +37,7 @@ private struct RunningContent: View, Equatable {
                     Text("History").tag("History")
                 }.pickerStyle(.segmented).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 if section == "History" {
-                    CardioHistoryView(model: history, range: $historyRange, now: capturedAt)
+                    CardioHistoryView(model: history, range: $historyRange, now: capturedAt, controller: controller)
                 } else {
                     if controller.session == nil && !hiit.hasSession {
                         Picker("Workout type", selection: $workoutMode) {
@@ -65,6 +66,10 @@ private struct RunningContent: View, Equatable {
             }
         }
         .onAppear { capturedAt = Date() }
+        .confirmationDialog("Discard this workout?", isPresented: Binding(get: { discardRunID != nil }, set: { if !$0 { discardRunID = nil } }), titleVisibility: .visible, presenting: discardRunID) { id in
+            Button("Discard workout", role: .destructive) { controller.discard(id: id) }
+            Button("Keep workout", role: .cancel) { }
+        } message: { _ in Text("The unfinished session will not be saved. Heart-rate history is kept.") }
         .onChange(of: section) { _, value in if value == "History" { capturedAt = Date() } }
         .onChange(of: controller.summaries.count) { _, _ in capturedAt = Date() }
         .onChange(of: hiit.historyRevision) { _, _ in capturedAt = Date() }
@@ -167,6 +172,10 @@ private struct RunningContent: View, Equatable {
                     HStack(spacing: NoopMetrics.space3) { sessionButtons(run) }
                     VStack(spacing: NoopMetrics.space3) { sessionButtons(run) }
                 }
+                Button(role: .destructive) { discardRunID = run.id } label: {
+                    Label("Discard workout", systemImage: "trash").font(StrandFont.subhead)
+                        .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
+                }.buttonStyle(.bordered).tint(StrandPalette.statusCritical)
                 if run.phase == .completed {
                     Text("Goal reached. This run’s live-feed request ended automatically.")
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.statusPositive)

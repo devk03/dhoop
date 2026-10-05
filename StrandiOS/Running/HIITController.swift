@@ -101,6 +101,22 @@ final class HIITController: ObservableObject {
                 ?? "\(selectedKind.title) saved on this phone."
         } catch { message = "Could not save workout: \(error.localizedDescription). Your session remains open." }
     }
+
+    func deleteWorkout(at url: URL, id: UUID) throws {
+        guard working?.id != id else { throw CocoaError(.fileWriteFileExists) }
+        try HIITWorkoutFiles(directory: directory).deleteWorkout(at: url, id: id)
+        historyRevision += 1
+    }
+
+    func discard(id: UUID) {
+        guard working?.id == id else { return }
+        pause()
+        do {
+            try HIITWorkoutFiles(directory: directory).discardDraft(id: id)
+            release(); working = nil; session = nil; currentBPM = nil
+            message = "Workout discarded. Heart-rate history was kept."
+        } catch { message = "Could not discard workout: \(error.localizedDescription). Your session remains paused." }
+    }
     private var ready: Bool {
         guard let app else { return false }
         return app.live.activeIsWhoop && app.live.connected && app.live.bonded

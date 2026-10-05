@@ -142,6 +142,47 @@ final class DetectedWorkoutReconciliationTests: XCTestCase {
         }
     }
 
+    func testCardioDeletionReportsFailedWriteWithoutDismissalOrRowLoss() async throws {
+        try await withPreferences {
+            let store = try await WhoopStore.inMemory()
+            let row = WorkoutRow(startTs: 1000, endTs: 1900, sport: "detected", source: "archived-noop",
+                durationS: 900, energyKcal: nil, avgHr: nil, maxHr: nil, strain: nil,
+                distanceM: nil, zonesJSON: nil, notes: nil, steps: nil)
+            try await store.upsertWorkouts([row], deviceId: row.source)
+            let repo = Repository(deviceId: deviceId)
+            repo.setStoreForTesting(store)
+            try await store.registryWriter.write { try $0.execute(sql: "PRAGMA query_only = ON") }
+            do { try await repo.deleteCardioWorkout(row); XCTFail("Deletion must report rejected storage writes") }
+            catch { }
+            let saved = try await store.workouts(deviceId: row.source, from: 0, to: 3000, limit: 100)
+            XCTAssertEqual(saved, [row])
+            XCTAssertTrue((UserDefaults.standard.stringArray(forKey: WorkoutSource.dismissedDefaultsKey) ?? []).isEmpty)
+        }
+    }
+
+    func testCardioDeletionRejectsImportsAndDismissesDeletedDetectedOwner() async throws {
+        try await withPreferences {
+            let store = try await WhoopStore.inMemory()
+            func row(_ source: String) -> WorkoutRow {
+                WorkoutRow(startTs: 1000, endTs: 1900, sport: "Running", source: source,
+                    durationS: 900, energyKcal: nil, avgHr: nil, maxHr: nil, strain: nil,
+                    distanceM: nil, zonesJSON: nil, notes: nil, steps: nil)
+            }
+            let detected = row("archived-noop"), imported = row("apple-health")
+            try await store.upsertWorkouts([detected], deviceId: detected.source)
+            try await store.upsertWorkouts([imported], deviceId: imported.source)
+            let repo = Repository(deviceId: deviceId)
+            repo.setStoreForTesting(store)
+            do { try await repo.deleteCardioWorkout(imported); XCTFail("Imported history is read-only") }
+            catch { }
+            try await repo.deleteCardioWorkout(detected)
+            let saved = try await store.workouts(deviceId: detected.source, from: 0, to: 3000, limit: 100)
+            let original = try await store.workouts(deviceId: imported.source, from: 0, to: 3000, limit: 100)
+            XCTAssertTrue(saved.isEmpty); XCTAssertEqual(original, [imported])
+            XCTAssertEqual(UserDefaults.standard.stringArray(forKey: WorkoutSource.dismissedDefaultsKey), ["1000:1900"])
+        }
+    }
+
     func testMovedManualEditPersistsReplacementAndRetiresOriginalKey() async throws {
         try await withPreferences {
             let store = try await WhoopStore.inMemory()

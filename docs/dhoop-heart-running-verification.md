@@ -521,3 +521,49 @@ the process remained running, and the user confirmed Dhoop was open on the phone
 Decoded paused-zone-draft fields and unit preferences were preserved. No HIIT draft
 was active. The existing bundle and signing identity were retained. No schema
 migration, database deletion, new BLE command or Android change was made.
+
+
+## Build 434: delete saved Cardio recordings and discard drafts
+
+The built-in ImageGen tool produced the [deletion UI reference](assets/dhoop-cardio-delete-ui-reference.png)
+from the [saved prompt](assets/dhoop-cardio-delete-ui-prompt.txt). The implementation uses existing
+StrandDesign tokens and native confirmation dialogs. Mock dates, distances, traces, and navigation
+were not adopted.
+
+| Before | After |
+| --- | --- |
+| Saved Cardio records had no deletion action | Eligible history rows have a visible actions menu; details have a 44-point Delete recording button. |
+| Accidentally started zone/HIIT/interval drafts required saving | A separate Discard workout action confirms the target UUID, pauses collection and releases that session's live-feed ownership. |
+| Linked/source scope was not exposed for deletion | Confirmation names the date, workout and source; only the selected recording is removed. Imported records remain read-only. |
+| Pending reads/exports could outlive a mutation | History load generations and pending export publications are invalidated; history reloads after durable success. |
+
+Zone deletion decodes the current preferences array and writes the remaining UUIDs before publishing
+state. HIIT archive deletion validates the exact path and UUID, clears only a matching redundant draft,
+and moves original bytes into an internal Deleted directory outside browsable/exported history. A
+different active draft remains intact. There is no in-app restore action. DB-backed manual/detected
+record deletion uses one transaction with namespace, source, sport, start and end constraints; imports,
+retimed replacements and raw sensor samples are preserved. Failure reaches the UI; dismissal markers
+and route cleanup happen only after successful DB deletion. No migration was required.
+
+Validation:
+
+- 101 DhoopGoalTests passed, including zone deletion/reload, corrupt-record preservation, exact draft
+  discard, HIIT stale-draft prevention and unrelated archive/draft preservation.
+- 2 WhoopStore deletion tests passed, including same-key import/retimed-row and raw-HR preservation,
+  plus rollback of the first namespace when deletion in the second namespace fails.
+- 10 repository reconciliation tests passed, including read-only SQLite failure and imported-source
+  rejection. The Strand macOS app built as part of this run.
+- Final signed iPhone and simulator builds passed. Source-comment and whitespace checks passed.
+- Native and secondary-account read-only reviews completed; the pending-export race was repaired.
+- Build 434 installed and launched on the physical iPhone; inventory confirmed 434. Both saved zone
+  records and unit preferences were identical before/after. No zone or HIIT workout was active before
+  installation. No real saved workout was deleted during verification.
+- Simulator launch rendered the current Today view. Coordinate navigation again returned
+  noWindowsAvailable; full hands-on delete/cancel and physical chart gestures remain unverified.
+
+Logs: `/private/tmp/dhoop-delete-goal-tests.log`, `/private/tmp/dhoop-delete-store-tests.log`,
+`/private/tmp/dhoop-delete-repository-tests.log`, `/private/tmp/dhoop-delete-device-final.log`,
+`/private/tmp/dhoop-delete-simulator-final.log`. This feature targets the personal Apple app; Android
+UI and its existing deletion path are unchanged. The new Swift helper does not change the stored
+schema, analytics or backup format. Earlier live-receipt and full accessibility audit gaps remain
+open; installation and these deletion tests do not establish physiological accuracy.

@@ -9,13 +9,20 @@ struct HIITWorkoutView: View {
     let testBuzz: () -> Void
     let canTestBuzz: Bool
     let buzzFeedback: String?
+    @State private var discardID: UUID?
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = NoopMetrics.dashboardHeroNumber
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
     private var grid: DashboardGridLayout { DashboardGridLayout(columns: typeSize.isAccessibilitySize ? 1 : 2) }
 
     var body: some View {
-        if let run = controller.session { active(run) } else { setup }
+        Group {
+            if let run = controller.session { active(run) } else { setup }
+        }
+        .confirmationDialog("Discard this workout?", isPresented: Binding(get: { discardID != nil }, set: { if !$0 { discardID = nil } }), titleVisibility: .visible, presenting: discardID) { id in
+            Button("Discard workout", role: .destructive) { controller.discard(id: id) }
+            Button("Keep workout", role: .cancel) { }
+        } message: { _ in Text("The unfinished session will not be saved. Heart-rate history is kept.") }
         if let message = controller.message {
             Label(message, systemImage: "wave.3.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -111,6 +118,10 @@ struct HIITWorkoutView: View {
             }
             Button { controller.save() } label: { Label("End and save", systemImage: "stop.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
                 .buttonStyle(.bordered)
+            Button(role: .destructive) { discardID = run.id } label: {
+                Label("Discard workout", systemImage: "trash").font(StrandFont.subhead)
+                    .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
+            }.buttonStyle(.bordered).tint(StrandPalette.statusCritical)
         }
     }
     private func statTile(_ title: String, value: String, detail: String, symbol: String, tint: Color) -> some View {

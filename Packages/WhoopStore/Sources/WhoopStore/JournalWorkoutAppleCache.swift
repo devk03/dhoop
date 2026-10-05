@@ -193,6 +193,23 @@ extension WhoopStore {
         }
     }
 
+    /// Explicit Cardio deletion keeps other sources and a concurrently retimed recording intact.
+    /// All retained-strap copies are retired in one transaction; sensor samples are untouched.
+    @discardableResult
+    public func deleteWorkoutRecording(_ row: WorkoutRow, deviceIds: [String]) async throws -> Int {
+        try syncWrite { db in
+            var removed = 0
+            for id in Set(deviceIds).sorted() {
+                try db.execute(sql: """
+                    DELETE FROM workout
+                    WHERE deviceId = ? AND startTs = ? AND sport = ? AND source = ? AND endTs = ?
+                    """, arguments: [id, row.startTs, row.sport, row.source, row.endTs])
+                removed += db.changesCount
+            }
+            return removed
+        }
+    }
+
     /// Upsert Apple-Health daily aggregates. Natural key (deviceId, day). Returns rows changed.
     @discardableResult
     public func upsertAppleDaily(_ rows: [AppleDaily], deviceId: String) async throws -> Int {

@@ -3055,6 +3055,23 @@ final class Repository: ObservableObject {
         }
     }
 
+    /// Explicit Cardio action reports storage failures instead of claiming the row disappeared.
+    func deleteCardioWorkout(_ row: WorkoutRow) async throws {
+        let source = WorkoutSource.classify(row.source)
+        guard source == .manual || source == .detected else { throw CocoaError(.fileWriteNoPermission) }
+        guard let store = await ensureStore() else { throw CocoaError(.fileNoSuchFile) }
+        let owners = source == .detected ? [row.source]
+            : Self.deletableWorkoutNamespaces(rawIds: rawPhysiologyReadIds(store: store))
+        let removed = try await store.deleteWorkoutRecording(row, deviceIds: owners)
+        guard removed > 0 else { throw CocoaError(.fileReadNoSuchFile) }
+        if source == .detected {
+            let token = WorkoutSource.dismissedToken(for: row)
+            var spans = dismissedDetectedSpans
+            if !spans.contains(token) { spans.append(token); dismissedDetectedSpans = spans }
+        }
+        RouteStore.remove(startTs: row.startTs, sport: row.sport)
+    }
+
     /// #64: merge two-or-more overlapping / adjacent MANUAL or DETECTED sessions into ONE manual session
     /// (`merged`, built by the pure `WorkoutMerge.merge`), then retire the originals. Imported history is
     /// NEVER passed here (the caller gates on `WorkoutMerge.canMerge`, and this only writes the manual-row

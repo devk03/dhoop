@@ -26,8 +26,8 @@ final class RunningSessionController: ObservableObject {
     }
 
     private enum Keys {
-        static let draft = "dhoop.running.activeDraft.v1"
-        static let summaries = "dhoop.running.summaries.v1"
+        static let draft = RunningSessionStorage.draftKey
+        static let summaries = RunningSessionStorage.summariesKey
         static let zone = "dhoop.running.zone"
         static let minutes = "dhoop.running.goalMinutes"
         static let manual = "dhoop.running.manualTarget"
@@ -35,10 +35,7 @@ final class RunningSessionController: ObservableObject {
         static let upper = "dhoop.running.upperBPM"
         static let alerts = "dhoop.running.zoneAlerts"
     }
-    private struct Draft: Codable {
-        var session: RunningZoneSession
-        let elapsedSeconds: TimeInterval
-    }
+    private typealias Draft = RunningSessionStorage.Draft
     private let defaults: UserDefaults
     private var app: AppModel?
     private var subscriptions = Set<AnyCancellable>()
@@ -215,6 +212,23 @@ final class RunningSessionController: ObservableObject {
         workingSession = nil; session = nil; currentBPM = nil; runningSinceUptime = nil
         elapsedBeforeResume = 0; elapsedSeconds = 0
         statusMessage = summary.goalMet ? "Goal complete. Run saved on this phone." : "Run saved on this phone."
+    }
+
+    func deleteSummary(id: UUID) throws {
+        guard workingSession?.id != id else { throw CocoaError(.fileWriteFileExists) }
+        summaries = try RunningSessionStorage(defaults: defaults).deleteSummary(id: id)
+    }
+
+    func discard(id: UUID) {
+        guard workingSession?.id == id else { return }
+        pause()
+        do {
+            try RunningSessionStorage(defaults: defaults).discardDraft(id: id)
+            releaseStream()
+            workingSession = nil; session = nil; currentBPM = nil; runningSinceUptime = nil
+            elapsedBeforeResume = 0; elapsedSeconds = 0
+            statusMessage = "Workout discarded. Heart-rate history was kept."
+        } catch { statusMessage = "Could not discard workout: \(error.localizedDescription). Your session remains paused." }
     }
 
     private func acquireStream() {
