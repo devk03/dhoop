@@ -780,9 +780,9 @@ final class IntelligenceEngine: ObservableObject {
         runningPassDays = maxDays
         // #1538: the pass is now past every gate and will do real work. Mark it started durably, so that a
         // process killed mid-pass leaves evidence a LATER process can read — the killed process itself gets
-        // no chance to record anything. Cleared beside the watermark at the end; there is no early return
-        // between here and there, so "started and never finished" means exactly "killed", never a silent
-        // internal skip. `RescoreBackgroundPolicy` reads it to stop re-attempting a pass that cannot
+        // no chance to record anything. Cleared beside the watermark only after required writes succeed;
+        // a persistence failure also leaves the debt owed and reports why the pass stopped.
+        // `RescoreBackgroundPolicy` reads it to stop re-attempting a pass that cannot
         // finish in the background, which is the livelock in #1538.
         // #1681: keep the token this debt was stamped with. At the end of the pass it is what tells our
         // own debt apart from one a LATER trigger recorded while we were running - the latter must
@@ -2450,36 +2450,23 @@ final class IntelligenceEngine: ObservableObject {
             }
             markerSources = sourceIds
         }
-        try? await store.persistComputedScores(
-            dailyMetrics: persistedDailies,
-            metricPoints: restPoints,
-            provenance: Array(provenanceByCell.values),
-            deviceId: computedId,
-            from: oldestDay,
-            to: newestDay,
-            replaceMetricKeys: markerKeys,
-            additionalMetricPoints: markerPoints,
-            replaceMetricSourceIds: markerSources
-        )
-
-        // Now evict only the STALE computed rows in the window , those a prior (e.g. UTC-keyed) run left
-        // behind that the current local-keyed run no longer produces. Read the window, diff against the
-        // keys we just upserted, and delete each leftover day individually (from == to == key). This
-        // removes #277's UTC/local duplicates WITHOUT the wide delete-then-reinsert dip. No-op in steady
-        // state (the new keys cover the window), so it adds nothing once the migration has settled.
-        // #1196: skip stale-eviction on an EMPTY pass so a transient/degenerate empty `dailies` (a read
-        // over a still-incomplete raw store during a reconnect/offload storm, or the active strap
-        // momentarily resolving to an empty id) never evicts the whole window. In steady state `dailies`
-        // covers the window, so eviction runs exactly as before; `persistComputedScores` is guarded the
-        // same way, so an empty pass leaves the persisted window untouched. Twin of the Android
-        // WhoopDao.replaceComputedScoreWindow empty guard.
-        if !persistedDailies.isEmpty {
-            let freshKeys = Set(persistedDailies.map { $0.day })
-            let existingWindow = (try? await store.dailyMetrics(deviceId: computedId, from: oldestDay, to: newestDay)) ?? []
-            for stale in existingWindow where !freshKeys.contains(stale.day) {
-                _ = try? await store.deleteDailyMetrics(deviceId: computedId, from: stale.day, to: stale.day)
-            }
+        do {
+            try await store.persistComputedScores(
+                dailyMetrics: persistedDailies,
+                metricPoints: restPoints,
+                provenance: Array(provenanceByCell.values),
+                deviceId: computedId,
+                from: oldestDay,
+                to: newestDay,
+                replaceMetricKeys: markerKeys,
+                additionalMetricPoints: markerPoints,
+                replaceMetricSourceIds: markerSources
+            )
+        } catch {
+            reportPersistenceFailure(error, operation: "computed scores")
+            return
         }
+
         markPostLoopPhase("persist")
         // ── Fitness Age (Phase 2) , weekly, keyed to the week's Saturday ────────────────────────────
         // Roll the last 7 computed days into the Nes/HUNT inputs and upsert a weekly Fitness Age (+ an
@@ -2755,36 +2742,61 @@ final class IntelligenceEngine: ObservableObject {
         let cachedSleepKept = cachedSleep.filter { s in
             !skipWindows.contains { s.startTs < $0.end && $0.start < s.endTs }   // time-overlap test
         }
-        if !cachedSleepKept.isEmpty { _ = try? await store.upsertSleepSessions(cachedSleepKept, deviceId: computedId) }
-        // ── Persist per-epoch motion (H8) beside each kept session's stagesJSON ──────────────────────────
-        // The sleepSession rows exist now (just upserted), so the targeted motion UPDATE lands. Persist ONLY
-        // for the sessions actually kept (not edited/dismissed), keyed by the detected start `analyzeDay`
-        // returned. A session whose gravity wouldn't grid was omitted from the map and is left as NULL , an
-        // absent motion series stays absent, never a fabricated zero array.
         let keptStarts = Set(cachedSleepKept.map { $0.startTs })
-        var motionByStart: [Int: [Double]] = [:]
-        for night in scoredNights {
-            for (start, motion) in night.sessionMotion where keptStarts.contains(start) {
-                motionByStart[start] = motion
+        do {
+            if !cachedSleepKept.isEmpty { _ = try await store.upsertSleepSessions(cachedSleepKept, deviceId: computedId) }
+            // ── Persist per-epoch motion (H8) beside each kept session's stagesJSON ──────────────────────────
+            // The sleepSession rows exist now (just upserted), so the targeted motion UPDATE lands. Persist ONLY
+            // for the sessions actually kept (not edited/dismissed), keyed by the detected start `analyzeDay`
+            // returned. A session whose gravity wouldn't grid was omitted from the map and is left as NULL , an
+            // absent motion series stays absent, never a fabricated zero array.
+            var motionByStart: [Int: [Double]] = [:]
+            for night in scoredNights {
+                for (start, motion) in night.sessionMotion where keptStarts.contains(start) {
+                    motionByStart[start] = motion
+                }
             }
-        }
-        for (start, motion) in motionByStart {
-            _ = try? await store.persistSessionMotion(deviceId: computedId, sessionStart: start, motionEpochs: motion)
-        }
-        // ── Persist per-epoch BAND sleep_state (#175) beside each kept session's stagesJSON ──────────────
-        // This is the source `sessionSleepStateJSON` lacked (v7.7.0 finding: the write path had no producer
-        // because the raw stream was dropped at extraction). Now analyzeDay grids the RAW `sleepStateSample`
-        // stream per session; persist it here so the NEXT pass's `bandSleepStateSamples` read (the H7 confirm)
-        // and the display can see the strap's OWN scored band. ONLY for kept (not edited/dismissed) sessions;
-        // a session with no band samples was omitted (no key) and stays NULL — an absent signal stays absent.
-        var sleepStateByStart: [Int: [Int]] = [:]
-        for night in scoredNights {
-            for (start, states) in night.sessionSleepState where keptStarts.contains(start) {
-                sleepStateByStart[start] = states
+            for (start, motion) in motionByStart {
+                _ = try await store.persistSessionMotion(deviceId: computedId, sessionStart: start, motionEpochs: motion)
             }
+            // ── Persist per-epoch BAND sleep_state (#175) beside each kept session's stagesJSON ──────────────
+            // This is the source `sessionSleepStateJSON` lacked (v7.7.0 finding: the write path had no producer
+            // because the raw stream was dropped at extraction). Now analyzeDay grids the RAW `sleepStateSample`
+            // stream per session; persist it here so the NEXT pass's `bandSleepStateSamples` read (the H7 confirm)
+            // and the display can see the strap's OWN scored band. ONLY for kept (not edited/dismissed) sessions;
+            // a session with no band samples was omitted (no key) and stays NULL — an absent signal stays absent.
+            var sleepStateByStart: [Int: [Int]] = [:]
+            for night in scoredNights {
+                for (start, states) in night.sessionSleepState where keptStarts.contains(start) {
+                    sleepStateByStart[start] = states
+                }
+            }
+            for (start, states) in sleepStateByStart {
+                _ = try await store.persistSessionSleepState(deviceId: computedId, sessionStart: start, states: states)
+            }
+        } catch {
+            reportPersistenceFailure(error, operation: "sleep sessions")
+            return
         }
-        for (start, states) in sleepStateByStart {
-            _ = try? await store.persistSessionSleepState(deviceId: computedId, sessionStart: start, states: states)
+        // Reconciliation can remove old derived rows only after all required score/sleep writes
+        // succeeded. A failed sleep write must retain those rows for the next attempt.
+        // Now evict only the STALE computed rows in the window , those a prior (e.g. UTC-keyed) run left
+        // behind that the current local-keyed run no longer produces. Read the window, diff against the
+        // keys we just upserted, and delete each leftover day individually (from == to == key). This
+        // removes #277's UTC/local duplicates WITHOUT the wide delete-then-reinsert dip. No-op in steady
+        // state (the new keys cover the window), so it adds nothing once the migration has settled.
+        // #1196: skip stale-eviction on an EMPTY pass so a transient/degenerate empty `dailies` (a read
+        // over a still-incomplete raw store during a reconnect/offload storm, or the active strap
+        // momentarily resolving to an empty id) never evicts the whole window. In steady state `dailies`
+        // covers the window, so eviction runs exactly as before; `persistComputedScores` is guarded the
+        // same way, so an empty pass leaves the persisted window untouched. Twin of the Android
+        // WhoopDao.replaceComputedScoreWindow empty guard.
+        if !persistedDailies.isEmpty {
+            let freshKeys = Set(persistedDailies.map { $0.day })
+            let existingWindow = (try? await store.dailyMetrics(deviceId: computedId, from: oldestDay, to: newestDay)) ?? []
+            for stale in existingWindow where !freshKeys.contains(stale.day) {
+                _ = try? await store.deleteDailyMetrics(deviceId: computedId, from: stale.day, to: stale.day)
+            }
         }
         markPostLoopPhase("sleepWrite")
         // ── Overlap-aware banked-sleep heal (#899) ────────────────────────────────────────────────────
@@ -2922,6 +2934,15 @@ final class IntelligenceEngine: ObservableObject {
             diagnosticSink?("re-score: debt NOT settled — a newer re-score was recorded while this pass "
                             + "was running, so the mark stays and another pass will run (#1681)", nil)
         }
+    }
+
+    /// A required write failed: retain the last completed watermark and durable retry debt.
+    /// Log the operation and error code without SQLite statements or raw sample values.
+    private func reportPersistenceFailure(_ error: Error, operation: String) {
+        note = String(localized: "Scores could not be saved. A later scoring pass will retry.")
+        let failure = error as NSError
+        diagnosticSink?("re-score: persistence failed operation=\(operation) "
+            + "error=\(failure.domain):\(failure.code); retry remains owed", nil)
     }
 
     /// UserDefaults key for the #836 idle-tick gate: the complete raw-analysis fingerprint the last completed

@@ -33,6 +33,7 @@ class Whoop5RRSqliteTest {
     private val provenance = linkedMapOf<Triple<String, String, String>, ScoreInputProvenanceRow>()
     private val gravity = mutableListOf<GravitySample>()
     private val id = "my-whoop"
+    private var rejectedWrite: String? = null
 
     @Before fun open() {
         db = DriverManager.getConnection("jdbc:sqlite::memory:")
@@ -48,6 +49,7 @@ class Whoop5RRSqliteTest {
         }
         dao = Proxy.newProxyInstance(WhoopDao::class.java.classLoader, arrayOf(WhoopDao::class.java)) { _, method, a ->
             val args = a ?: emptyArray()
+            if (method.name == rejectedWrite) throw IllegalStateException("fixture persistence failure")
             when (method.name) {
                 "pairedDevice" -> owners[args[0] as String]
                 "pairedDevices" -> owners.values.toList()
@@ -157,6 +159,53 @@ class Whoop5RRSqliteTest {
             }
         })
         registry("5.0 MG")
+    }
+
+    @Test fun requiredScoreFailurePropagatesAndNextPassRetries() = runBlocking {
+        verifyPersistenceRetry("replaceComputedScoreWindow")
+    }
+
+    @Test fun requiredSleepFailurePropagatesAndNextPassRetries() = runBlocking {
+        verifyPersistenceRetry("insertSleepSession")
+    }
+
+    private suspend fun verifyPersistenceRetry(write: String) {
+        val owner = "physical-strap"
+        registry("5.0 MG", owner = owner)
+        activate(owner)
+        val now = 1_780_272_000L
+        val offset = java.util.TimeZone.getDefault().getOffset(now * 1000L) / 1000L
+        val end = now - Math.floorMod(now + offset, 86_400L)
+        val start = end - 3_600L
+        repo.insert(StreamBatch(hr = (start until end).map { HrRow(it, 60) }), owner)
+        val original = SleepSession(deviceId = owner, startTs = start, endTs = end,
+            efficiency = 1.0, stagesJSON = AnalyticsEngine.encodeStages(listOf(StageSegment(start, end, "light"))))
+        repo.upsertSleepSessions(listOf(original))
+        val fingerprint = repo.analysisFingerprint()
+        val registry = DeviceRegistry(dao, object : DeviceRegistry.Transactor {
+            override suspend fun <R> run(block: suspend () -> R): R = block()
+        })
+        val diagnostics = mutableListOf<String>()
+        suspend fun score() = IntelligenceEngine.analyzeRecent(repo, maxDays = 1,
+            importedDeviceId = id, nowSeconds = now, ownerSource = RegistryDayOwnerSource(registry),
+            dayCycleMode = DayCycleMode.MIDNIGHT, diag = { diagnostics += it })
+
+        rejectedWrite = write
+        val failure = runCatching { score() }.exceptionOrNull()
+        assertTrue("the engine must propagate the required write error: $failure", failure is IllegalStateException)
+        assertEquals("fixture persistence failure", failure?.message)
+        assertFalse(diagnostics.any { it.contains("re-score: done") })
+        assertEquals(original, sleeps[owner to start])
+        assertEquals(fingerprint, repo.analysisFingerprint())
+
+        rejectedWrite = null
+        diagnostics.clear()
+        val result = score()
+        assertFalse(result.isEmpty())
+        assertTrue(diagnostics.any { it.contains("re-score: done") })
+        assertTrue(sleeps.keys.any { it.first == "$id-noop" })
+        assertEquals(original, sleeps[owner to start])
+        assertEquals(fingerprint, repo.analysisFingerprint())
     }
 
     @After fun close() { db.close() }
