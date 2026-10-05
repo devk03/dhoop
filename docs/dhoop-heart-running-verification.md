@@ -404,3 +404,79 @@ This is Apple UI work for the personal fork; no Android UI parity is claimed.
 No analytics formula, stored schema, BLE command or physiological validation was
 changed. No migration, data deletion, push or merge was performed. Prior pending
 branding/imperial changes remain separate from these commits.
+
+## Build 432: review and regression repairs
+
+Review covered the current working tree and the recent goal/dashboard, inline HR,
+range-average, Sleep comparison, zone/HIIT/interval, Cardio history, and scrubbing
+commits. Native reviewers covered charts and Cardio; a read-only secondary-account
+review covered Sleep and range/protein behavior. The coordinator verified findings
+against callers and added failure-path tests. No claim of universal bug-freedom or
+physiological accuracy follows from this review.
+
+Repairs:
+
+- Sleep-stage and recovery-calendar accessibility selections could index outside
+  a newly shortened series. Readouts now resolve safely against current data and
+  reset when the series changes. Regression tests exercise stale selection indices.
+- Generic deep-timeline readouts appended `bpm` to supplied temperature/HRV units
+  and announced every metric as heart rate. The caller's units and metric label
+  now pass through unchanged. The full inspection index is prepared once per
+  input update instead of rebuilding it during every hover update.
+- Apple sleep totals counted explicit awake time overlapped by a broad asleep
+  sample. A new regression test reproduced 480 minutes where only 420 were asleep;
+  it failed before the fix and passes now. Awake intervals are excluded from total
+  sleep and its stage totals, without changing stored sleep records.
+- Comparison filtering checked SyncIdentifier while HealthKitBridge exports sleep
+  with ExternalUUID. Both markers now exclude Dhoop/NOOP writeback across bundle
+  identities, preserving independent-provider comparisons. Ordinary third-party
+  providers remain included.
+- A successful HIIT archive followed by failed draft cleanup left the completed
+  session resumable, risking loss of later progress on restart. Archive success
+  now closes the session; cleanup failure is reported separately. Actual file-write
+  failure tests cover both writes and preservation of the original draft.
+- Detected-workout saving reported success after swallowed SQLite errors. The
+  repository now returns actual persistence success, retains the suggestion on
+  failure, and captures its owning device. Cardio also checks candidate identity
+  before enqueueing and immediately before executing a save. A read-only SQLite
+  fixture verifies that rejected writes cannot report success.
+- Today could remain frozen indefinitely in the foreground. Its snapshot now
+  refreshes every fifteen minutes or at local midnight, with cancellation when
+  inactive; it still has no per-packet dashboard updates. Goal-only reads/backfill
+  stop on cancellation, goal disablement or device change. Metric history observes
+  completed repository refreshes and updates its date bound. Large history chart
+  metadata uses a dictionary instead of a nested date search.
+- General `.noopbak` exports omit local Cardio records. History now discloses that
+  limitation and offers a separate portable JSON export of all local zone/interval
+  records and drafts. The snapshot is captured on MainActor before detached file
+  encoding, avoiding a finish-during-export race. Raw bytes, including damaged
+  records, are preserved. This file has **no in-app restore**; the general backup
+  format remains unchanged.
+
+Validation:
+
+- 123 StrandDesign tests passed: `/private/tmp/dhoop-review-design-tests.log`.
+- 93 DhoopGoalTests passed: `/private/tmp/dhoop-review-goal-verified.log`.
+- 8 detected-workout repository tests passed, including failed storage writes:
+  `/private/tmp/dhoop-review-workout-tests-final.log`. The test target now explicitly
+  links the already-pinned GRDB dependency it imports.
+- 4 existing unit-preference tests passed:
+  `/private/tmp/dhoop-review-preferences-tests.log`.
+- Signed iPhone and simulator builds passed:
+  `/private/tmp/dhoop-review-ios-installed.log`,
+  `/private/tmp/dhoop-review-sim-installed.log`. The macOS app compiled as part of
+  the passing repository-test run. Source-comment and staged whitespace checks passed.
+- Simulator Today rendered its recorded-data grid and compact historical HR card.
+  Coordinate control again returned `noWindowsAvailable`; physical finger gestures,
+  full VoiceOver/Dynamic Type checks, and real exercise/background vibration remain
+  hands-on verification gaps.
+- Existing uncommitted text changes were compared with the pre-review patch and
+  matched exactly. No migrations, database deletion, publication or merge occurred.
+
+The scope remains the personal Apple fork. Storage-error handling changes the
+reported result, not the workout schema or analytics; no Android change is claimed.
+
+Build 432 was subsequently installed and launched on the physical iPhone. The
+installed-app inventory confirms version 432. The paused zone draft is byte-identical
+before/after launch, unit preferences are unchanged, and auto-detection remains on.
+No live workout was interrupted (zone paused, HIIT draft empty before installation).
