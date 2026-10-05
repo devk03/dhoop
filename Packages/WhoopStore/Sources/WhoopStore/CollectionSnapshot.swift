@@ -2,6 +2,13 @@ import Foundation
 import GRDB
 import WhoopProtocol
 
+public struct MeasuredHeartRateDay: Sendable {
+    public let day: String
+    public let count: Int
+    public let sumBPM: Double
+    public var averageBPM: Double { sumBPM / Double(count) }
+}
+
 /// Exact-device transport evidence. Counts do not assert physiological validity or score eligibility.
 public struct CollectionStreamSnapshot: Sendable, Equatable {
     public let count: Int
@@ -21,6 +28,21 @@ public struct WhoopCollectionSnapshot: Sendable, Equatable {
 }
 
 extension WhoopStore {
+    /// Uncapped read-only aggregates for long history windows; optical estimates are excluded.
+    public func measuredHeartRateDays(deviceId: String, from: Int, to: Int) async throws -> [MeasuredHeartRateDay] {
+        try syncRead { try Self.readMeasuredHeartRateDays(db: $0, deviceId: deviceId, from: from, to: to) }
+    }
+
+    static func readMeasuredHeartRateDays(db: Database, deviceId: String, from: Int, to: Int) throws -> [MeasuredHeartRateDay] {
+        try Row.fetchAll(db, sql: """
+            SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n, SUM(bpm) AS total
+            FROM hrSample WHERE deviceId = ? AND ts >= ? AND ts <= ? AND bpm > 0
+            GROUP BY day ORDER BY day
+            """, arguments: [deviceId, from, to]).map {
+                MeasuredHeartRateDay(day: $0["day"], count: $0["n"], sumBPM: $0["total"])
+            }
+    }
+
     /// One consistent read transaction, bound to the active registry id rather than merged/imported data.
     public func collectionSnapshot(deviceId: String, from: Int, to: Int) async throws -> WhoopCollectionSnapshot {
         try syncRead { try Self.readCollectionSnapshot(db: $0, deviceId: deviceId, from: from, to: to) }

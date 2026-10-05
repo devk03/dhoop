@@ -85,6 +85,7 @@ targets:
       - StrandiOS/Cut/CutGoalPreferences.swift
       - StrandiOS/Cut/ProteinLogStore.swift
       - StrandiOS/Cut/HeartDashboardProjection.swift
+      - StrandiOS/Cut/MetricRangeProjection.swift
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
       - StrandiOS/Running/RunningZoneSession.swift
       - StrandiOS/Cut/TimedHeartRateSession.swift
