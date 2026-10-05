@@ -87,6 +87,7 @@ targets:
       - StrandiOS/Cut/HeartDashboardProjection.swift
       - StrandiOS/Cut/MetricRangeProjection.swift
       - StrandiOS/Cut/SleepRangeProjection.swift
+      - StrandiOS/Cut/SleepComparisonProjection.swift
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
       - StrandiOS/Running/RunningZoneSession.swift
       - StrandiOS/Running/HIITSession.swift
