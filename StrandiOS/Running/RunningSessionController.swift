@@ -12,6 +12,7 @@ final class RunningSessionController: ObservableObject {
     @Published private(set) var zones: [RunningZoneTarget] = []
     @Published private(set) var baselineDescription = "Reading dated resting heart rate…"
     @Published private(set) var statusMessage: String?
+    @Published private(set) var buzzTestMessage: String?
     @Published private(set) var summaries: [RunningSessionSummary] = []
     @Published private(set) var isConnected = false
     @Published private(set) var strapAlertsReady = false
@@ -153,9 +154,14 @@ final class RunningSessionController: ObservableObject {
 
     func testBuzz() {
         updateConnection()
-        guard strapAlertsReady, workoutHapticsEnabled, let app else { return }
+        guard strapAlertsReady, workoutHapticsEnabled, let app else {
+            buzzTestMessage = "Test unavailable. Connect and wear WHOOP, and enable workout haptics."
+            statusMessage = buzzTestMessage
+            return
+        }
         app.buzz(loops: 1, gate: HapticPrefs.workout)
-        statusMessage = "WHOOP buzz requested."
+        buzzTestMessage = "WHOOP buzz requested at \(Date().formatted(date: .omitted, time: .shortened))."
+        statusMessage = buzzTestMessage
     }
 
     func start() {

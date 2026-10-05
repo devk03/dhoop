@@ -7,6 +7,8 @@ struct HIITWorkoutView: View {
     let zones: [RunningZoneTarget]
     let canStart: Bool
     let testBuzz: () -> Void
+    let canTestBuzz: Bool
+    let buzzFeedback: String?
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = NoopMetrics.dashboardHeroNumber
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
@@ -53,7 +55,9 @@ struct HIITWorkoutView: View {
                     Text("Warm-up and cool-down use the recovery cue. Workout haptics must be on in Settings.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     Button("Test WHOOP buzz", action: testBuzz).font(StrandFont.subhead).buttonStyle(.bordered)
-                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!canTestBuzz)
+                    if let buzzFeedback { Text(buzzFeedback).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+                    if !canTestBuzz { Text("Connect and wear WHOOP with workout haptics enabled to test.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                 }
             }
             Button { controller.start(zones: zones, otherSessionActive: !canStart) } label: {

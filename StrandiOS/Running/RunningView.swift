@@ -47,7 +47,8 @@ private struct RunningContent: View, Equatable {
                     }
                     if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
                         HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
-                            testBuzz: { controller.testBuzz() })
+                            testBuzz: { controller.testBuzz() }, canTestBuzz: controller.strapAlertsReady && controller.workoutHapticsEnabled,
+                            buzzFeedback: controller.buzzTestMessage)
                     } else {
                         if let run = controller.session { sessionCard(run) } else { setupCard }
                         alertsCard

@@ -71,7 +71,7 @@ struct HeartMetricsView: View, Equatable {
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                         Text("\(observation?.deviceName ?? "WHOOP") · \(observation?.connected == true ? "Connected at check" : "Connection not confirmed")")
                             .font(StrandFont.subhead)
-                        Text(observation?.lastLiveHRAt.map { "Last HR received \(Date(timeIntervalSince1970: $0).formatted(.dateTime.hour().minute().second()))" } ?? "No readable HR at last check")
+                        Text(observationDetail)
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -87,6 +87,18 @@ struct HeartMetricsView: View, Equatable {
         }
         .buttonStyle(.plain).accessibilityElement(children: .combine)
         .accessibilityHint("Opens current device and collection evidence")
+    }
+
+    private var observationDetail: String {
+        guard let observation else { return "Collection has not been checked yet" }
+        let checked = Date(timeIntervalSince1970: observation.capturedAt).formatted(date: .abbreviated, time: .shortened)
+        guard let received = observation.lastLiveHRAt, received <= observation.capturedAt else { return "Checked \(checked) · No readable HR" }
+        let age = observation.capturedAt - received
+        let receipt: String
+        if age < 60 { receipt = "HR \(Int(age))s before check" }
+        else if age < 3600 { receipt = "HR \(Int(age / 60))m before check" }
+        else { receipt = "Last HR \(Date(timeIntervalSince1970: received).formatted(date: .abbreviated, time: .shortened))" }
+        return "Checked \(checked) · \(receipt)"
     }
 
     private var heartTile: some View {
