@@ -38,6 +38,9 @@ enum SleepComparisonProjection {
         let right = Dictionary(apple.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
         return whoop.compactMap { lhs in right[lhs.day].map { Pair(whoop: lhs, apple: $0) } }
     }
+    static func isAppWriteback(sourceID: String, ownBundleID: String?, syncID: String?, externalID: String?) -> Bool {
+        sourceID == ownBundleID || syncID?.hasPrefix("noop:") == true || externalID?.hasPrefix("noop:") == true
+    }
     static func hasWhoopOwner(_ owner: String?, rawIDs: Set<String>) -> Bool {
         guard let owner else { return false }
         return rawIDs.contains(owner)
@@ -100,11 +103,12 @@ enum SleepComparisonProjection {
             guard i + 1 < times.count else { continue }
             let duration = (times[i + 1] - t) / 60
             let stages = [Stage.deep, .rem, .core].filter { active[$0, default: 0] > 0 }
-            guard !stages.isEmpty || active[.unspecified, default: 0] > 0 else { continue }
+            guard active[.awake, default: 0] == 0,
+                  !stages.isEmpty || active[.unspecified, default: 0] > 0 else { continue }
             result[0] += duration
-            // Coarse asleep samples may overlap a precise stage. Conflicting precise/awake
-            // records remain unclassified instead of choosing an unsupported stage winner.
-            if stages.count == 1, active[.awake, default: 0] == 0 {
+            // Explicit awake overrides broad asleep intervals. Conflicting precise asleep
+            // stages remain unclassified rather than choosing a stage winner.
+            if stages.count == 1 {
                 let index = stages[0] == .deep ? 1 : stages[0] == .rem ? 2 : 3
                 result[index] += duration
             } else { result[4] += duration }

@@ -39,6 +39,18 @@ final class SleepComparisonTests: XCTestCase {
         XCTAssertEqual(row.total, 180); XCTAssertEqual(row.deep, 60); XCTAssertEqual(row.rem, 0)
         XCTAssertEqual(row.light, 60); XCTAssertEqual(row.unspecified, 60)
     }
+    func testAwakeOverridesOverlappingCoarseAndPreciseAsleepSamples() {
+        for stage in [SleepComparisonSample.Stage.unspecified, .core] {
+            let samples = [
+                sample(start: "2026-10-04T00:00:00Z", end: "2026-10-04T08:00:00Z", stage: stage),
+                sample(start: "2026-10-04T02:00:00Z", end: "2026-10-04T03:00:00Z", stage: .awake)
+            ]
+            let row = SleepComparisonProjection.healthProviders(samples, window: window, calendar: utc)[0].days[0]
+            XCTAssertEqual(row.total, 420, "The explicitly awake hour must not count as sleep")
+            XCTAssertEqual((row.deep ?? 0) + (row.rem ?? 0) + (row.light ?? 0) + (row.unspecified ?? 0), 420)
+        }
+    }
+
     func testSeparateNapAddsOnlyItsObservedDuration() {
         let samples = [sample(start: "2026-10-04T00:00:00Z", end: "2026-10-04T06:00:00Z", stage: .unspecified),
                        sample(start: "2026-10-04T10:00:00Z", end: "2026-10-04T10:30:00Z", stage: .unspecified)]
@@ -82,6 +94,14 @@ final class SleepComparisonTests: XCTestCase {
         XCTAssertFalse(SleepComparisonProjection.hasWhoopOwner("oura-import", rawIDs: ["my-whoop"]))
         XCTAssertTrue(SleepComparisonProjection.hasWhoopOwner("my-whoop", rawIDs: ["my-whoop"]))
     }
+    func testHealthComparisonExcludesActualExternalUUIDWritebackAcrossBuilds() {
+        XCTAssertTrue(SleepComparisonProjection.isAppWriteback(sourceID: "our.build", ownBundleID: "our.build", syncID: nil, externalID: nil))
+        XCTAssertTrue(SleepComparisonProjection.isAppWriteback(sourceID: "other.noop.build", ownBundleID: "our.build", syncID: nil, externalID: "noop:sleep:1234"))
+        XCTAssertTrue(SleepComparisonProjection.isAppWriteback(sourceID: "other.noop.build", ownBundleID: "our.build", syncID: "noop:sleep:1234", externalID: nil))
+        XCTAssertFalse(SleepComparisonProjection.isAppWriteback(sourceID: "eight.bundle", ownBundleID: "our.build", syncID: nil, externalID: "eight:1234"))
+        XCTAssertFalse(SleepComparisonProjection.isAppWriteback(sourceID: "watch.bundle", ownBundleID: "our.build", syncID: nil, externalID: nil))
+    }
+
     func testWholeRecordPrecedenceNeverBorrowsStagesFromLowerPriority() {
         let imported = SleepComparisonDay(day: "2026-10-04", sourceID: "whoop", method: "Imported", total: 400, deep: nil, rem: 80, light: nil, unspecified: nil)
         let computed = SleepComparisonDay(day: "2026-10-04", sourceID: "whoop-noop", method: "Estimate", total: 450, deep: 100, rem: 90, light: 260, unspecified: 0)

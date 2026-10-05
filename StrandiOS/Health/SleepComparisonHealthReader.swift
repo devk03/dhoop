@@ -25,9 +25,10 @@ enum SleepComparisonHealthReader {
                     default: return nil
                     }
                     let source = sample.sourceRevision.source
-                    guard source.bundleIdentifier != ownBundleID else { return nil }
-                    // Exclude other installed NOOP/Dhoop builds as well as this app's source.
-                    if (sample.metadata?[HKMetadataKeySyncIdentifier] as? String)?.hasPrefix("noop:") == true { return nil }
+                    // HealthKitBridge writes ExternalUUID; retain SyncIdentifier support for other versions.
+                    guard !SleepComparisonProjection.isAppWriteback(sourceID: source.bundleIdentifier, ownBundleID: ownBundleID,
+                        syncID: sample.metadata?[HKMetadataKeySyncIdentifier] as? String,
+                        externalID: sample.metadata?[HKMetadataKeyExternalUUID] as? String) else { return nil }
                     return SleepComparisonSample(sourceID: source.bundleIdentifier, sourceName: source.name,
                         start: sample.startDate.timeIntervalSince1970, end: sample.endDate.timeIntervalSince1970, stage: stage)
                 }
