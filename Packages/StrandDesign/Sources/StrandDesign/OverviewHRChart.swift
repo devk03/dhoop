@@ -80,6 +80,8 @@ public struct OverviewHRChart: View {
     public var workoutTint: Color
 
     private let averageValue: Double
+    let inspectionIndex: ChartScrubIndex
+    let inspectionLabel: String
 
     public init(
         points: [TrendPoint],
@@ -96,8 +98,9 @@ public struct OverviewHRChart: View {
         workoutTint: Color = StrandPalette.strain033,
         zoomDomain: Binding<ClosedRange<Date>?> = .constant(nil),
         zoomBounds: ClosedRange<Date>? = nil,
-        valueFormat: @escaping (Double) -> String = { String(Int($0.rounded())) },
-        dateFormat: @escaping (Date) -> String = { TrendChart.defaultDateString($0) }
+        valueFormat: @escaping (Double) -> String = { "\(Int($0.rounded())) bpm" },
+        dateFormat: @escaping (Date) -> String = { TrendChart.defaultDateString($0) },
+        inspectionLabel: String = "Heart-rate history"
     ) {
         let sorted = points.sorted { $0.date < $1.date }
         self.points = sorted
@@ -116,6 +119,11 @@ public struct OverviewHRChart: View {
         self.zoomBounds = zoomBounds
         self.valueFormat = valueFormat
         self.dateFormat = dateFormat
+        self.inspectionLabel = inspectionLabel
+        self.inspectionIndex = ChartScrubIndex(sorted.map {
+            ChartScrubDatum(id: String($0.date.timeIntervalSince1970), x: $0.date.timeIntervalSince1970,
+                y: $0.value, value: valueFormat($0.value), context: dateFormat($0.date), segment: $0.segment)
+        })
         self.averageValue = sorted.isEmpty
             ? valueRange.lowerBound
             : sorted.map(\.value).reduce(0, +) / Double(sorted.count)
@@ -486,8 +494,7 @@ public struct OverviewHRChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Heart rate, 24 hours"))
         .accessibilityValue(Text(accessibilitySummary))
-        .chartInspectionAccessibility(points.map { ChartScrubDatum(id: String($0.date.timeIntervalSince1970), x: $0.date.timeIntervalSince1970, y: $0.value,
-            value: "\(valueFormat($0.value)) bpm", context: dateFormat($0.date)) }, label: "Heart-rate history")
+        .chartInspectionAccessibility(inspectionIndex, label: inspectionLabel)
     }
 
     /// One-line VoiceOver summary: the day's HR (count, mean, range) plus the band/marker context the
@@ -499,7 +506,7 @@ public struct OverviewHRChart: View {
         let lo = values.min() ?? valueRange.lowerBound
         let hi = values.max() ?? valueRange.upperBound
         var parts = [String(localized: "\(points.count) readings", bundle: .module),
-                     String(localized: "average \(valueFormat(averageValue)) bpm", bundle: .module),
+                     String(localized: "average \(valueFormat(averageValue))", bundle: .module),
                      String(localized: "range \(valueFormat(lo)) to \(valueFormat(hi))", bundle: .module)]
         if let sleep {
             parts.append(String(localized: "asleep \(Self.hoursMinutes(sleep.end.timeIntervalSince(sleep.start)))", bundle: .module))

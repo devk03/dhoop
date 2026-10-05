@@ -197,7 +197,8 @@ public struct YearHeatStrip: View {
         // contributor. `children: .ignore` collapses the grid to this single summary at O(1) node cost.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(axSummary))
-        .accessibilityValue(selectedDescription)
+        .accessibilityValue(selectionDescription(for: hoverCell))
+        .onChange(of: days.map(\.date)) { _ in hoverCell = nil }
         .accessibilityAdjustableAction { direction in
             let cells = weeks.enumerated().flatMap { w, week in week.cells.indices.compactMap { r in week.cells[r] == nil ? nil : (week: w, row: r) } }
             guard !cells.isEmpty else { return }
@@ -206,8 +207,9 @@ public struct YearHeatStrip: View {
         }
     }
 
-    private var selectedDescription: String {
-        guard let h = hoverCell, let day = weeks[h.week].cells[h.row] else { return "Adjust to inspect dates." }
+    func selectionDescription(for cell: (week: Int, row: Int)?) -> String {
+        guard let h = cell, weeks.indices.contains(h.week), weeks[h.week].cells.indices.contains(h.row),
+              let day = weeks[h.week].cells[h.row] else { return "Adjust to inspect dates." }
         return "\(day.score.map(valueFormat) ?? "No recorded value"), \(DateFormatterCache.day.string(from: day.date))"
     }
 

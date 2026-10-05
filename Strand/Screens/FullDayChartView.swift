@@ -262,7 +262,8 @@ struct FullDayChartView: View {
             zoomDomain: $zoomDomain,
             zoomBounds: panBounds,   // #986: pan/scroll clamp is the rolling 3-day window, not one day
             valueFormat: { format($0) },
-            dateFormat: { Self.timeFmt.string(from: $0) }
+            dateFormat: { Self.timeFmt.string(from: $0) },
+            inspectionLabel: "\(metric.title) history"
         )
         #if os(macOS)
         // macOS has no pinch here, so wheel/trackpad scroll zooms about the cursor-agnostic centre.

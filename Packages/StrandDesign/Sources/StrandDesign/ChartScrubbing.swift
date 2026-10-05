@@ -19,6 +19,9 @@ public extension View {
         modifier(ChartTouchScrubModifier(enabled: enabled, changed: changed))
     }
     /// Recorded-point access for charts that already supply their own visual crosshair.
+    func chartInspectionAccessibility(_ index: ChartScrubIndex, label: String) -> some View {
+        modifier(ChartInspectionAccessibility(index: index, label: label))
+    }
     func chartInspectionAccessibility(_ data: [ChartScrubDatum], label: String) -> some View {
         modifier(ChartInspectionAccessibility(index: ChartScrubIndex(data), label: label))
     }

@@ -203,6 +203,12 @@ public struct Hypnogram: View {
                              : String(localized: "Sleep stages, \(parts.joined(separator: ", "))", bundle: .module)
     }
 
+    func selectionDescription(at index: Int?) -> String {
+        guard let index, intervals.indices.contains(index) else { return "Adjust to inspect sleep intervals." }
+        let interval = intervals[index]
+        return "\(interval.stage.label), \(timeLabel(interval.start)) to \(timeLabel(interval.end)), \(Self.durationPhrase(interval.duration))"
+    }
+
     /// A spoken duration phrase ("2 hours 5 minutes", "45 minutes", "1 hour") for a seconds interval.
     private static func durationPhrase(_ seconds: TimeInterval) -> String {
         let total = Int((seconds / 60).rounded())   // whole minutes
@@ -338,13 +344,13 @@ public struct Hypnogram: View {
                     // `accessibilityHidden`, so this single summary is the only node the chart contributes.
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(axSummary))
-                    .accessibilityValue(hoverIndex.map { "\(intervals[$0].stage.label), \(timeLabel(intervals[$0].start)) to \(timeLabel(intervals[$0].end)), \(Self.durationPhrase(intervals[$0].duration))" } ?? "Adjust to inspect sleep intervals.")
+                    .accessibilityValue(selectionDescription(at: hoverIndex))
                     .accessibilityAdjustableAction { direction in
                         guard !intervals.isEmpty else { return }
                         let current = hoverIndex ?? (direction == .increment ? -1 : intervals.count)
                         hoverIndex = min(intervals.count - 1, max(0, current + (direction == .increment ? 1 : -1)))
                     }
-                    .onChange(of: intervals.count) { _ in hoverIndex = nil }
+                    .onChange(of: intervals.map(\.id)) { _ in hoverIndex = nil }
                 }
                 .frame(height: height)
 
