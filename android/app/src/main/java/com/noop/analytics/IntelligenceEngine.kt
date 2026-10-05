@@ -1141,7 +1141,7 @@ object IntelligenceEngine {
                             day = day, attempted = true, reason = "no-motion-no-hypnogram",
                             gravRows = grav.size, storedNights = 0,
                         ))
-                        SleepStager.hrOnlySessions(day, hr, rr, resp, traceSink = ::dayDiag)
+                        SleepStager.hrOnlySessions(day, hr, rr, resp, wristOff = wristOff, traceSink = ::dayDiag)
                     }
                 }
             } else {
@@ -3094,8 +3094,8 @@ object IntelligenceEngine {
         // off-wrist sleep backstop (#500). The HR-gap proxy in the stager is the always-on guard;
         // these explicit intervals sharpen it under the FRACTIONAL rule (#504) , a session is dropped
         // only when its off-wrist coverage reaches maxOffWristSleepFraction, so a real night with a
-        // short off-wrist tail survives. An unmatched OFF may close at sustained valid HR evidence;
-        // otherwise it remains uncertain through `to`. Empty when no wrist events were recorded.
+        // short off-wrist tail survives. Sustained valid HR can reconcile a contradictory OFF segment;
+        // later events cannot erase earlier evidence. Empty when no events were recorded.
         val wristOff = AnalyticsEngine.offWristIntervals(repo.events(owner, from, to, STREAM_LIMIT), to, hr)
         return DaySkinReads(skin, spo2, skinFamily, skinWornToleranceSec, skinAnchorRaw, wristOff)
     }

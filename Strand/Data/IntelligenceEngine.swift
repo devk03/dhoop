@@ -1277,8 +1277,8 @@ final class IntelligenceEngine: ObservableObject {
                 // off-wrist sleep backstop (#500). The HR-gap proxy in the stager is the always-on guard;
                 // these explicit intervals sharpen it under the FRACTIONAL rule (#504) , a session is dropped
                 // only when its off-wrist coverage reaches maxOffWristSleepFraction, so a real night with a
-                // short off-wrist tail survives. An unmatched OFF may close at sustained valid HR evidence;
-                // otherwise it remains uncertain through `to`. Empty when no wrist events were recorded.
+                // short off-wrist tail survives. Sustained valid HR can reconcile a contradictory OFF
+                // segment; later events cannot erase earlier evidence. Empty when no events were recorded.
                 let wristEvents = (try? await store.events(deviceId: owner, from: from, to: to, limit: 50_000)) ?? []
                 let wristOff = AnalyticsEngine.offWristIntervals(events: wristEvents, windowEnd: to, hr: hr)
 
@@ -1416,6 +1416,7 @@ final class IntelligenceEngine: ObservableObject {
                             day: day, attempted: true, reason: "no-motion-no-hypnogram",
                             gravRows: grav.count, storedNights: 0))
                         providedSleep = SleepStager.hrOnlySessions(day: day, hr: hr, rr: rr, resp: resp,
+                                                                   wristOff: wristOff,
                                                                    traceSink: traceSink)
                     }
                 } else {

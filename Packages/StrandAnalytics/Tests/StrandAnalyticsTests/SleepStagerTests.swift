@@ -4,6 +4,27 @@ import WhoopProtocol
 
 final class SleepStagerTests: XCTestCase {
 
+    func testExactMinimumDurationIsConsistentWithFragmentRescueFloor() {
+        let start = nightStart(02), dur = 3601
+        let out = SleepStager.detectSleep(hr: hrStream(start: start, durationS: dur, bpm: 50),
+            gravity: stillGravity(start: start, durationS: dur))
+        XCTAssertEqual(out.count, 1)
+        XCTAssertEqual(out.first?.end, start + 3600)
+    }
+
+    func testShortMotionFragmentCannotEraseLaterNightAcrossMissingHours() {
+        let start = nightStart(00) - 4 * 3600
+        let hr = hrStream(start: start, durationS: 600, bpm: 50)
+            + hrStream(start: start + 21600, durationS: 5400, bpm: 50)
+        let grav = stillGravity(start: start, durationS: 600)
+            + stillGravity(start: start + 21600, durationS: 5400)
+        var trace: [String] = []
+        let out = SleepStager.detectSleep(hr: hr, gravity: grav, traceSink: { trace.append($0) })
+        XCTAssertEqual(out.count, 1, trace.joined(separator: "\n"))
+        XCTAssertEqual(out.first?.start, start + 21600)
+        XCTAssertEqual(out.first?.end, start + 26999)
+    }
+
     // MARK: - Cole–Kripke
 
     func testColeKripkeAllStillIsSleep() {

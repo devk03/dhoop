@@ -525,6 +525,13 @@ object SleepStager {
         if (baseline == null) return false
         val seg = hr.filter { it.ts > a && it.ts <= b }
         if (seg.isEmpty()) return false
+        // A far-edge reading cannot vouch for an unread interval. Mirrors Swift's hard-gap guard.
+        var previous = a
+        for (sample in seg.sortedBy { it.ts }) {
+            if (sample.ts - previous > maxGapMin * 60) return false
+            previous = sample.ts
+        }
+        if (b - previous > maxGapMin * 60) return false
         // MEDIAN, not mean (#1657). [confirmSleepWithHR] twelve lines below already documents why the
         // mean is the wrong statistic here — "a real sleep night carries brief arousal / wake HR spikes
         // (observed to ~190 bpm)" that drag it above the band — and uses the median for exactly that
@@ -727,6 +734,7 @@ object SleepStager {
         rr: List<RrInterval>,
         resp: List<RespSample>,
         minMinutes: Int = minSleepMin,
+        wristOff: List<Pair<Long, Long>> = emptyList(),
         /**
          * #1801 follow-up: this path shipped SILENT, and the first field log then showed
          * `reason=no-motion` with no way to tell whether the spine ran and found nothing or never ran.
@@ -762,6 +770,8 @@ object SleepStager {
             if (p.stage != "sleep") continue
             longestSleepS = maxOf(longestSleepS, p.end - p.start)
             if ((p.end - p.start) < minMinutes * 60L) continue
+            if (p.end - p.start > maxMainSleepSpanS) continue
+            if (offWristFraction(p, hrS, wristOff) >= maxOffWristSleepFraction) continue
             val stages = SleepStagerV2.stageSession(p.start, p.end, emptyList(), hrS, rrS, resp)
             staged++
             if (stages.isEmpty()) continue
@@ -888,7 +898,7 @@ object SleepStager {
         return periods
     }
 
-    /** Absorb runs shorter than mergeMin minutes into their neighbours. */
+    /** Absorb short runs without bridging a hard acquisition gap. Mirrors Swift. */
     internal fun mergePeriods(periods: List<Period>, mergeMinutes: Int = mergeMin): List<Period> {
         if (periods.isEmpty()) return emptyList()
         val pending = periods.toMutableList()
@@ -904,9 +914,9 @@ object SleepStager {
                 continue
             }
 
-            val hasPrev = i > 0 && merged.isNotEmpty()
-            val hasNext = i + 1 < pending.size
-            val bridgesSame = hasPrev && hasNext && pending[i - 1].stage == pending[i + 1].stage
+            val hasPrev = merged.lastOrNull()?.let { current.start - it.end <= maxGapMin * 60 } ?: false
+            val hasNext = i + 1 < pending.size && pending[i + 1].start - current.end <= maxGapMin * 60
+            val bridgesSame = hasPrev && hasNext && merged.last().stage == pending[i + 1].stage
 
             if (bridgesSame) {
                 val prev = merged.removeAt(merged.size - 1)
@@ -1695,7 +1705,7 @@ object SleepStager {
             firstSleepStart = minOf(firstSleepStart, p.start)
             lastSleepEnd = maxOf(lastSleepEnd, p.end)
             val spanMin = ((p.end - p.start) / 60).toInt()
-            if ((p.end - p.start) <= minSleepS) {
+            if ((p.end - p.start) < minSleepS) {
                 minSleepDrops += 1
                 traceSink?.invoke(SleepStagerTrace.runLine(runIndex, p.start, p.end,
                     SleepStagerTrace.Verdict.DROPPED, "minSleepMin", "spanMin=$spanMin minSleepMin=$minSleepMin"))

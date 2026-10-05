@@ -26,13 +26,28 @@ class SleepWearEvidenceTest {
         assertNull(SleepWearEvidence.confirmedWearStart(dense(1, 100), 0, 60))
         assertEquals(31L, SleepWearEvidence.confirmedWearStart(dense(1, 100), 30, 100))
     }
-    @Test fun onlyUnmatchedOffAfterMostRecentEventCanBeReconciled() {
+    @Test fun laterEventsDoNotEraseEarlierSustainedWear() {
         fun event(ts: Long, kind: String) = EventRow("test", ts, kind, "{}")
         val hr = dense(1, 80).map { HrSample("test", it.first, it.second) }
         val off = event(0, "WRIST_OFF(10)")
         assertEquals(listOf(0L to 1L), AnalyticsEngine.offWristIntervals(listOf(off), 500, hr))
         assertEquals(listOf(0L to 500L), AnalyticsEngine.offWristIntervals(listOf(off), 500))
-        assertEquals(listOf(0L to 500L), AnalyticsEngine.offWristIntervals(listOf(event(100, "WRIST_OFF(10)"), off), 500, hr))
-        assertEquals(listOf(0L to 300L), AnalyticsEngine.offWristIntervals(listOf(off, event(300, "WRIST_ON(9)")), 500, hr))
+        assertEquals(listOf(0L to 1L, 100L to 500L), AnalyticsEngine.offWristIntervals(listOf(event(100, "WRIST_OFF(10)"), off), 500, hr))
+        assertEquals(listOf(0L to 1L), AnalyticsEngine.offWristIntervals(listOf(off, event(300, "WRIST_ON(9)")), 500, hr))
+        assertEquals(listOf(0L to 300L), AnalyticsEngine.offWristIntervals(listOf(off, event(300, "WRIST_ON(9)")), 500))
+    }
+
+    @Test fun cutoffTiesAndHalfOpenIntervalsMatchSwiftOracle() {
+        val hr = dense(1, 61)
+        fun spans(events: List<Pair<Long, Boolean>>, through: Long, readings: List<Pair<Long, Int>> = emptyList()) =
+            SleepWearEvidence.offWristIntervals(events, readings, through).joinToString(",") { "${it.first}:${it.second}" }
+        assertEquals("0:100", spans(listOf(0L to true, 200L to false), 100))
+        assertEquals(spans(listOf(0L to true), 100, hr), spans(listOf(0L to true, 200L to true), 100, hr))
+        assertEquals("0:100", spans(listOf(0L to true, 0L to false), 100))
+        assertEquals("0:100", spans(listOf(0L to false, 0L to true, 0L to true), 100))
+        assertEquals("0:61", spans(listOf(0L to true, 61L to false), 100, hr))
+        assertEquals("0:1", spans(listOf(0L to true, 62L to false), 100, hr))
+        assertEquals("0:1,100:200", spans(listOf(0L to true, 100L to true, 200L to false), 500, hr))
+        assertEquals("0:200", spans(listOf(0L to true, 100L to true, 200L to false), 500))
     }
 }

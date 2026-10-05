@@ -16,6 +16,24 @@ import WhoopProtocol
 /// accurate on a real night, which no test here can establish.
 final class SleepStagerHrOnlySessionsTests: XCTestCase {
 
+    func testHrOnlyFallbackHonorsLongSpanAndOffWristGuards() {
+        let long = (0...61200).map { HRSample(ts: $0, bpm: 50) }
+        XCTAssertTrue(SleepStager.hrOnlySessions(day: "1970-01-01", hr: long, rr: [], resp: []).isEmpty)
+        let night = (0...5400).map { HRSample(ts: $0, bpm: 50) }
+        XCTAssertEqual(SleepStager.hrOnlySessions(day: "1970-01-01", hr: night, rr: [], resp: []).count, 1)
+        XCTAssertTrue(SleepStager.hrOnlySessions(day: "1970-01-01", hr: night, rr: [], resp: [], wristOff: [(0,5400)]).isEmpty)
+    }
+
+    func testShortFragmentCannotFillHoursWithoutReadings() {
+        let hr = (0..<600).map { HRSample(ts: $0, bpm: 50) }
+            + (21600..<27000).map { HRSample(ts: $0, bpm: 50) }
+        let out = SleepStager.hrOnlySessions(day: "1970-01-01", hr: hr, rr: [], resp: [])
+        XCTAssertEqual(out.count, 1)
+        XCTAssertEqual(out.first?.start, 21600)
+        XCTAssertEqual(out.first?.end, 26999)
+        XCTAssertTrue(out.flatMap(\.stages).allSatisfy { $0.start >= 21600 })
+    }
+
     /// A field-shaped window: `aH` hours awake around 74 +/- 11 bpm, then `nH` hours asleep around
     /// 64 +/- 5 — the shape the #1801 report shows, and the same generator the Kotlin twin uses.
     private func window(aH: Int = 16, nH: Int = 8) -> ([HRSample], [RRInterval]) {

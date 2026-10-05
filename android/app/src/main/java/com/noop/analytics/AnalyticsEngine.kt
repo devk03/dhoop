@@ -78,35 +78,15 @@ object AnalyticsEngine {
     /**
      * Pair the strap's WRIST_OFF/WRIST_ON events into off-wrist [start, end) intervals for the sleep
      * detector's fractional wear filter (#500; design credited to j0b-dev's #504). Each WRIST_OFF opens
-     * an interval that closes at the next WRIST_ON. A final unmatched OFF can close at sustained valid
-     * HR after the latest OFF; without that evidence its uncertain span reaches [windowEnd].
-     * Events need not be pre-sorted; kinds are formatted "NAME(n)" (e.g.
-     * "WRIST_OFF(10)"), matched by prefix. Repeated OFFs/ONs without a partner are coalesced. Mirrors Swift.
+     * an interval that closes at the next wear event or earlier sustained valid HR. Independent
+     * segments preserve wear before a later removal. Same-second OFF wins over ON; future input is
+     * excluded. Original events remain unchanged. Mirrors Swift.
      */
     fun offWristIntervals(events: List<EventRow>, windowEnd: Long, hr: List<HrSample> = emptyList()): List<Pair<Long, Long>> {
         val wear = events
             .filter { it.kind.startsWith("WRIST_OFF") || it.kind.startsWith("WRIST_ON") }
-            .sortedBy { it.ts }
-        val intervals = ArrayList<Pair<Long, Long>>()
-        var offStart: Long? = null
-        var latestOff: Long? = null
-        for (e in wear) {
-            if (e.kind.startsWith("WRIST_OFF")) {
-                if (offStart == null) offStart = e.ts            // ignore repeated OFFs
-                latestOff = e.ts
-            } else {                                             // WRIST_ON closes an open off-wrist span
-                val s = offStart
-                if (s != null && e.ts > s) intervals.add(s to e.ts)
-                offStart = null
-                latestOff = null
-            }
-        }
-        val s = offStart
-        if (s != null && windowEnd > s) {
-            val restored = SleepWearEvidence.confirmedWearStart(hr.map { it.ts to it.bpm }, latestOff ?: s, windowEnd)
-            intervals.add(s to (restored ?: windowEnd))
-        }
-        return intervals
+            .map { it.ts to it.kind.startsWith("WRIST_OFF") }
+        return SleepWearEvidence.offWristIntervals(wear, hr.map { it.ts to it.bpm }, windowEnd)
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -418,6 +418,14 @@ public enum SleepStager {
         guard let baseline = baseline else { return false }
         let seg = hr.filter { $0.ts > a && $0.ts <= b }
         if seg.isEmpty { return false }
+        // A reading at the far edge cannot vouch for hours of missing HR. Keep the same hard-gap
+        // boundary used when forming runs; genuine continuous HR still rescues motion-only gaps.
+        var previous = a
+        for sample in seg.sorted(by: { $0.ts < $1.ts }) {
+            if sample.ts - previous > maxGapMin * 60 { return false }
+            previous = sample.ts
+        }
+        if b - previous > maxGapMin * 60 { return false }
         // MEDIAN, not mean (#1657). `confirmSleepWithHR` below already documents why the mean is the
         // wrong statistic here — "a real sleep night carries brief arousal / wake HR spikes (observed to
         // ~190 bpm)" that drag it above the band — and uses the median for exactly that reason. This gate
@@ -658,6 +666,7 @@ public enum SleepStager {
     /// reach them with `@testable`, and nothing outside should be building its own spine.
     public static func hrOnlySessions(day: String, hr: [HRSample], rr: [RRInterval], resp: [RespSample],
                                       minMinutes: Int = minSleepMin,
+                                      wristOff: [(start: Int, end: Int)] = [],
                                       traceSink: ((String) -> Void)? = nil) -> [SleepSession] {
         let hrS = hr.sorted { $0.ts < $1.ts }
         // ONE sort of the bpm axis, reused for the anchor and for the spread the trace reports.
@@ -684,6 +693,8 @@ public enum SleepStager {
             if p.stage != "sleep" { continue }
             longestSleepS = max(longestSleepS, p.end - p.start)
             if (p.end - p.start) < minMinutes * 60 { continue }
+            if p.end - p.start > maxMainSleepSpanS { continue }
+            if offWristFraction(p, hr: hrS, wristOff: wristOff) >= maxOffWristSleepFraction { continue }
             let stages = SleepStagerV2.stageSession(start: p.start, end: p.end, grav: [],
                                                     hr: hrS, rr: rrS, resp: resp)
             staged += 1
@@ -723,7 +734,7 @@ public enum SleepStager {
         return out
     }
 
-    /// Absorb runs shorter than mergeMin minutes into their neighbours.
+    /// Absorb short runs only across boundaries that did not split for a hard acquisition gap.
     static func mergePeriods(_ periods: [Period], mergeMinutes: Int = mergeMin) -> [Period] {
         if periods.isEmpty { return [] }
         var pending = periods
@@ -735,9 +746,9 @@ public enum SleepStager {
             let tooShort = (current.end - current.start) < thresholdS
             if !tooShort { merged.append(current); i += 1; continue }
 
-            let hasPrev = i > 0 && !merged.isEmpty
-            let hasNext = i + 1 < pending.count
-            let bridgesSame = hasPrev && hasNext && pending[i - 1].stage == pending[i + 1].stage
+            let hasPrev = merged.last.map { current.start - $0.end <= maxGapMin * 60 } ?? false
+            let hasNext = i + 1 < pending.count && pending[i + 1].start - current.end <= maxGapMin * 60
+            let bridgesSame = hasPrev && hasNext && merged.last?.stage == pending[i + 1].stage
 
             if bridgesSame {
                 let prev = merged.removeLast()
@@ -1508,7 +1519,7 @@ public enum SleepStager {
             firstSleepStart = min(firstSleepStart, p.start)
             lastSleepEnd = max(lastSleepEnd, p.end)
             let spanMin = (p.end - p.start) / 60
-            if (p.end - p.start) <= minSleepS {
+            if (p.end - p.start) < minSleepS {
                 minSleepDrops += 1
                 traceSink?(GateTrace.runLine(index: runIndex, startTs: p.start, endTs: p.end,
                     verdict: .dropped, gate: "minSleepMin",

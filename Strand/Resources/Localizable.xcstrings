@@ -1,6 +1,70 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Scores could not be saved. A later scoring pass will retry.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Bewertungen konnten nicht gespeichert werden. Bei einer späteren Berechnung wird es erneut versucht."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scores could not be saved. A later scoring pass will retry."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se han podido guardar las puntuaciones. Se volverá a intentar en un cálculo posterior."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les scores n’ont pas pu être enregistrés. Une prochaine analyse réessaiera."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile salvare i punteggi. Verrà effettuato un nuovo tentativo durante un calcolo successivo."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nie udało się zapisać wyników. Próba zostanie ponowiona przy kolejnym obliczeniu."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível guardar as pontuações. Será feita uma nova tentativa num cálculo posterior."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Не удалось сохранить оценки. При следующем расчёте попытка будет повторена."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法保存评分。后续计算时将重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法儲存評分。後續計算時將重試。"
+          }
+        }
+      }
+    },
         "Ring battery %lld percent": { "localizations": {
           "de": {"stringUnit": {"state": "translated", "value": "Ring-Akku %lld Prozent"}}, "es": {"stringUnit": {"state": "translated", "value": "Batería del anillo %lld por ciento"}}, "fr": {"stringUnit": {"state": "translated", "value": "Batterie de la bague %lld pour cent"}}, "it": {"stringUnit": {"state": "translated", "value": "Batteria dell'anello %lld percento"}}, "pl": {"stringUnit": {"state": "translated", "value": "Bateria pierścienia %lld procent"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "Bateria do anel %lld por cento"}}, "ru": {"stringUnit": {"state": "translated", "value": "Заряд кольца %lld процентов"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "戒指电量百分之 %lld"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "戒指電量百分之 %lld"}}
         } },

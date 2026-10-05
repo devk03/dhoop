@@ -22,13 +22,30 @@ final class SleepWearEvidenceTests: XCTestCase {
         XCTAssertNil(SleepWearEvidence.confirmedWearStart(samples: dense(1, 100), after: 0, through: 60))
         XCTAssertEqual(SleepWearEvidence.confirmedWearStart(samples: dense(1, 100), after: 30, through: 100), 31)
     }
-    func testOnlyUnmatchedOffIsReconciledAfterMostRecentOffEvent() {
+    func testLaterEventsDoNotEraseEarlierSustainedWear() {
         func event(_ ts: Int, _ kind: String) -> WhoopEvent { WhoopEvent(ts: ts, kind: kind, payload: [:]) }
         let hr = dense(1, 80).map { HRSample(ts: $0.ts, bpm: $0.bpm) }
         let off = event(0, "WRIST_OFF(10)")
         XCTAssertEqual(AnalyticsEngine.offWristIntervals(events: [off], windowEnd: 500, hr: hr).map(\.end), [1])
         XCTAssertEqual(AnalyticsEngine.offWristIntervals(events: [off], windowEnd: 500).map(\.end), [500])
-        XCTAssertEqual(AnalyticsEngine.offWristIntervals(events: [event(100, "WRIST_OFF(10)"), off], windowEnd: 500, hr: hr).map(\.end), [500])
-        XCTAssertEqual(AnalyticsEngine.offWristIntervals(events: [off, event(300, "WRIST_ON(9)")], windowEnd: 500, hr: hr).map(\.end), [300])
+        XCTAssertEqual(AnalyticsEngine.offWristIntervals(events: [event(100, "WRIST_OFF(10)"), off], windowEnd: 500, hr: hr).map(\.end), [1, 500])
+        XCTAssertEqual(AnalyticsEngine.offWristIntervals(events: [off, event(300, "WRIST_ON(9)")], windowEnd: 500, hr: hr).map(\.end), [1])
+        XCTAssertEqual(AnalyticsEngine.offWristIntervals(events: [off, event(300, "WRIST_ON(9)")], windowEnd: 500).map(\.end), [300])
+    }
+
+    func testCutoffTiesAndHalfOpenIntervals() {
+        let hr = dense(1, 61)
+        func spans(_ events: [(Int, Bool)], _ through: Int, _ readings: [(Int, Int)] = []) -> String {
+            SleepWearEvidence.offWristIntervals(events: events, samples: readings, through: through)
+                .map { "\($0.start):\($0.end)" }.joined(separator: ",")
+        }
+        XCTAssertEqual(spans([(0, true), (200, false)], 100), "0:100")
+        XCTAssertEqual(spans([(0, true), (200, true)], 100, hr), spans([(0, true)], 100, hr))
+        XCTAssertEqual(spans([(0, true), (0, false)], 100), "0:100")
+        XCTAssertEqual(spans([(0, false), (0, true), (0, true)], 100), "0:100")
+        XCTAssertEqual(spans([(0, true), (61, false)], 100, hr), "0:61")
+        XCTAssertEqual(spans([(0, true), (62, false)], 100, hr), "0:1")
+        XCTAssertEqual(spans([(0, true), (100, true), (200, false)], 500, hr), "0:1,100:200")
+        XCTAssertEqual(spans([(0, true), (100, true), (200, false)], 500), "0:200")
     }
 }
