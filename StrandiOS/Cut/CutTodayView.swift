@@ -26,6 +26,8 @@ private struct CutTodayDashboard: View, Equatable {
     }
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model }
     @ObservedObject private var goal = CutGoalPreferences.shared
+    @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
+    private var units: CutDisplayUnits { CutDisplayUnits(rawValue: unitSystemRaw) }
     @EnvironmentObject var router: NavRouter
     @ObservedObject private var plan = CutPlanStore.shared
 
@@ -236,7 +238,7 @@ private struct CutTodayDashboard: View, Equatable {
                 HStack {
                     Text("FAT").font(StrandFont.overline).tracking(1.6).foregroundStyle(StrandPalette.textSecondary)
                     Spacer()
-                    chip("1 kg = 7,700 kcal")
+                    chip(units.system == .imperial ? "1 lb ≈ 3,493 kcal" : "1 kg = 7,700 kcal")
                 }
 
                 HStack(spacing: NoopMetrics.space2) {
@@ -275,7 +277,7 @@ private struct CutTodayDashboard: View, Equatable {
                 Text("7 days").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 Spacer()
                 if logged {
-                    Text(String(format: "%@%.2f kg", totalKcal >= 0 ? "−" : "+", abs(totalKcal) / CutPlanStore.kcalPerKgFat))
+                    Text((totalKcal >= 0 ? "−" : "+") + units.mass(abs(totalKcal) / CutPlanStore.kcalPerKgFat, decimals: 2))
                         .font(StrandFont.bodyNumber).foregroundStyle(totalKcal >= 0 ? good : bad)
                 }
             }
@@ -344,10 +346,9 @@ private struct CutTodayDashboard: View, Equatable {
             .background(Capsule().fill(StrandPalette.hairline))
     }
 
-    /// Grams (under 1 kg) or kilograms of fat for a kcal deficit; sign dropped (the label carries it).
+    /// Fat estimate in the selected body units; sign dropped because the label carries it.
     private func fatText(_ kcal: Double) -> String {
-        let g = abs(kcal) / CutPlanStore.kcalPerKgFat * 1000
-        return g < 1000 ? "\(Int(g.rounded())) g" : String(format: "%.2f kg", g / 1000)
+        units.fatMass(abs(kcal) / CutPlanStore.kcalPerKgFat)
     }
 
     /// The last seven calendar days, oldest first. A day with nothing logged has no deficit rather than
@@ -427,7 +428,8 @@ private struct CutTodayDashboard: View, Equatable {
     private var goalCard: some View {
         let current = estimate.kg
         let toLose = max(current - plan.goalKg, 0)
-        let reached = current <= plan.goalKg
+        let needsGoal = plan.goalKg >= plan.startKg
+        let reached = !needsGoal && current <= plan.goalKg
         let b = budget
         return NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
@@ -435,7 +437,7 @@ private struct CutTodayDashboard: View, Equatable {
                     Text("GOAL").font(StrandFont.overline).tracking(1.6).foregroundStyle(StrandPalette.textSecondary)
                     Spacer()
                     Button { showGoal = true } label: {
-                        Label("Edit", systemImage: "pencil")
+                        Label(needsGoal ? "Set goal" : "Edit", systemImage: "pencil")
                             .font(StrandFont.caption)
                             .padding(.horizontal, NoopMetrics.space2)
                             .padding(.vertical, NoopMetrics.space1)
@@ -446,16 +448,20 @@ private struct CutTodayDashboard: View, Equatable {
                 }
 
                 // 1. What you're aiming for.
-                Text(reached ? "Goal reached: \(String(format: "%.1f", plan.goalKg)) kg"
-                     : "Lose \(String(format: "%.1f", toLose)) kg → \(String(format: "%.1f", plan.goalKg)) kg by \(plan.targetDate.formatted(.dateTime.day().month(.abbreviated)))")
+                Text(needsGoal ? "Choose a goal weight and date"
+                     : reached ? "Goal reached: \(units.mass(plan.goalKg))"
+                     : "Lose \(units.mass(toLose)) → \(units.mass(plan.goalKg)) by \(plan.targetDate.formatted(.dateTime.day().month(.abbreviated)))")
                     .font(StrandFont.number(20, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.7)
-                weightBar(current: current)
+                if needsGoal {
+                    Text("Current weight: \(units.mass(current))")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                } else {
+                    weightBar(current: current)
+                    statusLine(current: current)
+                }
 
-                // 2. How you're doing.
-                statusLine(current: current)
-
-                if !reached {
+                if !reached && !needsGoal {
                     Divider().overlay(StrandPalette.hairline)
                     // 3. What today needs. The same numbers the calories card above uses.
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
@@ -484,9 +490,9 @@ private struct CutTodayDashboard: View, Equatable {
         let done = min(max((plan.startKg - current) / span, 0), 1)
         return VStack(spacing: NoopMetrics.space1) {
             HStack {
-                Text(String(format: "%.1f", plan.startKg))
+                Text(units.mass(plan.startKg))
                 Spacer()
-                Text(String(format: "%.1f", plan.goalKg))
+                Text(units.mass(plan.goalKg))
             }
             .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
             GeometryReader { g in
@@ -498,7 +504,7 @@ private struct CutTodayDashboard: View, Equatable {
                         .offset(x: min(max(x - 8, 0), g.size.width - 16))
                 }
                 .frame(height: 16)
-                Text(String(format: "%.1f now", current))
+                Text("\(units.mass(current)) now")
                     .font(StrandFont.caption.weight(.semibold)).foregroundStyle(StrandPalette.textPrimary)
                     .fixedSize()
                     .position(x: min(max(x, 28), g.size.width - 28), y: 28)
@@ -584,17 +590,13 @@ private struct CutTodayDashboard: View, Equatable {
 
     // MARK: Data
 
-    /// First launch: write the owner's stated numbers into the profile once, so every estimate
-    /// (calories, HR zones) uses them. Editable afterwards under Edit plan.
+    /// Initialize the plan from onboarding without overwriting the user's profile.
     private func seedPlanIfNeeded() {
         guard goal.isEnabled, !plan.configured else { return }
-        profile.weightKg = 83.3
-        profile.heightCm = 180
-        profile.sex = "male"
-        profile.dateOfBirth = ProfileStore.dateOfBirth(forAge: 24)
-        plan.startKg = 83.3
+        plan.startKg = profile.weightKg
+        // A new installation has no personal goal yet. Do not inherit the original author's target.
+        plan.goalKg = profile.weightKg
         plan.startDay = dayKey
-        plan.goalKg = 75
         plan.configured = true
     }
 
@@ -720,16 +722,18 @@ private struct AddFoodSheet: View {
 }
 
 private struct LogWeightSheet: View {
+    @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
+    private var units: CutDisplayUnits { CutDisplayUnits(rawValue: unitSystemRaw) }
     @EnvironmentObject var profile: ProfileStore
     @ObservedObject private var plan = CutPlanStore.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var kg = ""
+    @State private var weightInput = ""
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Weight (kg)", text: $kg).keyboardType(.decimalPad)
+                    TextField("Weight (\(units.massUnit))", text: $weightInput).keyboardType(.decimalPad)
                 } footer: {
                     Text("Optional. If you weigh yourself somewhere, enter it here and the estimate restarts from it.")
                 }
@@ -739,7 +743,7 @@ private struct LogWeightSheet: View {
                             HStack {
                                 Text(w.at.formatted(date: .abbreviated, time: .omitted))
                                 Spacer()
-                                Text(String(format: "%.1f kg", w.kg)).foregroundStyle(StrandPalette.textSecondary)
+                                Text(units.mass(w.kg)).foregroundStyle(StrandPalette.textSecondary)
                             }
                         }
                     }
@@ -760,18 +764,24 @@ private struct LogWeightSheet: View {
                     .disabled(parsed == nil)
                 }
             }
-            .onAppear { kg = String(format: "%.1f", profile.weightKg) }
+            .onAppear { weightInput = units.massInput(profile.weightKg) }
+            .onChange(of: unitSystemRaw) { old, new in
+                let kg = CutDisplayUnits(rawValue: old).parsedWeight(weightInput) ?? profile.weightKg
+                weightInput = CutDisplayUnits(rawValue: new).massInput(kg)
+            }
         }
         .presentationDetents([.medium, .large])
     }
 
     private var parsed: Double? {
-        Double(kg.replacingOccurrences(of: ",", with: ".")).flatMap { $0 > 20 && $0 < 400 ? $0 : nil }
+        units.parsedWeight(weightInput)
     }
 }
 
 private struct CutPlanSheet: View {
     @ObservedObject private var goal = CutGoalPreferences.shared
+    @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
+    private var units: CutDisplayUnits { CutDisplayUnits(rawValue: unitSystemRaw) }
     @EnvironmentObject var profile: ProfileStore
     @ObservedObject private var plan = CutPlanStore.shared
     @Environment(\.dismiss) private var dismiss
@@ -785,9 +795,16 @@ private struct CutPlanSheet: View {
                     Text("Turn on calorie budgets, food logging, and weight goals. When off, focus on activity and sleep. Your saved plan and entries are kept. Review your goal and date when turning this back on.")
                 }
                 if goal.isEnabled {
+                    Section("Units") {
+                        Picker("Body measurements", selection: $unitSystemRaw) {
+                            Text("Metric").tag(UnitSystem.metric.rawValue)
+                            Text("Imperial").tag(UnitSystem.imperial.rawValue)
+                        }
+                        .pickerStyle(.segmented)
+                    }
                     Section("You") {
-                        Stepper(value: $profile.heightCm, in: 120...230, step: 1) {
-                            row("Height", String(format: "%.0f cm", profile.heightCm))
+                        Stepper(value: units.heightBinding($profile.heightCm), in: units.heightRange, step: 1) {
+                            row("Height", units.height(profile.heightCm))
                         }
                         Stepper(value: ageBinding, in: 14...100) { row("Age", "\(profile.age)") }
                         Picker("Sex", selection: $profile.sex) {
@@ -796,8 +813,8 @@ private struct CutPlanSheet: View {
                         }
                     }
                     Section("Goal") {
-                        Stepper(value: $plan.startKg, in: 40...250, step: 0.1) {
-                            row("Starting weight", String(format: "%.1f kg", plan.startKg))
+                        Stepper(value: units.massBinding($plan.startKg), in: units.massRange(40...250), step: units.massStep) {
+                            row("Starting weight", units.mass(plan.startKg))
                         }
                         Picker("Deficit from", selection: $plan.workoutShare) {
                             ForEach([0.0, 0.2, 0.3, 0.4, 0.5], id: \.self) { s in
@@ -822,7 +839,7 @@ private struct CutPlanSheet: View {
                                             male: profile.sex != "female", activeKcal: 0, eaten: 0)
                         row("BMR", "\(Int(b.bmr.rounded())) kcal")
                         row("Maintenance (no workouts)", "\(Int(b.maintenance.rounded())) kcal")
-                        row("Daily deficit", "\(Int(b.requiredDeficit.rounded())) kcal · \(String(format: "%.2f", b.kgPerWeek)) kg/week")
+                        row("Daily deficit", "\(Int(b.requiredDeficit.rounded())) kcal · \(units.mass(b.kgPerWeek, decimals: 2))/week")
                         row("Food allowance", "\(Int(b.allowance.rounded())) kcal")
                         row("Workout burn target", "\(Int(b.workoutTarget.rounded())) kcal")
                     } header: {
@@ -856,6 +873,8 @@ private struct CutPlanSheet: View {
 /// Set the goal (weight + date) and see what it means per day before saving: how much to eat and burn,
 /// the deficit and weekly pace, with warnings when it is unsafe or hits the food floor.
 struct GoalSheet: View {
+    @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
+    private var units: CutDisplayUnits { CutDisplayUnits(rawValue: unitSystemRaw) }
     let currentKg: Double
     @EnvironmentObject var profile: ProfileStore
     @ObservedObject private var plan = CutPlanStore.shared
@@ -863,6 +882,11 @@ struct GoalSheet: View {
     @State private var goalKg = 75.0
     @State private var date = Date()
     @State private var share = 0.3
+
+    private var goalEditor: (valueKg: Double, rangeKg: ClosedRange<Double>) {
+        CutDisplayUnits.goalEditor(currentKg: currentKg, savedGoalKg: plan.goalKg,
+                                   isUnset: plan.goalKg >= plan.startKg)
+    }
 
     private static var earliest: Date { Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date() }
 
@@ -881,12 +905,13 @@ struct GoalSheet: View {
                         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                             Text("GOAL WEIGHT").font(StrandFont.overline).tracking(1.6).foregroundStyle(StrandPalette.textSecondary)
                             HStack {
-                                Text(String(format: "%.1f kg", goalKg)).font(StrandFont.number(28, weight: .bold))
+                                Text(units.mass(goalKg)).font(StrandFont.number(28, weight: .bold))
                                     .foregroundStyle(StrandPalette.textPrimary)
                                 Spacer()
-                                Stepper("", value: $goalKg, in: 40...max(40, currentKg - 0.5), step: 0.5).labelsHidden()
+                                Stepper("", value: units.massBinding($goalKg), in: units.massRange(goalEditor.rangeKg),
+                                        step: units.system == .imperial ? 1 : 0.5).labelsHidden()
                             }
-                            Text(String(format: "%.1f kg to lose from %.1f kg", max(currentKg - goalKg, 0), currentKg))
+                            Text("\(units.mass(max(currentKg - goalKg, 0))) to lose from \(units.mass(currentKg))")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                         }
                     }
@@ -915,7 +940,7 @@ struct GoalSheet: View {
                              delta: b.workoutTarget - now.workoutTarget)
                         stat("arrow.down", StrandPalette.chargeColor, n(b.requiredDeficit), "deficit / day", delta: nil)
                         stat("scalemass", tooFast ? StrandPalette.statusCritical : StrandPalette.chargeColor,
-                             String(format: "%.2f kg", b.kgPerWeek), "per week", delta: nil)
+                             units.mass(b.kgPerWeek, decimals: 2), "per week", delta: nil)
                     }
                     if tooFast {
                         Label("Faster than 1% of body weight a week", systemImage: "exclamationmark.triangle.fill")
@@ -944,7 +969,7 @@ struct GoalSheet: View {
                 }
             }
             .onAppear {
-                goalKg = plan.goalKg
+                goalKg = goalEditor.valueKg
                 date = max(plan.targetDate, Self.earliest)
                 share = [0.0, 0.2, 0.3, 0.4, 0.5].contains(plan.workoutShare) ? plan.workoutShare : 0.3
             }

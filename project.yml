@@ -111,6 +111,21 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).goal-tests
         TEST_HOST: ""
+  DhoopPreferencesTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - PreferenceTests
+      - Strand/Data/Units.swift
+      - Strand/Data/CutDisplayUnits.swift
+    dependencies:
+      - package: StrandAnalytics
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).preferences-tests
+        TEST_HOST: ""
   Strand:
     type: application
     platform: macOS
@@ -558,6 +573,14 @@ schemes:
       config: Debug
       targets:
         - DhoopGoalTests
+  DhoopPreferencesTests:
+    build:
+      targets:
+        DhoopPreferencesTests: [test]
+    test:
+      config: Debug
+      targets:
+        - DhoopPreferencesTests
   Strand:
     build:
       targets:
