@@ -73,7 +73,7 @@ struct HeartMetricsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: NoopMetrics.space1)
-                    if live.activeIsWhoop, let battery = live.batteryPct {
+                    if let battery = live.reportedBattery(for: repo.deviceId) {
                         Label("\(Int(battery.rounded()))%", systemImage: "battery.100")
                             .font(StrandFont.captionNumber)
                             .accessibilityLabel("Last reported battery \(Int(battery.rounded())) percent")
@@ -208,7 +208,7 @@ struct HeartMetricsView: View {
                 let rows = data(now)?.vo2History ?? []
                 let end = rows.last.flatMap { HeartDashboardProjection.date($0.day) } ?? now
                 let start = Calendar.current.date(byAdding: .day, value: -89, to: end) ?? end
-                let points = dailyPoints(rows.filter { (HeartDashboardProjection.date($0.day) ?? .distantPast) >= start }, gapSeconds: 8 * 86_400)
+                let points = dailyPoints(rows.filter { (HeartDashboardProjection.date($0.day) ?? .distantPast) >= start })
                 plot(points, domain: start...end.addingTimeInterval(86_400), tint: StrandPalette.metricCyan,
                      label: "VO₂ max records; estimator and source changes break the line", empty: "Available after a recorded measurement or supported estimate")
             }

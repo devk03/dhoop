@@ -21,6 +21,7 @@ struct CollectionProof: Codable {
     let historyReady: Bool
     let lastSuccessfulSync: TimeInterval?
     let error: String?
+    let unattributedSyncError: String?
 }
 
 @MainActor
@@ -43,7 +44,7 @@ final class WhoopCollectionModel: ObservableObject {
         let generation = generation
         let id = repo.deviceId
         selectedDeviceId = id
-        if snapshot?.deviceId != id { snapshot = nil; identity = nil; checkedAt = nil; addedHR = nil }
+        if snapshot?.deviceId != id { snapshot = nil; identity = nil; checkedAt = nil; addedHR = nil; error = nil }
         let from = Int(Calendar.current.startOfDay(for: now).timeIntervalSince1970)
         guard let store = await repo.storeHandle() else {
             guard generation == self.generation, id == repo.deviceId else { return }
@@ -81,7 +82,7 @@ final class WhoopCollectionModel: ObservableObject {
             storedHR: stored?.heartRate.count, latestStoredHR: stored?.heartRate.latestTs,
             scorableRR: stored?.scorableRR.count, latestScorableRR: stored?.scorableRR.latestTs,
             historyReady: live.historyIsReady(for: id), lastSuccessfulSync: live.successfulSyncAt(for: id),
-            error: error ?? live.lastSyncError)
+            error: error, unattributedSyncError: live.lastSyncError)
     }
 
     private func saveDiagnosticProof(live: LiveState) {

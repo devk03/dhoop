@@ -27,7 +27,7 @@ struct WhoopCollectionCard: View {
                                 evidenceRow("Last readable HR", (status.sampleAge != nil ? live.heartRateEvidence.lastReceivedAt.map(fullTime) : nil) ?? "None for this device")
                                 evidenceRow("Sample age", status.sampleAge.map { "\(Int($0)) seconds" } ?? "Unavailable")
                                 evidenceRow("Readable packets", "\(status.packets.formatted()) this connection")
-                                if let battery = live.batteryPct, status.isWhoop {
+                                if let battery = live.reportedBattery(for: repo.deviceId) {
                                     evidenceRow("Last reported battery", "\(Int(battery.rounded()))%")
                                 }
                             }
@@ -62,7 +62,7 @@ struct WhoopCollectionCard: View {
                                 evidenceRow("History readiness", live.historyIsReady(for: repo.deviceId) ? "Ready" : "Not ready")
                                 evidenceRow("Last successful sync", live.successfulSyncAt(for: repo.deviceId).map(fullTime) ?? "None recorded")
                                 evidenceRow("Storage error", collection.error ?? "None reported")
-                                evidenceRow("Sync error", live.lastSyncError ?? "None reported")
+                                evidenceRow("Sync error · source unverified", live.lastSyncError ?? "None reported")
                                 Text("Connection, fresh receipt and stored samples are separate evidence. Collection checks do not establish the physiological accuracy of derived metrics.")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                                 Button("Check now") { Task { await collection.refresh(repo: repo, live: live) } }

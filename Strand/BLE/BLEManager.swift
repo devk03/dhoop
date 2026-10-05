@@ -7117,7 +7117,7 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
             // GET_BATTERY_LEVEL response, u16/10) and it's subscribed, so an unsolicited stub
             // notification was reverting the true reading back to 100% (#77).
             if selectedModel.deviceFamily != .whoop4, let pct = bytes.first {
-                state.setBattery(Double(pct))
+                state.setBattery(Double(pct), deviceId: deviceId)
             }
         case BLEManager.disSerialChar:
             // #520: NUL-terminated ASCII per the DIS spec; trim any padding before resolving.

@@ -132,7 +132,7 @@ public final class FrameRouter {
 
         case "COMMAND_RESPONSE":
             if let pct = parsed.parsed["battery_pct"]?.doubleValue {
-                state.setBattery(pct)
+                state.setBattery(pct, deviceId: deviceId)
             }
             // #592: GET_EXTENDED_BATTERY_INFO / GET_BATTERY_LEVEL responses may carry pack voltage.
             if let mv = parsed.parsed["battery_mV"]?.intValue {
@@ -487,7 +487,7 @@ public final class FrameRouter {
                 // updating (the WHOOP 4.0 report). Live-only path (backfill skips this router), so no replay
                 // guard is needed; the family-specific #77 concern was the 0x2A19 stub, a different source.
                 if ev.hasPrefix("BATTERY_LEVEL"), let pct = parsed.parsed["battery_pct"]?.doubleValue {
-                    state.setBattery(pct)
+                    state.setBattery(pct, deviceId: deviceId)
                 }
                 // The strap raises CHARGING_ON(7)/CHARGING_OFF(8) the instant a pack goes on or comes off —
                 // flip the pill directly instead of waiting on the ~8-min BATTERY_LEVEL cadence above. Live-

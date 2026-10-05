@@ -89,6 +89,7 @@ public final class LiveState: ObservableObject {
     /// under a WHOOP heading. Which of the two a surface needs depends on what it claims to be showing,
     /// and that is a question about the label rather than about this field.
     @Published public var batteryPct: Double? = nil
+    private var batteryDeviceId: String?
     /// Strap battery pack VOLTAGE (mV), decoded from the ~8-min BATTERY_LEVEL event (mv@21/@25) and the
     /// GET_EXTENDED_BATTERY_INFO response (#592). Shown on the Devices card as a "x.xx V" readout beside the
     /// percent; nil until the first battery event lands. Twin of the Android LiveState.batteryMv.
@@ -615,9 +616,14 @@ public final class LiveState: ObservableObject {
 
     public init() {}
 
+    public func reportedBattery(for deviceId: String) -> Double? {
+        batteryDeviceId == deviceId ? batteryPct : nil
+    }
+
     /// Single funnel for battery readings — updates the published value AND notifies the hook,
     /// so both write sites (FrameRouter, BLEManager) drive the alert monitor identically.
-    public func setBattery(_ pct: Double) {
+    public func setBattery(_ pct: Double, deviceId: String? = nil) {
+        batteryDeviceId = deviceId
         batteryPct = pct
         bankBatterySample(pct)
         onBatteryUpdate?(pct)
