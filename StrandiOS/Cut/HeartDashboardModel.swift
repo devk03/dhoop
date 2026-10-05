@@ -7,13 +7,12 @@ import WhoopStore
 struct HeartDashboardSnapshot {
     let deviceId: String
     let calendarDay: String
-    let scoreDay: String
+    let historyDay: String
+    let averageHR: Double?
+    let hrSampleCount: Int
     let fromDay: Date
     let through: Date
     let measuredHR: [TrendPoint]
-    let strain: Double?
-    let strainSource: String
-    let strainWeek: [DashboardDailyReading]
     let hrv: DashboardDailyReading?
     let hrvMonth: [DashboardDailyReading]
     let restingHR: DashboardDailyReading?
@@ -29,56 +28,26 @@ final class HeartDashboardModel: ObservableObject {
     @Published private(set) var error: String?
     private var generation = 0
 
-    func refresh(repo: Repository, profile: ProfileStore, now: Date = Date()) async {
+    func refresh(repo: Repository, historyDate: Date, now: Date = Date()) async {
         generation += 1
         let generation = generation
         let id = repo.deviceId
         if data?.deviceId != id { data = nil; error = nil }
         let day = Repository.localDayKey(now)
-        let scoreDay = repo.today?.day ?? Repository.logicalDayKey(now)
         let calendar = Calendar.current
         let midnight = calendar.startOfDay(for: now)
         let weekStart = Repository.localDayKey(calendar.date(byAdding: .day, value: -6, to: midnight) ?? midnight)
         let monthStart = Repository.localDayKey(calendar.date(byAdding: .day, value: -29, to: midnight) ?? midnight)
-        let mode = DayCycleMode.persisted(UserDefaults.standard.string(forKey: DayCycleMode.storageKey))
-        let maxHR = profile.effortHRmax
-        let sex = profile.sex
-        let resting = repo.today?.day == scoreDay ? repo.today?.restingHr.map(Double.init) ?? StrainScorer.defaultRestingHR : StrainScorer.defaultRestingHR
         guard let store = await repo.storeHandle() else { error = "Local storage is unavailable"; return }
-        async let rawHR = store.measuredHeartRateSamples(deviceId: id, from: Int(midnight.timeIntervalSince1970), to: Int(now.timeIntervalSince1970))
-        async let strains = repo.resolvedSeries(key: "strain", source: Repository.whoopSource, from: weekStart, to: day)
+        let historyStart = calendar.startOfDay(for: historyDate)
+        let historyDay = Repository.localDayKey(historyStart)
+        let historyEnd = min(now, (calendar.date(byAdding: .day, value: 1, to: historyStart) ?? now).addingTimeInterval(-1))
+        async let rawHR = store.measuredHeartRateSamples(deviceId: id, from: Int(historyStart.timeIntervalSince1970), to: Int(historyEnd.timeIntervalSince1970))
         async let hrvs = repo.resolvedSeries(key: "hrv", source: Repository.whoopSource, from: "0000-01-01", to: day)
         async let rests = repo.resolvedSeries(key: "rhr", source: Repository.whoopSource, from: "0000-01-01", to: day)
         async let steps = repo.resolvedSteps(from: weekStart, to: day)
         async let vo2Estimates = repo.resolvedSeries(key: "vo2max_est", source: Repository.whoopSource, from: "0000-01-01", to: day)
         async let appleVo2 = repo.resolvedSeries(key: "vo2max", source: Repository.appleHealthSource, from: "0000-01-01", to: day)
-        let logicalDate = Repository.logicalDay(now)
-        let markers = mode == .sleepOnset
-            ? await repo.exploreSeries(key: DayCycleIntelligenceIntegration.onsetKey, source: Repository.whoopSource) : []
-        let onset = markers.last { $0.day <= scoreDay && $0.value.isFinite && $0.value <= now.timeIntervalSince1970 }.map { Int($0.value.rounded()) }
-        let fallback = Int(calendar.startOfDay(for: logicalDate).timeIntervalSince1970)
-        let effortFrom = mode == .sleepOnset ? onset ?? fallback : fallback
-        let nextKey = Repository.localDayKey(calendar.date(byAdding: .day, value: 1, to: logicalDate) ?? logicalDate)
-        let nextOnset = markers.last { $0.day == nextKey && $0.value.isFinite }.map { Int($0.value) }
-        let effortTo = min(Int(now.timeIntervalSince1970), nextOnset ?? Int(now.timeIntervalSince1970))
-        async let effortHR = repo.hrSamples(deviceIds: [id], from: effortFrom, to: max(effortFrom, effortTo - 1), limit: 200_000)
-
-        let strainRows = HeartDashboardProjection.bounded(map((await strains).points), from: weekStart, through: day)
-        let stored = strainRows.last { $0.day == scoreDay }
-        let effortSamples = await effortHR
-        let effortMethod = PuffinExperiment.effortMethod
-        let calculated = await Task.detached(priority: .userInitiated) {
-            StrainScorer.strain(effortSamples, maxHR: maxHR, restingHR: resting, method: effortMethod, sex: sex)
-        }.value
-        let strain = StrainScorer.effectiveEffort(live: calculated, stored: stored?.value)
-        let strainSource = calculated != nil && (calculated ?? 0) >= (stored?.value ?? 0)
-            ? "On-device estimate" : stored.map(Self.source) ?? "Needs more heart-rate data"
-        var strainWeek = strainRows
-        if let strain {
-            strainWeek.removeAll { $0.day == scoreDay }
-            strainWeek.append(DashboardDailyReading(day: scoreDay, value: strain, source: id + "-noop", key: "strain"))
-            strainWeek.sort { $0.day < $1.day }
-        }
         let allHRV = HeartDashboardProjection.bounded(map((await hrvs).points), from: "0000-01-01", through: day)
         // WHOOP nightly records take priority over Apple daily SDNN; those are different observations.
         let nightlyHRV = allHRV.filter { $0.source != Repository.appleHealthSource }
@@ -101,14 +70,16 @@ final class HeartDashboardModel: ObservableObject {
         }
         let vo2Rows = vo2ByDay.values.sorted { $0.day < $1.day }
         let raw: [TrendPoint]
+        let summary: HistoricalHeartRateSummary
         do {
             let samples = try await rawHR
-            raw = await Task.detached(priority: .userInitiated) {
-                let traces = HeartDashboardProjection.trace(samples.map { DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm)) },
-                    from: midnight.timeIntervalSince1970, through: now.timeIntervalSince1970, gapSeconds: 1)
-                let all = traces.map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) }
-                return DashboardTraceSampling.reduce(all)
+            summary = await Task.detached(priority: .userInitiated) {
+                HistoricalHeartRateProjection.summarize(samples.map { DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm)) },
+                    from: historyStart.timeIntervalSince1970, through: historyEnd.timeIntervalSince1970)
             }.value
+            raw = DashboardTraceSampling.reduce(summary.readings.map {
+                TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.averageBPM, segment: $0.segment)
+            })
         } catch {
             guard generation == self.generation, id == repo.deviceId else { return }
             self.error = "Stored heart rate could not be read: \(error.localizedDescription)"
@@ -116,11 +87,11 @@ final class HeartDashboardModel: ObservableObject {
         }
         guard generation == self.generation, !Task.isCancelled, id == repo.deviceId,
               day == Repository.localDayKey(Date()) else { return }
-        self.data = HeartDashboardSnapshot(deviceId: id, calendarDay: day, scoreDay: scoreDay, fromDay: midnight, through: now,
-            measuredHR: raw, strain: strain, strainSource: strainSource, strainWeek: strainWeek,
+        self.data = HeartDashboardSnapshot(deviceId: id, calendarDay: day, historyDay: historyDay, averageHR: summary.averageBPM, hrSampleCount: summary.sampleCount, fromDay: historyStart, through: historyEnd,
+            measuredHR: raw,
             hrv: HeartDashboardProjection.latest(hrvRows, through: day),
             hrvMonth: HeartDashboardProjection.bounded(hrvRows, from: monthStart, through: day),
-            restingHR: HeartDashboardProjection.latest(restingRows, through: day),
+            restingHR: HeartDashboardProjection.latest(restingRows, through: historyDay),
             steps: stepRows.last { $0.day == day }, stepsWeek: stepRows,
             vo2: vo2Rows.last, vo2History: vo2Rows)
         self.error = nil
