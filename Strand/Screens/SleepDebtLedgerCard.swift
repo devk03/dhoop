@@ -99,6 +99,11 @@ struct SleepDebtLedgerCard: View {
         .frame(height: 56)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Per-night sleep balance: \(ledger.nightCount) nights, net \(debtSigned(ledger.balanceMin))")
+        .canvasInspection(ledger.nights.enumerated().map { i, night in
+            ChartScrubDatum(id: night.day, x: (Double(i) + 0.5) / Double(max(1, ledger.nights.count)),
+                y: 0.5 - night.deltaMin / scale / 2, value: "\(debtSigned(night.deltaMin)) sleep balance",
+                context: "\(night.day) · slept \(Int(night.sleptMin.rounded())) min")
+        }, label: "Sleep balance by night")
     }
 
     // MARK: - Sleep-debt ledger formatting (verbatim lift of the ledger-only SleepView helpers)

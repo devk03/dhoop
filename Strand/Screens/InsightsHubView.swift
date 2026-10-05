@@ -422,6 +422,7 @@ private struct DoseCurveChart: View {
     let outcomeName: String
 
     var body: some View {
+        let magnitude = max(1, points.map { abs($0.outcomeDelta) }.max() ?? 1)
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height
@@ -475,7 +476,10 @@ private struct DoseCurveChart: View {
                 }
             }
         }
-        .accessibilityElement()
+        .canvasInspection(points.enumerated().map { i, point in
+            return ChartScrubDatum(id: String(i), x: Double(i) / Double(max(1, points.count - 1)), y: (1 - point.outcomeDelta / magnitude) / 2,
+                value: "\(point.outcomeDelta.formatted(.number.precision(.fractionLength(0...2)))) · \(outcomeName)", context: "Dose \(point.dose) \(unitLabel)")
+        }, label: "Dose response", tint: accent)
     }
 }
 

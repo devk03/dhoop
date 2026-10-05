@@ -343,3 +343,64 @@ Installation is held: two preference reads show a zone-session draft marked
 running. The user was asked to end and save it before updating. Build 430 has
 not been installed on the phone yet; build 429 remains the last confirmed install.
 Imperial settings and existing local session storage are preserved.
+
+## Build 431: chart point inspection
+
+Charts accept a short stationary hold followed by a drag. Selection snaps to an
+actual recorded point, shows its value, units and recorded date/time (and source
+where supplied), and clears when the finger lifts. Existing range averages remain
+visible. The dashboard remains snapshot-based; scrubbing adds no fetch, polling
+loop, database write or realtime-HR request.
+
+Shared coverage includes DashboardChart, TrendChart, OverviewHRChart, Sparkline,
+Hypnogram and YearHeatStrip. App adapters cover Sleep comparison, HIIT/interval
+HR, training load, live HR, metric comparison, workout recovery/heatmap, sleep HR
+and debt, hourly stress, dose response, the heartbeat scatter and legacy optional
+calorie-balance bars. Decorative gauges/progress indicators are not time series.
+Values-only legacy traces name the recorded sample or interval pair rather than
+inventing a date that their input does not contain.
+
+Today keeps its full-width HR card and square metric grid. Expansion is on the
+metric header so dragging a chart does not open the sheet. Hosted legacy cards
+have a separate details link. Active scrubbing blocks ancestor tab/day navigation
+and HR chart panning. VoiceOver can step through points without creating one
+accessibility element per sample. Existing named colors/fonts/surface/spacing
+components are used; the new selection does not animate or require motion.
+
+Recorded-point lookup is independent of drawing reduction. Today HR retains all
+one-minute averages for inspection; expanded metric/protein and HIIT charts also
+inspect their complete in-memory rows. Missing daily bars explicitly say no value,
+recorded zero stays zero, and a line-gap selection identifies its nearest recorded
+endpoint. Separate sources are not interpolated onto each other's dates. Daily
+markers are constrained to the visible partial-day plot; canvas inspection omits
+padded points outside the visible timeline.
+
+Validation:
+
+- StrandDesign: 120 tests passed, including seven new selection tests for
+  irregular timestamps, boundaries, source/segment gaps, interleaved series,
+  missing days versus zero, nonfinite input, accessibility stepping and points
+  omitted by display reduction. Log: `/private/tmp/dhoop-chart-tests-final.log`.
+- Signed NOOPiOS device build, iOS simulator build and Strand macOS build passed.
+  Logs: `/private/tmp/dhoop-scrub-ios-final.log`,
+  `/private/tmp/dhoop-scrub-sim-final.log`, `/private/tmp/dhoop-scrub-mac-final.log`.
+- Doc-comment hygiene passed. Staged whitespace checks passed.
+- Native and secondary-account read-only review completed. Native review's
+  partial-day marker, per-series gap, out-of-bounds sleep point and pan-conflict
+  findings were addressed.
+- Build 431 installed and launched on the physical iPhone with the existing
+  bundle/signing identity. Installation also delivers build 430's Cardio work.
+  The zone run was paused before installation, no HIIT workout was active, and
+  its saved draft was byte-identical after launch. Unit preferences were unchanged
+  and automatic workout detection remained enabled.
+- Simulator Today and expanded Steps rendered with the existing recorded data.
+  Steps retained its seven-day average, coverage and source labels. Charts expose
+  adjustable accessibility controls. An immediate chart drag did not navigate
+  away. A sustained hold-and-drag readout was not observed mid-gesture with the
+  available automation API; hands-on phone scrubbing, VoiceOver gestures and
+  light/dark/Dynamic Type checks remain pending user confirmation.
+
+This is Apple UI work for the personal fork; no Android UI parity is claimed.
+No analytics formula, stored schema, BLE command or physiological validation was
+changed. No migration, data deletion, push or merge was performed. Prior pending
+branding/imperial changes remain separate from these commits.

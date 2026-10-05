@@ -117,7 +117,7 @@ struct RootTabView: View {
         DragGesture(minimumDistance: 24)
             .onEnded { v in
                 // Today (tab 0) uses horizontal swipe to change DAYS, so tab-swipe is off there.
-                guard selectedTab != 0 else { return }
+                guard selectedTab != 0, !ChartScrubActivity.blocksNavigation else { return }
                 let dx = v.translation.width, dy = v.translation.height
                 guard abs(dx) > 60, abs(dx) > abs(dy) * 1.6 else { return }
                 guard let i = Self.shownTabs.firstIndex(of: selectedTab) else { return }

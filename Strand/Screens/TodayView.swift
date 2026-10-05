@@ -2490,8 +2490,13 @@ struct TodayView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 ForEach(cards) { card in
                     if let route = card.route {
-                        NavigationLink(value: route) { hostedCard(for: card) }
-                            .buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                            hostedCard(for: card)
+                            NavigationLink(value: route) {
+                                Label("Open details", systemImage: "arrow.up.right")
+                                    .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                            }.buttonStyle(.plain)
+                        }
                     } else {
                         hostedCard(for: card)
                     }

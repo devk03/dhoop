@@ -122,13 +122,10 @@ struct HostedTrendCard: View {
                        gradient: Gradient(colors: [colour.opacity(0.35), colour]),
                        valueRange: HostedTrendData.valueRange(pts, fallback: fallback),
                        showsArea: true,
-                       // Hover OFF. The card sits inside a NavigationLink, so a scrubbing gesture here
-                       // would compete with the tap that opens the metric — the same conflict that
-                       // keeps the tap-to-log card out of the navigation map. The Trends tab keeps the
-                       // scrub; the Today host mirrors only the display, as the hosted Stages card does.
-                       showsHover: false)
+                       showsHover: true,
+                       valueFormat: { "\(fmt($0)) \(unit)" })
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         // The average goes into the spoken label, not just the visible corner. `children: .combine`
         // merges what the card renders, and overriding that with the bare title, as this first did,
         // silently drops the one number on the card: VoiceOver announced "Heart rate variability" and

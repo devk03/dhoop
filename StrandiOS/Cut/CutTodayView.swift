@@ -284,6 +284,11 @@ private struct CutTodayDashboard: View, Equatable {
                     }
                 }
             }
+            .canvasInspection(days.enumerated().map { i, day in
+                ChartScrubDatum(id: day.id, x: (Double(i) + 0.5) / Double(max(1, days.count)), y: 0.5,
+                    value: day.deficit.map { "\(abs($0).formatted(.number.precision(.fractionLength(0)))) kcal \($0 >= 0 ? "deficit" : "surplus")" } ?? "No calorie log",
+                    context: day.id)
+            }, label: "Seven-day calorie balance")
         }
     }
 

@@ -270,6 +270,7 @@ struct LiquidTodayView: View {
     private var daySwipeGesture: some Gesture {
         DragGesture(minimumDistance: 24)
             .onEnded { value in
+                guard !ChartScrubActivity.blocksNavigation else { return }
                 let dx = value.translation.width, dy = value.translation.height
                 guard abs(dx) > abs(dy) * 1.5, abs(dx) > 50 else { return }
                 let delta = TodayView.daySwipeDelta(dx: dx)
@@ -779,8 +780,13 @@ struct LiquidTodayView: View {
             VStack(spacing: NoopMetrics.sectionGap) {
                 ForEach(cards) { card in
                     if let route = card.route {
-                        NavigationLink(value: route) { hostedCard(for: card) }
-                            .buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                            hostedCard(for: card)
+                            NavigationLink(value: route) {
+                                Label("Open details", systemImage: "arrow.up.right")
+                                    .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                            }.buttonStyle(.plain)
+                        }
                     } else {
                         hostedCard(for: card)
                     }

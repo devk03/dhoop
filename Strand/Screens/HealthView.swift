@@ -519,6 +519,7 @@ private struct LiveTimeChart: View {
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
+                .chartTouchScrub { hoverX = $0.flatMap { plot.contains($0) ? $0.x : nil } }
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     // Non-animating transaction: otherwise crossing the plot edge re-runs the line's
                     // draw-on animation and flickers the curve (mirrors TrendChart #104).
@@ -534,6 +535,8 @@ private struct LiveTimeChart: View {
             }
         }
         .clipped()
+        .chartInspectionAccessibility(samples.map { ChartScrubDatum(id: $0.id.uuidString, x: $0.date.timeIntervalSince1970, y: $0.bpm,
+            value: "\(Int($0.bpm.rounded())) bpm", context: $0.date.formatted(date: .abbreviated, time: .shortened)) }, label: "Live heart-rate trace")
     }
 }
 

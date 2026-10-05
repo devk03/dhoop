@@ -230,10 +230,15 @@ private struct PoincarePlot: View {
                 }
             }
             .frame(width: side, height: side)
+            .canvasInspection(points.enumerated().map { i, point in
+                ChartScrubDatum(id: String(i), x: (NoopMetrics.space2 + (min(hi, max(lo, point.x)) - lo) / (hi - lo) * (side - NoopMetrics.space4)) / side,
+                    y: 1 - (NoopMetrics.space2 + (min(hi, max(lo, point.y)) - lo) / (hi - lo) * (side - NoopMetrics.space4)) / side,
+                    value: "NN \(Int(point.x.rounded())) ms → \(Int(point.y.rounded())) ms", context: "Recorded interval pair \(i + 1)")
+            }, label: "Successive heart-beat intervals", twoDimensional: true, tint: tint)
             .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(height: NoopMetrics.chartHeight)
-        .accessibilityHidden(true)
+
     }
 }
 

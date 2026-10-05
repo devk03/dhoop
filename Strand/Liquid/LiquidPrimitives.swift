@@ -384,7 +384,20 @@ struct LiquidThread: View {
     @ObservedObject private var motion = NoopMotionState.shared
 
     var body: some View {
-        if animated && !motion.poseStill(reduceMotion) { liveThread } else { staticThread }
+        Group {
+            if animated && !motion.poseStill(reduceMotion) { liveThread } else { staticThread }
+        }
+        .overlay {
+            GeometryReader { geometry in
+                let lo = bpm.min() ?? 0
+                let span = max(10, (bpm.max() ?? 0) - lo)
+                Color.clear.canvasInspection(bpm.enumerated().map { i, value in
+                    ChartScrubDatum(id: String(i), x: (10 + Double(i) * (geometry.size.width - 20) / Double(max(1, bpm.count - 1))) / max(1, geometry.size.width),
+                        y: (geometry.size.height - 10 - (value - lo) / span * (geometry.size.height - 20)) / max(1, geometry.size.height),
+                        value: "\(Int(value.rounded())) bpm", context: "Recorded sample \(i + 1)")
+                }, label: "Heart rate trace", tint: tint)
+            }
+        }
     }
 
     private var liveThread: some View {

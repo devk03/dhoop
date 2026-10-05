@@ -910,7 +910,10 @@ struct WorkoutsView: View {
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                             }
                         }
-                        Canvas { ctx, size in drawHeatmap(ctx, size: size, grid: grid, today: todayDayString()) }
+                        GeometryReader { geometry in
+                            Canvas { ctx, size in drawHeatmap(ctx, size: size, grid: grid, today: todayDayString()) }
+                                .canvasInspection(heatmapInspection(grid, size: geometry.size), label: "Active-calorie history", twoDimensional: true, tint: StrandPalette.effortColor)
+                        }
                         .aspectRatio(13.0 / 7.6, contentMode: .fit)
                         .frame(maxWidth: .infinity)
                         .accessibilityLabel(Text("Active-calorie heatmap, last 13 weeks"))
@@ -925,6 +928,21 @@ struct WorkoutsView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private func heatmapInspection(_ grid: ActivityHeatmap.Grid, size: CGSize) -> [ChartScrubDatum] {
+        let cols = grid.columns.count
+        guard cols > 0, size.width > 0, size.height > 0 else { return [] }
+        // Match the existing calendar drawing geometry, including its label gutters.
+        let cell = min((size.width - 20 - 3 * CGFloat(cols - 1)) / CGFloat(cols), (size.height - 14 - 18) / 7)
+        return grid.columns.enumerated().flatMap { column, days in
+            days.enumerated().compactMap { row, day -> ChartScrubDatum? in
+                guard let date = day.day else { return nil }
+                return ChartScrubDatum(id: date, x: (20 + CGFloat(column) * (cell + 3) + cell / 2) / size.width,
+                    y: (14 + CGFloat(row) * (cell + 3) + cell / 2) / size.height,
+                    value: day.value.map { "\($0.formatted(.number.precision(.fractionLength(0)))) active kcal" } ?? "No recorded calories", context: date)
             }
         }
     }
@@ -2008,6 +2026,7 @@ private struct WorkoutRecoveryTrendChart: View {
                 .animation(StrandMotion.fade, value: hoverX)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                 .contentShape(Rectangle())
+                .chartTouchScrub { hoverX = $0.flatMap { plot.contains($0) ? $0.x : nil } }
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     // Non-animating transaction: otherwise crossing the plot edge re-runs the line's
                     // draw-on animation and flickers the curve (mirrors TrendChart #104).
@@ -2022,7 +2041,8 @@ private struct WorkoutRecoveryTrendChart: View {
                 }
             }
         }
-        .accessibilityLabel("Heart-rate recovery trend in beats per minute")
+        .chartInspectionAccessibility(plots.map { ChartScrubDatum(id: $0.id, x: $0.date.timeIntervalSince1970, y: Double($0.value),
+            value: "\($0.interval): \($0.value) bpm", context: $0.date.formatted(date: .abbreviated, time: .shortened), series: $0.interval) }, label: "Heart-rate recovery trend in beats per minute")
     }
 }
 

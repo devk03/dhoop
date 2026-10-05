@@ -77,9 +77,9 @@ final class HeartDashboardModel: ObservableObject {
                 HistoricalHeartRateProjection.summarize(samples.map { DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm)) },
                     from: historyStart.timeIntervalSince1970, through: historyEnd.timeIntervalSince1970)
             }.value
-            raw = DashboardTraceSampling.reduce(summary.readings.map {
+            raw = summary.readings.map {
                 TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.averageBPM, segment: $0.segment)
-            })
+            }
         } catch {
             guard generation == self.generation, id == repo.deviceId else { return }
             self.error = "Stored heart rate could not be read: \(error.localizedDescription)"

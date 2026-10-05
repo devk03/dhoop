@@ -104,9 +104,10 @@ struct MetricHistoryView: View {
                 guard let date = HeartDashboardProjection.date(row.day) else { return nil }
                 return DashboardTraceSample(time: date.timeIntervalSince1970, value: row.value, provenance: "\(row.source)|\(row.key)|\(row.method ?? "unknown")")
             }
-            let points = DashboardTraceSampling.reduce(HeartDashboardProjection.trace(samples,
+            let trace = HeartDashboardProjection.trace(samples,
                 from: window.start.timeIntervalSince1970, through: window.through.timeIntervalSince1970, gapSeconds: 90_000)
-                .map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) })
+                .map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) }
+            let points = DashboardTraceSampling.reduce(trace)
             let start = window.days == nil ? (points.first?.date ?? window.end) : window.start
             let upper = max(start.addingTimeInterval(1), window.through)
             let values = rows.map(\.value)
@@ -115,7 +116,14 @@ struct MetricHistoryView: View {
             DashboardChart(points: points, domain: start...upper,
                 range: metric == .steps ? 0...max(1, higher * 1.1) : max(0, lower - padding)...(higher + padding),
                 tint: tint, style: metric == .steps ? .bars : .line, height: NoopMetrics.chartHeight,
-                label: "Recorded \(metric.title) history in the selected range; missing days remain gaps")
+                label: "Recorded \(metric.title) history in the selected range; missing days remain gaps",
+                inspectionData: rows.compactMap { row in
+                    guard let date = HeartDashboardProjection.date(row.day) else { return nil }
+                    let unit = metric == .steps ? "steps" : metric == .heartRate ? "bpm" : metric == .hrv ? "ms" : "mL/kg/min"
+                    return ChartScrubDatum(id: "\(row.source)|\(row.day)", x: date.timeIntervalSince1970, y: row.value,
+                        value: "\(row.value.formatted(.number.precision(.fractionLength(0...1)))) \(unit)",
+                        context: "\(date.formatted(date: .abbreviated, time: .omitted)) · \(HeartDashboardModel.source(row))", segment: trace.first { $0.date == date }?.segment ?? "default")
+                })
         }
     }
 }

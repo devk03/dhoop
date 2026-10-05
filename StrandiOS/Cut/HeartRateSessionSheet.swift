@@ -92,7 +92,7 @@ struct InlineHeartRateCapture: View {
                 DashboardChart(points: points, domain: startedAt...max(startedAt.addingTimeInterval(1), now),
                     range: max(0, (points.map(\.value).min() ?? 0) - 5)...((points.map(\.value).max() ?? 1) + 5),
                     tint: StrandPalette.liquidHeart, height: NoopMetrics.dashboardTrendHeight,
-                    label: "Actual HR during this requested session; missing readings remain gaps", compact: true)
+                    label: "Actual HR during this requested session; missing readings remain gaps", compact: true, valueFormat: { "\(Int($0)) bpm · WHOOP" })
             }
             Button("Stop live HR") { session.stop() }.font(StrandFont.subhead)
                 .buttonStyle(.bordered).tint(StrandPalette.liquidHeart).frame(minHeight: NoopMetrics.minimumTouchTarget)

@@ -697,6 +697,8 @@ struct StageDetailView: View {
             return rel >= origin - 60 && rel <= origin + span + 60
         }
         if buckets.count >= 2 {
+            let lo = (buckets.map(\.bpm).min() ?? 40) - 5
+            let hi = (buckets.map(\.bpm).max() ?? 90) + 5
             Canvas { ctx, size in
                 let bpms = buckets.map(\.bpm)
                 let lo = (bpms.min() ?? 40) - 5
@@ -791,6 +793,11 @@ struct StageDetailView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .accessibilityLabel(Text("Sleeping heart rate through the night"))
+            .canvasInspection(buckets.map { bucket in
+                return ChartScrubDatum(id: String(bucket.ts), x: (Double(bucket.ts) - nightStartTs - origin) / max(1, span),
+                    y: 1 - (bucket.bpm - lo) / max(1, hi - lo), value: "\(Int(bucket.bpm.rounded())) bpm",
+                    context: "\(Date(timeIntervalSince1970: Double(bucket.ts)).formatted(date: .abbreviated, time: .shortened)) · recorded sleeping HR")
+            }, label: "Sleeping heart rate", tint: StrandPalette.restColor)
         } else {
             Text("No heart-rate detail for this night")
                 .font(StrandFont.footnote)

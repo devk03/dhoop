@@ -203,10 +203,25 @@ struct CutSleepView: View {
                 .frame(height: NoopMetrics.dashboardTraceHeight)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Sleep duration by date. WHOOP \(whoop.count) records, Apple \(apple.count) records. Missing dates remain gaps.")
+                .chartInspection(sleepInspection, label: "WHOOP and Apple sleep duration", tint: StrandPalette.metricCyan)
                 HStack(spacing: NoopMetrics.space3) {
                     Label("WHOOP", systemImage: "circle.fill").foregroundStyle(StrandPalette.metricPurple)
                     Label("Apple Health", systemImage: "circle.fill").foregroundStyle(StrandPalette.metricCyan)
                 }.font(StrandFont.caption)
+            }
+        }
+    }
+    private var sleepInspection: [ChartScrubDatum] {
+        [whoop, apple].enumerated().flatMap { index, rows in
+            var previous: (date: Date, source: String)?
+            var segment = 0
+            return rows.compactMap { row -> ChartScrubDatum? in
+                guard let date = HeartDashboardProjection.date(row.day) else { return nil }
+                if let previous, date.timeIntervalSince(previous.date) > 90_000 || previous.source != row.sourceID { segment += 1 }
+                previous = (date, row.sourceID)
+                let source = index == 0 ? "WHOOP · \(row.method)" : "Apple · \(appleProvider?.name ?? "Health")"
+                return ChartScrubDatum(id: "\(index)|\(row.sourceID)|\(row.day)", x: date.timeIntervalSince1970, y: row.total / 60,
+                    value: "\(source): \(sleepHM(row.total))", context: date.formatted(date: .abbreviated, time: .omitted), series: String(index), segment: String(segment))
             }
         }
     }

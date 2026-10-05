@@ -773,6 +773,7 @@ private struct OverlayChart: View {
         /// True when every series is sparse enough for its per-point marks to read as
         /// discrete readings. Dense series draw line-only.
         let showsPointMarks: Bool
+        let inspection: [ChartScrubDatum]
 
         static let empty = Model(series: [])
 
@@ -788,7 +789,8 @@ private struct OverlayChart: View {
         static let markThreshold = 120
         static let targetVertices = 400
 
-        init(series: [CompareSeries]) {
+        init(series: [CompareSeries], effortScale: EffortScale = .hundred) {
+            var inspection: [ChartScrubDatum] = []
             var drawn: [Plot] = []
             var caps: [Plot] = []
             var byDay: [String: [String: Double]] = [:]
@@ -811,6 +813,8 @@ private struct OverlayChart: View {
                         continue // unparseable day: not plottable (as before)
                     }
                     pts.append(Plot(title: s.metric.title, date: d, norm: s.normalized(row.value)))
+                    inspection.append(ChartScrubDatum(id: "\(s.id)|\(row.day)", x: d.timeIntervalSince1970, y: row.value,
+                        value: "\(s.metric.title): \(s.metric.format(row.value, effortScale: effortScale))", context: row.day, series: s.id))
                 }
                 if let row = s.rows.last, let d = dateCache[row.day] ?? parseCompareDay(row.day) {
                     caps.append(Plot(title: s.metric.title, date: d, norm: s.normalized(row.value)))
@@ -818,6 +822,7 @@ private struct OverlayChart: View {
                 drawn.append(contentsOf: Model.minMaxBucketed(pts))
             }
 
+            self.inspection = inspection
             plots = drawn
             endCaps = caps
             valuesByDay = byDay
@@ -884,7 +889,7 @@ private struct OverlayChart: View {
     private var modelKey: String {
         series
             .map { s in "\(s.id):\(s.rows.count):\(s.rows.first?.day ?? "")>\(s.rows.last?.day ?? "")" }
-            .joined(separator: "|")
+            .joined(separator: "|") + "|\(effortScale.rawValue)"
     }
 
     /// Cached accessor used by `body`. Mirrors `CompareView.pairResults`: returns the
@@ -892,7 +897,7 @@ private struct OverlayChart: View {
     /// mutating state mid-body); the matching onAppear/onChange then persist it so
     /// subsequent hover frames hit the cache.
     private var currentModel: Model {
-        modelKey == modelCacheKey ? modelCache : Model(series: series)
+        modelKey == modelCacheKey ? modelCache : Model(series: series, effortScale: effortScale)
     }
 
     /// Rebuild the model cache if (and only if) the series content changed.
@@ -900,7 +905,7 @@ private struct OverlayChart: View {
         let key = modelKey
         guard key != modelCacheKey else { return }
         modelCacheKey = key
-        modelCache = Model(series: series)
+        modelCache = Model(series: series, effortScale: effortScale)
     }
 
     /// The series colour for a metric title — drives the matching "now" end-cap glow.
@@ -1025,15 +1030,9 @@ private struct OverlayChart: View {
                 // Drive the same hoverX via tap (single touch-down) and drag-to-scrub across
                 // days. minimumDistance:0 keeps the first touch responsive; a clearly vertical
                 // pan is still claimed by the parent ScrollView.
-                .gesture(
-                    SpatialTapGesture(coordinateSpace: .local)
-                        .onEnded { hoverX = $0.location.x }
-                        .exclusively(before:
-                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                                .onChanged { hoverX = $0.location.x }
-                                .onEnded { _ in hoverX = nil }
-                        )
-                )
+                .chartTouchScrub { location in
+                    hoverX = location.flatMap { plot.contains($0) ? $0.x : nil }
+                }
                 #endif
             }
         }
@@ -1042,6 +1041,7 @@ private struct OverlayChart: View {
         .onAppear { refreshModel() }
         .onChangeCompat(of: modelKey) { _ in refreshModel() }
         .frame(height: height)
+        .chartInspectionAccessibility(model.inspection, label: "Metric comparison")
     }
 
     /// Map a cursor x back to the nearest day present in the data: binary search over

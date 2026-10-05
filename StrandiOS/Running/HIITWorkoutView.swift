@@ -232,6 +232,12 @@ struct HIITReviewView: View {
             .frame(height: NoopMetrics.chartHeight)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("WHOOP heart-rate timeline by active workout time, \(run.points.count) readings. Missing samples remain gaps; pauses are excluded from the time axis.")
+            .chartInspection(run.points.map { point in
+                let phase = run.plan.intervals.first { $0.index == point.interval }?.label ?? "Interval"
+                return ChartScrubDatum(id: String(point.receivedAt), x: point.elapsed, y: Double(point.bpm), value: "\(point.bpm) bpm · WHOOP",
+                    context: "\(clock(point.elapsed)) active · \(phase) · \(Date(timeIntervalSince1970: point.receivedAt).formatted(date: .abbreviated, time: .shortened))",
+                    series: "WHOOP", segment: String(point.segment))
+            }, dateAxis: false, label: "Recorded interval heart rate", tint: StrandPalette.metricRose)
             HStack(spacing: NoopMetrics.space3) {
                 Label("Work", systemImage: "square.fill").foregroundStyle(StrandPalette.metricAmber)
                 Label("Recovery", systemImage: "square.fill").foregroundStyle(StrandPalette.metricCyan)

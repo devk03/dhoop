@@ -93,7 +93,9 @@ private struct ProteinHistoryView: View {
                             DashboardChart(points: DashboardTraceSampling.reduce(points), domain: start...max(start.addingTimeInterval(1), window.through),
                                 range: 0...max(1, (values.max() ?? 0) * 1.1), tint: StrandPalette.statusPositive,
                                 style: .bars, height: NoopMetrics.chartHeight,
-                                label: "Protein grams logged on recorded days in the selected range; unlogged days have no bars")
+                                label: "Protein grams logged on recorded days in the selected range; unlogged days have no bars",
+                                inspectionData: points.map { ChartScrubDatum(id: String($0.date.timeIntervalSince1970), x: $0.date.timeIntervalSince1970, y: $0.value,
+                                    value: "\($0.value.formatted()) g logged", context: $0.date.formatted(date: .abbreviated, time: .omitted), series: "Protein log") })
                         } else {
                             Text("No protein logged in this range").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }

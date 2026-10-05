@@ -1083,6 +1083,12 @@ struct DaytimeLoadLine: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
+        .canvasInspection(hours.enumerated().compactMap { i, hour -> ChartScrubDatum? in
+            guard let level = hour.level else { return nil }
+            return ChartScrubDatum(id: String(hour.startTs), x: hours.count > 1 ? Double(i) / Double(hours.count - 1) : 0.5,
+                y: 1 - min(max(level / 3, 0), 1), value: "\(level.formatted(.number.precision(.fractionLength(1)))) / 3 · stress estimate",
+                context: Date(timeIntervalSince1970: Double(hour.startTs)).formatted(date: .abbreviated, time: .shortened))
+        }, label: "Hourly stress estimates")
     }
 
     /// CONTIGUOUS RUNS of scored hours, in chart coordinates.
