@@ -481,3 +481,43 @@ installed-app inventory confirms version 432. All decoded fields in the paused z
 draft are identical before/after launch; serialized JSON bytes differ. Unit
 preferences are unchanged, and auto-detection remains on.
 No live workout was interrupted (zone paused, HIIT draft empty before installation).
+
+
+## Build 433: range and interaction polish
+
+ImageGen's built-in tool produced the [UI reference](assets/dhoop-quality-ui-reference.png)
+from the [saved prompt](assets/dhoop-quality-ui-prompt.txt). Its demo numbers and
+unsupported similarity percentage were not implemented; only visual hierarchy informed the UI.
+
+| Before | After |
+| --- | --- |
+| Different date controls across screens | Shared scrollable date chips on metrics, Sleep and Cardio, with selected-range visibility and 44-point buttons. |
+| History disappeared during matching refreshes | Matching device/range snapshots remain visible with progress and errors; changed ranges cannot reuse stale values. |
+| Uneven Sleep comparison surfaces | Paired source cards fill their shared row height. |
+| Horizontal gestures could switch tabs | Native tab navigation no longer installs an ancestor swipe recognizer over charts/date chips. |
+| Chart tooltips could cover compact plots | Compact and accessibility-size readouts flow below the plot. |
+| WHOOP status showed a clock without its date | Snapshot observations carry their check date/time and clearly relative receipt age. |
+| HIIT buzz test had no visible result | Shared connection/haptic readiness gates the button and a dated request or failure message is shown. |
+
+Validation: 94 DhoopGoalTests and 123 StrandDesign tests passed, along with signed
+NOOPiOS, simulator, and Strand macOS builds. Source-comment hygiene and whitespace
+checks passed. Native and secondary-account read-only reviews completed. Current
+Simulator screenshots verified dark Today, Steps/custom ranges, zone-run setup,
+and HIIT setup; full light/large-text and physical gesture checks remain pending.
+
+Read-only phone database copies at 23:33 and 23:36 PDT on October 4 both passed
+SQLite quick_check and contained 43,812 HR and 13,885 channel-5 RR rows for the active
+WHOOP. Counts did not change between those copies. No duplicate natural keys or
+future HR timestamps were observed. A later copy after installation contained
+45,274 HR and 14,926 RR rows, with history completion logged at 23:58:27 PDT.
+These observations establish advancing historical receipt and persistence over
+the longer interval, not continuous live receipt or physiological accuracy. The
+60-second live proof remains pending; the support JSON still contains an earlier
+observation. Raw databases and logs remain outside the repository.
+
+At the user's subsequent explicit request, build 433 was installed on the physical
+iPhone rather than deferred until morning. Device inventory confirmed 11.8.0 (433),
+the process remained running, and the user confirmed Dhoop was open on the phone.
+Decoded paused-zone-draft fields and unit preferences were preserved. No HIIT draft
+was active. The existing bundle and signing identity were retained. No schema
+migration, database deletion, new BLE command or Android change was made.
