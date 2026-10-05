@@ -1,5 +1,9 @@
 import Foundation
 
+enum HIITWorkoutKind: String, Codable { case hiit, intervals
+    var title: String { self == .hiit ? "HIIT" : "Intervals" }
+}
+
 struct HIITPlan: Codable, Equatable {
     var rounds = 8
     var workSeconds = 30
@@ -7,7 +11,7 @@ struct HIITPlan: Codable, Equatable {
     var warmupSeconds = 120
     var cooldownSeconds = 120
     var isValid: Bool {
-        (1...30).contains(rounds) && (15...600).contains(workSeconds) && (15...600).contains(restSeconds)
+        (1...30).contains(rounds) && (5...600).contains(workSeconds) && (5...600).contains(restSeconds)
             && (0...900).contains(warmupSeconds) && (0...900).contains(cooldownSeconds) && totalSeconds <= 10800
     }
     var totalSeconds: Int { warmupSeconds + rounds * workSeconds + max(0, rounds - 1) * restSeconds + cooldownSeconds }
@@ -71,15 +75,16 @@ struct HIITSession: Codable, Equatable, Identifiable {
     let plan: HIITPlan
     let zones: [RunningZoneTarget]
     let startedAt: Date
+    var kind: HIITWorkoutKind?
     private(set) var state: State = .running
     private(set) var elapsed: Double = 0
     private(set) var points: [HIITHRPoint] = []
     private(set) var endedAt: Date?
     private var segment = 0
     private var continuity = false
-    init?(deviceId: String, plan: HIITPlan, zones: [RunningZoneTarget], startedAt: Date = Date()) {
+    init?(deviceId: String, plan: HIITPlan, zones: [RunningZoneTarget], startedAt: Date = Date(), kind: HIITWorkoutKind = .hiit) {
         guard !deviceId.isEmpty, plan.isValid else { return nil }
-        id = UUID(); self.deviceId = deviceId; self.plan = plan; self.zones = zones; self.startedAt = startedAt
+        id = UUID(); self.deviceId = deviceId; self.plan = plan; self.zones = zones; self.startedAt = startedAt; self.kind = kind
     }
     var interval: HIITInterval? { plan.intervals.first { elapsed >= Double($0.start) && elapsed < Double($0.end) } }
     var remaining: Int { interval.map { max(0, Int(ceil(Double($0.end) - elapsed))) } ?? 0 }

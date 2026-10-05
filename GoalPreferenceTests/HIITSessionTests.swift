@@ -85,6 +85,25 @@ final class HIITSessionTests: XCTestCase {
         XCTAssertEqual(run.state, .completed)
         XCTAssertEqual(run.effort().observedSeconds, 1)
     }
+    func testFiveSecondPhasesAdvanceAndKeepOptionalPreparation() {
+        var run = HIITSession(deviceId: "strap", plan: HIITPlan(rounds: 2, workSeconds: 5, restSeconds: 5, warmupSeconds: 5, cooldownSeconds: 5), zones: [], startedAt: start, kind: .intervals)!
+        XCTAssertEqual(run.plan.totalSeconds, 25)
+        XCTAssertEqual(run.interval?.kind, .warmup)
+        for (time, phase) in [(5.0, HIITInterval.Kind.work), (10.0, .recovery), (15.0, .work), (20.0, .cooldown)] {
+            XCTAssertTrue(run.advance(to: time)); XCTAssertEqual(run.interval?.kind, phase)
+        }
+        run.advance(to: 25); XCTAssertEqual(run.state, .completed)
+    }
+    func testLegacyHIITFilesAndNewIntervalKindBothDecode() throws {
+        let run = make()
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(run)) as! [String: Any]
+        object.removeValue(forKey: "kind")
+        let legacy = try JSONDecoder().decode(HIITSession.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(legacy.kind); XCTAssertEqual(legacy.plan, run.plan)
+        var intervals = run; intervals.kind = .intervals
+        let restored = try JSONDecoder().decode(HIITSession.self, from: JSONEncoder().encode(intervals))
+        XCTAssertEqual(restored.kind, .intervals)
+    }
     func testInvalidPlansRejectedAndEarlyEndRetainsRecordedData() {
         XCTAssertNil(HIITSession(deviceId: "strap", plan: HIITPlan(rounds: 0), zones: []))
         var run = make(); observe(&run, 1, 130); run.finish(at: start.addingTimeInterval(2))

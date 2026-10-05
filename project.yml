@@ -91,6 +91,7 @@ targets:
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
       - StrandiOS/Running/RunningZoneSession.swift
       - StrandiOS/Running/HIITSession.swift
+      - StrandiOS/Running/CardioHistoryProjection.swift
       - StrandiOS/Cut/TimedHeartRateSession.swift
       - Strand/BLE/LiveHeartRateEvidence.swift
       - Strand/Data/Profile.swift
