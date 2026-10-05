@@ -5,6 +5,7 @@ import UIKit
 /// Owns an explicitly started run across tab changes; Today never subscribes to this object.
 @MainActor
 final class RunningSessionController: ObservableObject {
+    let hiit = HIITController()
     @Published private(set) var session: RunningZoneSession?
     @Published private(set) var elapsedSeconds: TimeInterval = 0
     @Published private(set) var currentBPM: Int?
@@ -82,7 +83,7 @@ final class RunningSessionController: ObservableObject {
     }
 
     var isRunning: Bool { session?.phase == .running }
-    var hasSession: Bool { session != nil }
+    var hasSession: Bool { session != nil || hiit.hasSession }
     var chosenTarget: RunningZoneTarget? {
         if useManualTarget || zones.isEmpty {
             let target = RunningZoneTarget(name: "BPM target", lowerBPM: manualLowerBPM,
@@ -95,6 +96,7 @@ final class RunningSessionController: ObservableObject {
 
     /// Calling this from an appearance only attaches once; hidden tabs retain the same controller.
     func configure(app: AppModel) {
+        hiit.configure(app: app)
         if self.app !== app {
             pause(reason: "Session paused because the app source changed.")
             self.app = app

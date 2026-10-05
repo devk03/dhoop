@@ -164,3 +164,61 @@ identifiers. Imperial preferences and no active Running draft were confirmed
 before installation. Full spoken VoiceOver, physical-phone filter interaction
 and physiological stage accuracy remain unverified. No new BLE behavior or
 continuous dashboard refresh was added.
+
+## Build 428: custom HIIT and effort review
+
+Running now offers Zone goal and HIIT modes. HIIT configures 1–30 rounds, work
+and recovery durations, optional warm-up/cool-down and a three-hour upper bound.
+Recovery occurs between rounds. A single explicit HIIT owner holds one HR lease
+through work and recovery; zone-goal sessions are mutually exclusive. Another
+manual AppModel workout blocks starting HIIT and pauses an ongoing HIIT session.
+Timing uses monotonic active elapsed, serviced by receipt callbacks and a 1 Hz
+timer. A service interruption longer than three seconds pauses at the last
+serviced position, rather than skipping workout instructions. Relaunch restores
+a draft paused. There is no automatic live HR start from the dashboard.
+
+The existing reversible WHOOP haptic pattern is requested with one loop for work,
+two for warm-up/recovery/cool-down and three for completion. Loops control pattern
+length, not a promised number of distinct pulses. Every cue respects the workout
+haptics preference and same-device, connected, encrypted, worn WHOOP gates. No
+new BLE command or packet payload was added. Cue text reports requests, not proof
+of physical delivery. Exact background cue timing cannot be guaranteed by iOS;
+the UI asks the user to keep the app open for reliable interval cues.
+
+Session-owned HR samples retain receipt timestamp, active elapsed, interval and
+gap segment beyond the live buffer's five-minute window. Saved review shows a
+gap-preserving HR chart with work/recovery bands, observed time-weighted mean,
+peak, coverage, frozen dated zone method, measured zone time and expandable
+interval summaries. Boundary-crossing zone intervals are excluded. Final fresh
+receipts before workout end are retained even when the timer just completed.
+No calories, strain or physiological accuracy score is inferred.
+
+Local JSON files under Application Support/DhoopHIIT hold resumable drafts and
+completed sessions; the newest 20 appear in history while all saved files remain.
+Save failure leaves a paused recoverable draft; already-saved IDs are not restored
+as duplicate active drafts. These local fork logs are not added to the shared
+.noopbak database contract. No migration was added. Android HIIT is not implemented;
+this is the user's iOS fork feature with no changes to shared analytics formulas.
+
+The built-in imagegen tool generated the design reference in
+assets/dhoop-hiit-ui-reference.png; its exact prompt is saved alongside it in
+assets/dhoop-hiit-ui-prompt.txt. The implemented setup uses paired work/recovery
+tiles, compact timing controls and a full-width start action. Active workouts
+use a bounded interval timer and paired HR/elapsed cards. Review uses a chart,
+paired averages, coverage and zone bars, plus expandable intervals. Existing
+Today/Sleep/Running tab order is preserved. Demo figures in the reference are
+not app data. Layout uses StrandDesign tokens, adaptive grids, Dynamic Type,
+semantic accessibility labels and no added animation.
+
+Verification: 67 DhoopGoalTests passed, including nine HIIT cases covering phase
+boundaries, delayed ticks, pauses, freshness/source rejection, weighted effort,
+zone boundaries, receipt-time interval ownership, completion, and 701-sample
+Codable persistence. Final signed iOS and simulator builds, source hygiene and
+whitespace checks passed. Build 428 installed with the stable bundle/signing
+identifiers. Imperial preferences and absence of an active run draft were read
+before installation. Simulator app launch succeeded, but computer-use coordinate
+actions failed with noWindowsAvailable and its tab-bar accessibility snapshot
+exposed only the container; final HIIT visual interaction could not be completed.
+A user-operated 15-second real-WHOOP test was requested. Physical HIIT cue timing,
+full on-device visual/VoiceOver review and persisted HIIT hardware HR evidence
+remain pending; earlier single-buzz confirmation is not a HIIT workout test.

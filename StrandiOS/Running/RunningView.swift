@@ -7,7 +7,7 @@ struct RunningView: View {
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        RunningContent(controller: controller).equatable()
+        RunningContent(controller: controller, hiit: controller.hiit).equatable()
             .onAppear { controller.configure(app: app) }
             .task { if !controller.hasSession { await controller.refreshBaseline() } }
     }
@@ -15,26 +15,41 @@ struct RunningView: View {
 
 private struct RunningContent: View, Equatable {
     @ObservedObject var controller: RunningSessionController
+    @ObservedObject var hiit: HIITController
+    @State private var workoutMode = "Zone goal"
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.controller === rhs.controller }
 
     var body: some View {
-        ScreenScaffold(title: "Running", subtitle: "Time in your target heart-rate zone") {
-            if let run = controller.session { sessionCard(run) } else { setupCard }
-            alertsCard
-            if let message = controller.statusMessage {
+        ScreenScaffold(title: "Running", subtitle: "Zone goals and interval workouts") {
+            if controller.session == nil && !hiit.hasSession {
+                Picker("Workout type", selection: $workoutMode) {
+                    Text("Zone goal").tag("Zone goal")
+                    Text("HIIT").tag("HIIT")
+                }.pickerStyle(.segmented).frame(minHeight: NoopMetrics.minimumTouchTarget)
+            }
+            if hiit.hasSession || (controller.session == nil && workoutMode == "HIIT") {
+                HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
+                    testBuzz: { controller.testBuzz() })
+            } else {
+                if let run = controller.session { sessionCard(run) } else { setupCard }
+                alertsCard
+            }
+            if workoutMode == "Zone goal", let message = controller.statusMessage {
                 Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !controller.summaries.isEmpty { historyCard }
+            if workoutMode == "Zone goal", !controller.summaries.isEmpty { historyCard }
+            if workoutMode == "Zone goal" && !hiit.hasSession {
             Text("Only adjacent fresh WHOOP readings count. Missing readings and pauses add no in-zone time. Running uses live HR only while a session is explicitly active; Today remains a historical snapshot.")
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Keep your phone nearby and Dhoop connected for WHOOP zone alerts.")
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
