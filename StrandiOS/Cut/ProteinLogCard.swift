@@ -3,8 +3,13 @@ import StrandDesign
 
 struct ProteinLogCard: View {
     let day: String
+    @State private var openedAt = Date()
+    @Binding var selection: MetricRangeSelection
     @State private var logDay: String
-    init(day: String) { self.day = day; _logDay = State(initialValue: day) }
+    init(day: String, selection: Binding<MetricRangeSelection>) {
+        self.day = day
+        self._selection = selection; _logDay = State(initialValue: day)
+    }
     @StateObject private var protein = ProteinLogStore()
     @ObservedObject private var food = CutPlanStore.shared
     @State private var showEditor = false
@@ -13,7 +18,7 @@ struct ProteinLogCard: View {
     var body: some View {
         let grams = protein.total(day: logDay, foodProtein: food.protein(day: logDay))
         let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
-        Button { logDay = Repository.localDayKey(Date()); showEditor = true } label: {
+        Button { openedAt = Date(); logDay = Repository.localDayKey(openedAt); showEditor = true } label: {
             NoopCard(tint: StrandPalette.statusPositive, fillHeight: true) {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                     HStack(alignment: .top, spacing: NoopMetrics.space1) {
@@ -31,7 +36,7 @@ struct ProteinLogCard: View {
                     if let target = protein.targetGrams {
                         ProgressView(value: min(grams, target), total: target).tint(StrandPalette.statusPositive)
                     }
-                    Label("Log protein", systemImage: "plus").font(StrandFont.caption)
+                    Label("Averages & log", systemImage: "plus").font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.statusPositive)
                         .frame(minHeight: NoopMetrics.minimumTouchTarget, alignment: .leading)
                 }
@@ -41,9 +46,72 @@ struct ProteinLogCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens protein totals, entries, optional target and logging")
+        .accessibilityHint("Opens protein range averages, optional target and logging")
         .onChange(of: day) { _, value in logDay = value }
-        .sheet(isPresented: $showEditor, onDismiss: { logDay = Repository.localDayKey(Date()) }) { ProteinEntrySheet(store: protein) }
+        .sheet(isPresented: $showEditor, onDismiss: { logDay = Repository.localDayKey(Date()) }) { ProteinHistoryView(store: protein, selection: $selection, now: openedAt) }
+    }
+}
+
+private struct ProteinHistoryView: View {
+    @ObservedObject var store: ProteinLogStore
+    @ObservedObject private var food = CutPlanStore.shared
+    @Binding var selection: MetricRangeSelection
+    let now: Date
+    @Environment(\.dismiss) private var dismiss
+    @State private var showEditor = false
+    @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
+    private var window: MetricDateWindow { selection.window(now: now) }
+    private var rows: [DashboardDailyReading] {
+        MetricRangeProjection.loggedProtein(
+            standalone: store.entries.map { ($0.day, $0.grams) },
+            food: food.food.flatMap { day, entries in entries.map { (day, $0.protein) } })
+    }
+    private var average: MetricAverageGroup? {
+        MetricRangeProjection.groups(rows, window: window, separateMethods: false, allowZero: true).first
+    }
+    var body: some View {
+        NavigationStack {
+            ScreenScaffold(title: nil) {
+                MetricRangeControl(selection: $selection, now: now)
+                NoopCard(tint: StrandPalette.statusPositive) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                        Text("Average logged protein").font(StrandFont.headline).foregroundStyle(StrandPalette.statusPositive)
+                        Text(average.map { $0.mean.formatted(.number.precision(.fractionLength(0))) } ?? "—")
+                            .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                        Text("g/day · \(window.coverage(average?.readings.count ?? 0))")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        if let target = store.targetGrams {
+                            Text("Optional target · \(target.formatted()) g/day").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                        if let average {
+                            let values = average.readings.map(\.value)
+                            let points = average.readings.compactMap { row -> TrendPoint? in
+                                guard let date = HeartDashboardProjection.date(row.day) else { return nil }
+                                return TrendPoint(date: date, value: row.value)
+                            }
+                            let start = window.days == nil ? (points.first?.date ?? window.end) : window.start
+                            DashboardChart(points: DashboardTraceSampling.reduce(points), domain: start...max(start.addingTimeInterval(1), window.through),
+                                range: 0...max(1, (values.max() ?? 0) * 1.1), tint: StrandPalette.statusPositive,
+                                style: .bars, height: NoopMetrics.chartHeight,
+                                label: "Protein grams logged on recorded days in the selected range; unlogged days have no bars")
+                        } else {
+                            Text("No protein logged in this range").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                }
+                Button { showEditor = true } label: { Label("Log protein", systemImage: "plus") }
+                    .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.statusPositive)
+                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                Text("Includes known protein from protein-only and food entries. Unlogged days are excluded; logged grams do not imply complete intake tracking.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                if window.toDay == Repository.localDayKey(now) {
+                    Text("Includes today’s partial log.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }
+            }
+            .navigationTitle("Protein").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .sheet(isPresented: $showEditor) { ProteinEntrySheet(store: store) }
     }
 }
 

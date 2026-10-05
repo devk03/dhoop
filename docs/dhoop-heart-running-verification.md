@@ -101,3 +101,33 @@ accessibility text layout were inspected. The resting-HR detail resolves as one
 accessibility element. Full spoken VoiceOver navigation, reduced-motion modal
 behavior and physical-phone scrolling performance remain unverified. No new
 live subscription, collection polling or database migration was added.
+
+## Build 426: inline live capture and common range averages
+
+The 60-second live control and active capture render inside the horizontal HR
+card. There is one session owner, no automatic start and no separate live sheet.
+Only the live leaf observes packet updates; saved Today metrics remain static.
+Opening a metric history detail ends the inline request. Storage polling in this
+leaf is limited to the explicit local `--collection-proof` support run.
+
+Expanded HR, HRV, Steps, VO₂ max and Protein share one range selection and one
+control: Today, 7 days, 30 days, 90 days, All history, or inclusive custom dates.
+Details emphasize averages, coverage and charts rather than daily record lists.
+Unknown days are excluded, observed zero steps count, and today's partial data
+is labeled. Protein averages are explicitly logged grams, not complete intake.
+HRV and VO₂ source/key/method groups have separate averages. HR uses the actual
+sample-weighted mean with uncapped read-only daily SQL aggregates; charts show
+daily recorded HR averages. No persisted metric formula or schema was changed.
+These are iOS fork presentation features; Android range UI was not changed.
+
+Verification: 54 DhoopGoalTests and six WhoopStore collection tests passed,
+including eight new range-contract cases and a 200,002-sample HR fixture. The
+iOS device, simulator and shared macOS builds passed. Simulator checks against
+the copied real-data snapshot confirmed Steps 7-day average 9,243 from seven
+recorded days, 30-day average 9,118 from 30 days, shared selection carrying into
+Protein, and custom-date updates. A protein average of 40 g/day shows one
+recorded day out of the selected range; it does not count the unlogged days as
+zero. Build 426 was installed and launched with the stable identifiers. Imperial
+preferences were confirmed before installation. The new inline capture has not
+yet been physically exercised on this build; the reused 60-second lease tests
+pass, and earlier hardware stream verification is recorded separately above.

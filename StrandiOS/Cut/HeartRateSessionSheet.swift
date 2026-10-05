@@ -1,42 +1,39 @@
 import SwiftUI
 import StrandDesign
 
-/// Live observations belong to this requested session, never the Today snapshot.
-struct HeartRateSessionSheet: View {
+/// This leaf owns the only per-packet UI updates inside the otherwise static HR card.
+struct InlineHeartRateCapture: View {
     let expectedDeviceId: String
+    let enabled: Bool
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveState
     @EnvironmentObject private var repo: Repository
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dismiss) private var dismiss
     @StateObject private var session = TimedHeartRateSession()
     @StateObject private var collection = WhoopCollectionModel()
     @State private var startedAt = Date()
     @State private var endedAt: Date?
     @State private var lastBPM: Int?
-    @AppStorage(PuffinExperiment.keepRealtimeForDataKey) private var continuousHrvEnabled = false
-    @ScaledMetric(relativeTo: .largeTitle) private var heroSize = NoopMetrics.dashboardHeroNumber
+    @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
 
     var body: some View {
-        NavigationStack {
-            ScreenScaffold(title: "Live heart rate") {
-                if session.isActive {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in sessionCard(now: context.date) }
-                } else {
-                    sessionCard(now: endedAt ?? Date())
-                }
-                if continuousHrvEnabled {
-                    Text("Continuous HRV capture is enabled in Settings and may continue after this session.")
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            if session.isActive {
+                TimelineView(.periodic(from: .now, by: 1)) { context in capture(now: context.date) }
+            } else {
+                Button { start() } label: { Label("Live HR · 60s", systemImage: "waveform.path.ecg") }
+                    .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.liquidHeart)
+                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    .disabled(!enabled || !status(Date()).connected)
+                    .accessibilityHint("Collects live heart rate here for sixty seconds")
+                if let endedAt {
+                    Text("Session ended · \(lastBPM.map { "\($0) bpm" } ?? "no readable sample") · \(endedAt.formatted(.dateTime.hour().minute()))")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
-                Text("This short session is separate from history sync. Receipt and storage evidence do not establish physiological accuracy.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .navigationBarTitleDisplayMode(.inline)
         }
-        .onAppear { start() }
         .onDisappear { session.stop() }
+        .onChange(of: enabled) { _, value in if !value { session.stop() } }
         .onChange(of: scenePhase) { _, phase in if phase != .active { session.stop() } }
         .onChange(of: repo.deviceId) { _, _ in session.stop() }
         .onChange(of: live.connected) { _, _ in rearm() }
@@ -53,12 +50,12 @@ struct HeartRateSessionSheet: View {
             }
         }
         .task(id: "\(session.sessionId?.uuidString ?? "idle")|\(scenePhase)") {
-            guard scenePhase == .active else { return }
+            guard session.isActive, scenePhase == .active,
+                  ProcessInfo.processInfo.arguments.contains("--collection-proof") else { return }
             repeat {
                 await collection.refresh(repo: repo, live: live)
-                guard session.isActive else { return }
                 try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
-            } while !Task.isCancelled
+            } while session.isActive && !Task.isCancelled
         }
     }
 
@@ -67,57 +64,38 @@ struct HeartRateSessionSheet: View {
             heartRate: live.heartRate, at: now.timeIntervalSince1970, silenceSeconds: LiveState.heartRateSilenceSeconds,
             expectedDeviceId: expectedDeviceId, connectionDeviceId: live.connectedWhoopDeviceId)
     }
-
     private func start() {
-        guard scenePhase == .active, repo.deviceId == expectedDeviceId, status(Date()).connected else { return }
+        guard enabled, scenePhase == .active, repo.deviceId == expectedDeviceId, status(Date()).connected else { return }
         startedAt = Date(); endedAt = nil; lastBPM = nil
         let owner = model
         session.start(deviceId: expectedDeviceId, request: { owner.startRealtimeHR() }, release: { owner.stopRealtimeHR() })
     }
-
     private func rearm() {
-        guard scenePhase == .active, repo.deviceId == expectedDeviceId else { session.stop(); return }
+        guard enabled, scenePhase == .active, repo.deviceId == expectedDeviceId else { session.stop(); return }
         session.rearmIfValid(deviceId: expectedDeviceId, connected: status(Date()).connected,
                              isWhoop: live.activeIsWhoop, rearm: { model.rearmRealtimeIfWanted() })
     }
-
-    private func sessionCard(now: Date) -> some View {
+    private func capture(now: Date) -> some View {
         let current = status(now)
-        let belongsToSession = (live.heartRateEvidence.lastReceivedAt ?? 0) >= startedAt.timeIntervalSince1970
-        let bpm = session.isActive ? (belongsToSession ? current.bpm : nil) : lastBPM
+        let belongs = (live.heartRateEvidence.lastReceivedAt ?? 0) >= startedAt.timeIntervalSince1970
+        let bpm = belongs ? current.bpm : nil
         let points = live.heartRateEvidence.sourceDeviceId == expectedDeviceId
             ? HeartDashboardProjection.trace(live.heartRateEvidence.samples.map {
                 DashboardTraceSample(time: $0.receivedAt, value: Double($0.bpm))
             }, from: startedAt.timeIntervalSince1970, through: now.timeIntervalSince1970, gapSeconds: 1.5)
-                .map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) }
-            : []
-        return NoopCard(tint: StrandPalette.liquidHeart) {
-            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                Text(session.isActive ? "\(session.remainingSeconds()) seconds remaining" : endedAt != nil ? "Session ended" : "Connect your WHOOP to start")
-                    .font(StrandFont.headline).foregroundStyle(StrandPalette.textSecondary)
-                Text(bpm.map { "\($0) bpm" } ?? "— bpm").font(StrandFont.number(heroSize, weight: .bold))
-                    .foregroundStyle(StrandPalette.liquidHeart)
-                Text(session.isActive ? (bpm != nil ? "Fresh readable HR" : "Waiting for a fresh readable sample") : "Last readable value from this session")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                if !points.isEmpty {
-                    DashboardChart(points: points, domain: startedAt...max(startedAt.addingTimeInterval(1), now),
-                        range: max(0, (points.map(\.value).min() ?? 0) - 5)...((points.map(\.value).max() ?? 1) + 5),
-                        tint: StrandPalette.liquidHeart, height: NoopMetrics.dashboardTraceHeight,
-                        label: "Actual readable HR receipts during this session; missing readings remain gaps")
-                } else {
-                    Text("No readable samples captured yet").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: NoopMetrics.dashboardTraceHeight)
-                }
-                Button(session.isActive ? "Stop" : "Start 60-second session") {
-                    if session.isActive { session.stop() } else { start() }
-                }
-                .buttonStyle(.bordered).tint(StrandPalette.liquidHeart).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                .disabled(!session.isActive && !current.connected)
-                if let stored = collection.snapshot, stored.deviceId == expectedDeviceId {
-                    Text("\(stored.heartRate.count.formatted()) measured HR samples stored today")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
+                .map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.value, segment: $0.segment) } : []
+        return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            Text("Live · \(session.remainingSeconds()) seconds remaining").font(StrandFont.subhead).foregroundStyle(StrandPalette.liquidHeart)
+            Text(bpm.map { "\($0) bpm" } ?? "— bpm").font(StrandFont.number(numberSize, weight: .bold))
+            Text(bpm != nil ? "Fresh readable HR" : "Waiting for a fresh reading").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            if !points.isEmpty {
+                DashboardChart(points: points, domain: startedAt...max(startedAt.addingTimeInterval(1), now),
+                    range: max(0, (points.map(\.value).min() ?? 0) - 5)...((points.map(\.value).max() ?? 1) + 5),
+                    tint: StrandPalette.liquidHeart, height: NoopMetrics.dashboardTrendHeight,
+                    label: "Actual HR during this requested session; missing readings remain gaps", compact: true)
             }
+            Button("Stop live HR") { session.stop() }.font(StrandFont.subhead)
+                .buttonStyle(.bordered).tint(StrandPalette.liquidHeart).frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
     }
 }
