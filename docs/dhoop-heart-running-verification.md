@@ -567,3 +567,50 @@ Logs: `/private/tmp/dhoop-delete-goal-tests.log`, `/private/tmp/dhoop-delete-sto
 UI and its existing deletion path are unchanged. The new Swift helper does not change the stored
 schema, analytics or backup format. Earlier live-receipt and full accessibility audit gaps remain
 open; installation and these deletion tests do not establish physiological accuracy.
+
+
+## Build 435: reconcile a missing wrist-on event for sleep
+
+A read-only replay of an overnight capture reproduced one sleep candidate being rejected solely by
+an unmatched earlier WRIST_OFF event. Dense decoded HR and motion continued through the night, but
+the old event-pairing resolver extended the off-wrist interval through the entire analysis window.
+
+Swift and Kotlin now reconcile only the final unmatched OFF from sustained valid HR after the most
+recent OFF event. Evidence requires at least 60 elapsed seconds, at least 80% distinct-second coverage,
+and no gap over five seconds; BPM must be 30–220. Duplicate timestamps do not add coverage and invalid
+readings break continuity. Matched OFF/ON intervals remain unchanged. Missing or sparse HR does not
+invent a wrist-on event. The inference changes sleep analysis only, never raw events or live wear state.
+The existing gap filter remains in place; a transport gap is not asserted to prove strap removal.
+
+The analysis fingerprint advances from v3 to v4 on both platforms, prompting the existing recent-window
+rescore on upgrade. There is no schema migration. A standalone optimized Swift oracle produced the
+following literal for the mirrored 18-case Kotlin test:
+
+```text
+null,null,1,1,null,null,40,32,32,null,null,1,1,1,1,null,1,null
+```
+
+Validation:
+
+- 95 Swift analytics tests passed, including the end-to-end stale-OFF reproduction and existing
+  off-wrist rejection cases. Expanded density/gap boundary tests also passed.
+- 11 store/fingerprint tests passed.
+- 14 Android JVM tests passed across SleepWearEvidenceTest, SleepStagerOffWristTest and
+  HrFingerprintTest; the full Android app Kotlin compilation passed. The local ignored
+  roomSchemaOracle directory was created because Gradle rejected its absent optional test input;
+  no schema content or production build rule was changed.
+- Signed iPhone and Strand macOS builds passed; native and secondary-account read-only review,
+  source-comment hygiene and whitespace checks completed.
+- The fixed replay accepted the candidate while keeping the actual recorded wrist events intact.
+- Build 435 installed and launched on the physical iPhone. A later read-only database copy confirmed
+  a newly persisted computed sleep session and WHOOP-owned sleep_performance provenance for the
+  requested night. Apple Health retained its separate total. SQLite quick_check passed.
+- Every original HR, RR and event row from the pre-update copy remains present; new sync rows were
+  added. The migration list is unchanged. No zone or HIIT workout was active before installation.
+
+The recovered sleep/stage values remain Dhoop estimates; this repair demonstrates corrected event
+handling and persistence, not physiological accuracy or agreement with official WHOOP scoring.
+Private replay inputs and output values remain outside the repository. Logs are in
+`/private/tmp/dhoop-wear-analytics-tests.log`, `/private/tmp/dhoop-wear-boundary-tests.log`,
+`/private/tmp/dhoop-wear-fingerprint-tests.log`, `/private/tmp/dhoop-wear-android-tests-final.log`,
+`/private/tmp/dhoop-wear-iphone-build.log`, and `/private/tmp/dhoop-wear-mac-build.log`.

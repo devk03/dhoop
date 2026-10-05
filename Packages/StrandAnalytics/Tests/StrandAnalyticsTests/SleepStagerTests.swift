@@ -317,6 +317,17 @@ final class SleepStagerTests: XCTestCase {
         XCTAssertTrue(dropped.isEmpty, "a WRIST_OFF interval covering ≥50% of the run must drop it")
     }
 
+    func testMissingWristOnWithSustainedHRNoLongerErasesNight() {
+        let start = nightStart(02), dur = 90 * 60
+        let grav = stillGravity(start: start, durationS: dur)
+        let hr = hrStream(start: start, durationS: dur, bpm: 50)
+        let events = [WhoopEvent(ts: start - 3600, kind: "WRIST_OFF(10)", payload: [:])]
+        let old = AnalyticsEngine.offWristIntervals(events: events, windowEnd: start + dur)
+        XCTAssertTrue(SleepStager.detectSleep(hr: hr, gravity: grav, wristOff: old).isEmpty)
+        let resolved = AnalyticsEngine.offWristIntervals(events: events, windowEnd: start + dur, hr: hr)
+        XCTAssertEqual(SleepStager.detectSleep(hr: hr, gravity: grav, wristOff: resolved).count, 1)
+    }
+
     /// FRACTIONAL rule (#504): a single BRIEF WRIST_OFF blip (well under 50% of the run) must NOT drop a
     /// real, dense, worn night — the flaw the binary "any WRIST_OFF drops it" guard had. Here a 5-min
     /// off-wrist interval over a 90-min night is ~5.5% coverage, so the night is kept.

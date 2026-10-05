@@ -1036,7 +1036,7 @@ object IntelligenceEngine {
             val steps = repo.stepSamples(owner, from, to, STREAM_LIMIT)
             val skinReads = readDaySkinAndWristOff(
                 repo, owner, from, to, ownerSource, skinFamilyByOwner, skinWornToleranceByOwner,
-                skinAnchorByOwner, skinAnchorResolvedOwners, skinAnchorScanFrom, skinAnchorScanTo,
+                skinAnchorByOwner, skinAnchorResolvedOwners, skinAnchorScanFrom, skinAnchorScanTo, hr,
             )
             val skin = skinReads.skin
             val spo2 = skinReads.spo2
@@ -3050,6 +3050,7 @@ object IntelligenceEngine {
         skinAnchorResolvedOwners: HashSet<String>,
         skinAnchorScanFrom: Long,
         skinAnchorScanTo: Long,
+        hr: List<com.noop.data.HrSample>,
     ): DaySkinReads {
         val skin = repo.skinTempSamples(owner, from, to, StreamReadCap.SKIN)
         // #93: WHOOP 4.0 raw SpO2 PPG samples for the night; analyzeDay banks the nightly red/IR ADC
@@ -3093,9 +3094,9 @@ object IntelligenceEngine {
         // off-wrist sleep backstop (#500). The HR-gap proxy in the stager is the always-on guard;
         // these explicit intervals sharpen it under the FRACTIONAL rule (#504) , a session is dropped
         // only when its off-wrist coverage reaches maxOffWristSleepFraction, so a real night with a
-        // short off-wrist tail survives. Pairing needs WRIST_ON too (to bound each interval); a span
-        // still open at the window end closes at `to`. Empty when the strap emitted no wrist events.
-        val wristOff = AnalyticsEngine.offWristIntervals(repo.events(owner, from, to, STREAM_LIMIT), to)
+        // short off-wrist tail survives. An unmatched OFF may close at sustained valid HR evidence;
+        // otherwise it remains uncertain through `to`. Empty when no wrist events were recorded.
+        val wristOff = AnalyticsEngine.offWristIntervals(repo.events(owner, from, to, STREAM_LIMIT), to, hr)
         return DaySkinReads(skin, spo2, skinFamily, skinWornToleranceSec, skinAnchorRaw, wristOff)
     }
 

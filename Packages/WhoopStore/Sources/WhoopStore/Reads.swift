@@ -195,7 +195,8 @@ extension WhoopStore {
     /// changed. Fingerprint the complete scoring input instead. HR keeps its established count+timestamp
     /// fingerprint; the other streams use SQLite's monotonic rowid frontier, which catches old backfills
     /// without full-table COUNT scans over millions of dense motion/R-R rows.
-    /// `v3` also witnesses authoritative WHOOP 5 RR promotions and registry-only source-policy changes.
+    /// `v4` rescans recent sleep with sustained-HR reconciliation of unmatched wrist-off events.
+    /// It retains the RR-promotion and registry-policy inputs introduced in v3.
     /// The version changes the persisted watermark once so the normal recent window is recomputed.
     /// Older persisted scores remain until explicitly rescored; raw legacy intervals stay on disk.
     public func analysisFingerprint() async throws -> String {
@@ -230,7 +231,7 @@ extension WhoopStore {
             }
             let historyCount: Int = row["w5"]
             let registry: String = row["registry"]
-            return "v3|h\(hc):\(hm)|" + tails.joined(separator: "|")
+            return "v4|h\(hc):\(hm)|" + tails.joined(separator: "|")
                 + "|w5\(historyCount)|w7\(row["w7"] as Int)|tagged\(row["w5tagged"] as Int)|registry\(registry)"
         }
     }

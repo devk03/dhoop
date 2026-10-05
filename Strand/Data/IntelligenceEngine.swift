@@ -1277,10 +1277,10 @@ final class IntelligenceEngine: ObservableObject {
                 // off-wrist sleep backstop (#500). The HR-gap proxy in the stager is the always-on guard;
                 // these explicit intervals sharpen it under the FRACTIONAL rule (#504) , a session is dropped
                 // only when its off-wrist coverage reaches maxOffWristSleepFraction, so a real night with a
-                // short off-wrist tail survives. Pairing needs WRIST_ON too (to bound each interval); a span
-                // still open at the window end closes at `to`. Empty when the strap emitted no wrist events.
+                // short off-wrist tail survives. An unmatched OFF may close at sustained valid HR evidence;
+                // otherwise it remains uncertain through `to`. Empty when no wrist events were recorded.
                 let wristEvents = (try? await store.events(deviceId: owner, from: from, to: to, limit: 50_000)) ?? []
-                let wristOff = AnalyticsEngine.offWristIntervals(events: wristEvents, windowEnd: to)
+                let wristOff = AnalyticsEngine.offWristIntervals(events: wristEvents, windowEnd: to, hr: hr)
 
                 // Calendar-day window for the ADDITIVE daily totals (steps + calories). The night window
                 // above is anchored to the current time-of-day and ends at dayStart+12h, so for a PAST
