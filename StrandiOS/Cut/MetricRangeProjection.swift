@@ -4,6 +4,9 @@ struct MetricRangeSelection: Equatable {
     enum Preset: String, CaseIterable, Identifiable {
         case today, week, month, quarter, all, custom
         var id: String { rawValue }
+        var shortTitle: String {
+            switch self { case .today: "Today"; case .week: "7D"; case .month: "30D"; case .quarter: "90D"; case .all: "All"; case .custom: "Custom" }
+        }
         var title: String {
             switch self {
             case .today: return "Today"
@@ -57,6 +60,10 @@ struct MetricDateWindow: Equatable {
     let toDay: String
     let days: Int?
     var identity: String { "\(fromDay)|\(toDay)|\(Int(start.timeIntervalSince1970))|\(Int(through.timeIntervalSince1970))" }
+    /// A refresh may retain an older snapshot of the same calendar range, never another range or future data.
+    func canDisplaySnapshot(_ old: MetricDateWindow) -> Bool {
+        start == old.start && end == old.end && fromDay == old.fromDay && toDay == old.toDay && old.through <= through
+    }
     func coverage(_ observed: Int) -> String {
         days.map { "\(observed) of \($0) recorded days" } ?? "\(observed) recorded days"
     }

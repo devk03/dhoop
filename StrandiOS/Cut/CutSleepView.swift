@@ -15,7 +15,7 @@ struct CutSleepView: View {
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
     private var window: MetricDateWindow { selection.window(now: capturedAt) }
     private var result: SleepRangeSnapshot? {
-        guard let value = history.snapshot, value.deviceId == repo.deviceId, value.window == window else { return nil }
+        guard let value = history.snapshot, value.deviceId == repo.deviceId, window.canDisplaySnapshot(value.window) else { return nil }
         return value
     }
     private var whoop: [SleepComparisonDay] { result?.whoop ?? [] }
@@ -40,8 +40,8 @@ struct CutSleepView: View {
                 Button(action: refresh) { Image(systemName: "arrow.clockwise").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
                     .accessibilityLabel("Refresh sleep comparison").disabled(history.snapshot == nil && history.error == nil)
             }
-            rangeControl
-            if history.snapshot == nil && history.error == nil { ProgressView("Reading sleep sources…").font(StrandFont.caption) }
+            MetricRangeControl(selection: $selection, now: capturedAt)
+            if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
             grid {
                 sourceCard("WHOOP", icon: "waveform.path", rows: whoop, detail: whoopMethod, tint: StrandPalette.metricPurple)
                 sourceCard("Apple Health", icon: "heart.fill", rows: apple, detail: appleProvider?.name ?? "No readable sleep", tint: StrandPalette.metricCyan)
@@ -76,30 +76,8 @@ struct CutSleepView: View {
         }
     }
     private func refresh() { ble.syncNow(); capturedAt = Date(); refreshToken += 1 }
-    private var rangeControl: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: NoopMetrics.space1) {
-                    ForEach(MetricRangeSelection.Preset.allCases) { preset in
-                        Button { selection.preset = preset } label: {
-                            Text(shortName(preset)).font(StrandFont.subhead)
-                                .padding(.horizontal, NoopMetrics.space3).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                                .background(selection.preset == preset ? StrandPalette.surfaceRaised : .clear, in: Capsule())
-                        }.buttonStyle(.plain).accessibilityLabel(preset.title)
-                            .accessibilityAddTraits(selection.preset == preset ? .isSelected : [])
-                    }
-                }
-            }
-            if selection.preset == .custom {
-                DatePicker("From", selection: $selection.customStart, in: ...min(selection.customEnd, capturedAt), displayedComponents: .date)
-                DatePicker("Through", selection: $selection.customEnd, in: min(selection.customStart, capturedAt)...capturedAt, displayedComponents: .date)
-            }
-            Text(window.days == 1 ? window.end.formatted(date: .abbreviated, time: .omitted) : window.label)
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-        }
-    }
     private func sourceCard(_ title: String, icon: String, rows: [SleepComparisonDay], detail: String, tint: Color) -> some View {
-        NoopCard(tint: tint) {
+        NoopCard(tint: tint, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 Label(title, systemImage: icon).font(StrandFont.subhead).foregroundStyle(tint)
                 let average = SleepComparisonProjection.mean(rows.map(\.total))
@@ -246,9 +224,7 @@ struct CutSleepView: View {
             }.font(StrandFont.subhead)
         }
     }
-    private func shortName(_ preset: MetricRangeSelection.Preset) -> String {
-        switch preset { case .today: "Today"; case .week: "7D"; case .month: "30D"; case .quarter: "90D"; case .all: "All"; case .custom: "Custom" }
-    }
+
 }
 
 func sleepHM(_ minutes: Double) -> String {

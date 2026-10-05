@@ -38,12 +38,15 @@ struct MetricRangeSnapshot {
 final class MetricRangeModel: ObservableObject {
     @Published private(set) var snapshot: MetricRangeSnapshot?
     @Published private(set) var error: String?
+    @Published private(set) var isRefreshing = false
     private var generation = 0
 
     func load(repo: Repository, deviceId: String, metric: DashboardHistoryMetric, window: MetricDateWindow) async {
         generation += 1
         let current = generation
-        snapshot = nil; error = nil
+        if snapshot?.deviceId != deviceId || snapshot?.metric != metric || snapshot.map({ !window.canDisplaySnapshot($0.window) }) == true { snapshot = nil }
+        error = nil; isRefreshing = true
+        defer { if current == generation { isRefreshing = false } }
         var readings: [DashboardDailyReading] = []
         var hrMean: Double?
         var hrCount = 0

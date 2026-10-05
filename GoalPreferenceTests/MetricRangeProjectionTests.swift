@@ -1,6 +1,20 @@
 import XCTest
 
 final class MetricRangeProjectionTests: XCTestCase {
+    func testRefreshCanRetainOnlyMatchingPastSnapshot() {
+        let now = Date(timeIntervalSince1970: 1_791_200_000)
+        var selection = MetricRangeSelection(now: now)
+        selection.preset = .today
+        let old = selection.window(now: now)
+        let refreshed = selection.window(now: now.addingTimeInterval(60))
+        XCTAssertTrue(refreshed.canDisplaySnapshot(old))
+        XCTAssertFalse(old.canDisplaySnapshot(refreshed), "A snapshot from the future must be hidden")
+        selection.preset = .week
+        XCTAssertFalse(selection.window(now: now).canDisplaySnapshot(old), "Changing the range must not show the old average")
+        selection.preset = .today
+        XCTAssertFalse(selection.window(now: now.addingTimeInterval(86400)).canDisplaySnapshot(old))
+    }
+
     private var calendar: Calendar {
         var result = Calendar(identifier: .gregorian)
         result.timeZone = TimeZone(identifier: "America/Los_Angeles")!

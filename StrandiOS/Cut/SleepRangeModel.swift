@@ -14,12 +14,15 @@ struct SleepRangeSnapshot {
 final class SleepRangeModel: ObservableObject {
     @Published private(set) var snapshot: SleepRangeSnapshot?
     @Published private(set) var error: String?
+    @Published private(set) var isRefreshing = false
     private var generation = 0
 
     func load(repo: Repository, window: MetricDateWindow) async {
         generation += 1
         let current = generation, id = repo.deviceId
-        snapshot = nil; error = nil
+        if snapshot?.deviceId != id || snapshot.map({ !window.canDisplaySnapshot($0.window) }) == true { snapshot = nil }
+        error = nil; isRefreshing = true
+        defer { if current == generation { isRefreshing = false } }
         guard let store = await repo.storeHandle() else {
             guard current == generation, !Task.isCancelled else { return }
             error = "Local storage is unavailable"; return

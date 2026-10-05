@@ -15,7 +15,7 @@ struct MetricHistoryView: View {
     private var window: MetricDateWindow { selection.window(now: referenceDate) }
     private var result: MetricRangeSnapshot? {
         guard let result = history.snapshot, result.deviceId == deviceId, result.metric == metric,
-              result.window == window else { return nil }
+              window.canDisplaySnapshot(result.window) else { return nil }
         return result
     }
 
@@ -38,6 +38,10 @@ struct MetricHistoryView: View {
                                 Text(source(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
                             rangeChart(result.groups.first?.readings ?? [])
+                            if history.isRefreshing { ProgressView("Updating saved history…").font(StrandFont.caption) }
+                            if let error = history.error {
+                                Text("Showing the previous snapshot. \(error)").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+                            }
                         } else if let error = history.error {
                             Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                         } else {

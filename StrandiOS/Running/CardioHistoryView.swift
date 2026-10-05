@@ -18,21 +18,11 @@ struct CardioHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            HStack {
-                Picker("Time range", selection: $range.preset) {
-                    ForEach(MetricRangeSelection.Preset.allCases) { Text($0.title).tag($0) }
-                }.pickerStyle(.menu)
-                Spacer(minLength: NoopMetrics.space1)
-                Picker("Workout type", selection: $kind) {
-                    Text("All types").tag(nil as CardioHistoryKind?)
-                    ForEach(CardioHistoryKind.allCases) { Text($0.title).tag(Optional($0)) }
-                }.pickerStyle(.menu)
-            }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
-            if range.preset == .custom {
-                DatePicker("From", selection: $range.customStart, in: ...min(now, range.customEnd), displayedComponents: .date)
-                DatePicker("Through", selection: $range.customEnd, in: min(range.customStart, now)...now, displayedComponents: .date)
-            }
-            Text(range.window(now: now).label).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            MetricRangeControl(selection: $range, now: now)
+            Picker("Workout type", selection: $kind) {
+                Text("All types").tag(nil as CardioHistoryKind?)
+                ForEach(CardioHistoryKind.allCases) { Text($0.title).tag(Optional($0)) }
+            }.pickerStyle(.menu).font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
             TextField("Search workouts or sources", text: $search).font(StrandFont.body).textFieldStyle(.roundedBorder)
                 .frame(minHeight: NoopMetrics.minimumTouchTarget).accessibilityLabel("Search cardio history")
             DashboardGridLayout(columns: typeSize.isAccessibilitySize ? 1 : 2, squareMinimum: false) {
