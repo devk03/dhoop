@@ -77,7 +77,7 @@ struct NoopLimitationsView: View {
     ]
 
     var body: some View {
-        ScreenScaffold(title: "Zhoop Limitations", subtitle: "What each WHOOP can read") {
+        ScreenScaffold(title: "Dhoop Limitations", subtitle: "What each WHOOP can read") {
             tableCard
             legendCard
         }
@@ -88,7 +88,7 @@ struct NoopLimitationsView: View {
     private var tableCard: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: 14) {
-                Text("WHAT Zhoop READS").font(StrandFont.overline)
+                Text("WHAT Dhoop READS").font(StrandFont.overline)
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
                 // Column header.

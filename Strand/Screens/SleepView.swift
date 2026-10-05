@@ -271,7 +271,7 @@ struct SleepView: View {
             .sheet(item: $addNap) { seed in
                 SleepTimeEditor(bedTs: seed.bedTs, wakeTs: seed.wakeTs,
                                 title: "Add a nap",
-                                blurb: "Pick when the nap started and ended. Zhoop stages it from your data as its own session, separate from the night's sleep.",
+                                blurb: "Pick when the nap started and ended. Dhoop stages it from your data as its own session, separate from the night's sleep.",
                                 bedLabel: "Nap started", wakeLabel: "Nap ended") { startTs, endTs in
                     await repo.addManualNap(startTs: startTs, endTs: endTs)
                     // Re-score so the day's aggregates pick up the new session, exactly like an edit.
@@ -334,7 +334,7 @@ struct SleepView: View {
         // tombstone, so only it gets the "won't detect ... again" wording. (#65 banner honesty.)
         let message = banner.snapshot.session.userEdited
             ? String(localized: "Sleep deleted.")
-            : String(localized: "Sleep deleted. Zhoop won't detect sleep between \(clockTime(banner.displayStart)) and \(clockTime(banner.windowEnd)) again.")
+            : String(localized: "Sleep deleted. Dhoop won't detect sleep between \(clockTime(banner.displayStart)) and \(clockTime(banner.windowEnd)) again.")
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "moon.zzz")
                 .font(.system(size: 14, weight: .semibold))
@@ -2656,7 +2656,7 @@ private struct SleepFreshnessNote: View {
             SyncingHistoryNote(chunks: live.syncChunksThisSession)
         case .calculating:
             DataPendingNote(title: "Calculating last night's sleep…",
-                            message: "Your strap history is in. Zhoop is detecting and staging the night now.",
+                            message: "Your strap history is in. Dhoop is detecting and staging the night now.",
                             symbol: "waveform.path.ecg")
         case .syncFailed:
             DataPendingNote(title: "Last night's sleep hasn't synced",
@@ -2664,11 +2664,11 @@ private struct SleepFreshnessNote: View {
                             symbol: "exclamationmark.arrow.triangle.2.circlepath")
         case .awaitingSync:
             DataPendingNote(title: "Waiting for last night's sleep",
-                            message: "Connect the strap and sync its history. Zhoop will calculate the night when the overnight data arrives.",
+                            message: "Connect the strap and sync its history. Dhoop will calculate the night when the overnight data arrives.",
                             symbol: "arrow.triangle.2.circlepath")
         case .notDetected:
             DataPendingNote(title: "Last night's sleep wasn't detected",
-                            message: "Sync finished, but Zhoop couldn't confidently identify a sleep window. Keep the strap connected and try Sync again; the older night below is still your latest detected sleep.",
+                            message: "Sync finished, but Dhoop couldn't confidently identify a sleep window. Keep the strap connected and try Sync again; the older night below is still your latest detected sleep.",
                             symbol: "moon.zzz")
         case nil:
             EmptyView()
@@ -2932,7 +2932,7 @@ private struct SleepTimeEditor: View {
             // A detected night is tombstoned so it won't re-detect; a userEdited/nap row writes no
             // tombstone, so its copy drops that (false) promise. Mirrors the undo banner. (#65)
             Text(suppressesReDetection
-                 ? "Removes this recorded sleep and recomputes the day without it. Zhoop won't re-detect sleep in this window. You can undo for a few seconds after."
+                 ? "Removes this recorded sleep and recomputes the day without it. Dhoop won't re-detect sleep in this window. You can undo for a few seconds after."
                  : "Removes this sleep and recomputes the day without it. You can undo for a few seconds after.")
         }
     }

@@ -3,7 +3,7 @@ import Foundation
 /// Single source of truth for project identity and attribution. Deliberately
 /// contains no author/AI identifiers so the public repo can stay anonymous.
 enum ProjectInfo {
-    static let appName = "Zhoop"
+    static let appName = "Dhoop"
     static let tagline = "Your strap. Your data. Your machine. Local-first, no cloud."
     static let version = "0.1.0"
     /// Public contact for questions, feedback, bug reports. Baked into every platform.
@@ -11,7 +11,8 @@ enum ProjectInfo {
 
     /// Open-source reverse-engineering this is built on.
     static let attributions: [(repo: String, note: String)] = [
-        ("ryanbr/noop", "NOOP, the app Zhoop is forked from"),
+        ("hackyguru/zhoop", "Zhoop, the app Dhoop is forked from"),
+        ("ryanbr/noop", "NOOP, the upstream app Zhoop is built on"),
         ("johnmiddleton12/my-whoop", "WHOOP 4.0 BLE protocol"),
         ("b-nnett/goose", "WHOOP 5.0 BLE protocol"),
     ]
