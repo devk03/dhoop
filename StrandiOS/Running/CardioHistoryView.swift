@@ -9,6 +9,9 @@ struct CardioHistoryView: View {
     @State private var search = ""
     @State private var visibleCount = 40
     @State private var selected: CardioHistoryGroup?
+    @State private var exportURL: URL?
+    @State private var preparingExport = false
+    @State private var exportError: String?
     @Environment(\.dynamicTypeSize) private var typeSize
     private var filtered: [CardioHistoryGroup] { CardioHistoryProjection.filtered(model.groups, window: range.window(now: now), kind: kind, search: search) }
     private var months: [String] { Array(Set(filtered.prefix(visibleCount).map { monthKey($0.primary.start) })).sorted(by: >) }
@@ -55,6 +58,22 @@ struct CardioHistoryView: View {
                 Button("Load older sessions · \(filtered.count - visibleCount) more") { visibleCount += 40 }
                     .font(StrandFont.subhead).frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(.bordered)
             }
+            NoopCard {
+                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                    Text("Keep a copy of Cardio history").font(StrandFont.headline)
+                    Text("The general app backup excludes local zone runs and interval sessions. Export those records separately. This JSON copy has no in-app restore yet.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    if let exportURL {
+                        ShareLink(item: exportURL) { Label("Save or share Cardio export", systemImage: "square.and.arrow.up") }
+                            .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        Button("Prepare a fresh copy") { prepareExport() }.font(StrandFont.caption)
+                    } else {
+                        Button { prepareExport() } label: { Label(preparingExport ? "Preparing…" : "Export local Cardio data", systemImage: "square.and.arrow.up") }
+                            .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(preparingExport)
+                    }
+                    if let exportError { Text(exportError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
+                }
+            }
             Text("Dates use the workout's start time. Linked recordings stay available; unknown activity types retain their recorded labels.")
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
         }
@@ -62,6 +81,15 @@ struct CardioHistoryView: View {
         .onChange(of: kind) { _, _ in visibleCount = 40 }
         .onChange(of: search) { _, _ in visibleCount = 40 }
         .sheet(item: $selected) { CardioHistoryDetail(group: $0, payloads: model.payloads) }
+    }
+    private func prepareExport() {
+        guard !preparingExport else { return }
+        preparingExport = true; exportError = nil; exportURL = nil
+        Task {
+            do { exportURL = try await CardioLocalExport.writeCopy() }
+            catch { exportError = "Export failed: \(error.localizedDescription). Original records remain on this phone." }
+            preparingExport = false
+        }
     }
     private func row(_ group: CardioHistoryGroup) -> some View {
         let item = group.primary

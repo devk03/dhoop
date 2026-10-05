@@ -95,6 +95,7 @@ targets:
       - StrandiOS/Running/RunningZoneSession.swift
       - StrandiOS/Running/HIITSession.swift
       - StrandiOS/Running/HIITWorkoutFiles.swift
+      - StrandiOS/Running/CardioLocalExport.swift
       - StrandiOS/Running/CardioHistoryProjection.swift
       - StrandiOS/Cut/TimedHeartRateSession.swift
       - Strand/BLE/LiveHeartRateEvidence.swift
