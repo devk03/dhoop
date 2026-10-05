@@ -477,6 +477,7 @@ The scope remains the personal Apple fork. Storage-error handling changes the
 reported result, not the workout schema or analytics; no Android change is claimed.
 
 Build 432 was subsequently installed and launched on the physical iPhone. The
-installed-app inventory confirms version 432. The paused zone draft is byte-identical
-before/after launch, unit preferences are unchanged, and auto-detection remains on.
+installed-app inventory confirms version 432. All decoded fields in the paused zone
+draft are identical before/after launch; serialized JSON bytes differ. Unit
+preferences are unchanged, and auto-detection remains on.
 No live workout was interrupted (zone paused, HIIT draft empty before installation).
