@@ -17,7 +17,7 @@ struct ProteinLogCard: View {
         NoopCard {
             let layout = dynamicTypeSize.isAccessibilitySize
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
-                : AnyLayout(HStackLayout(spacing: NoopMetrics.space3))
+                : AnyLayout(DashboardPairLayout(spacing: NoopMetrics.space3))
             layout {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                     Label("Protein", systemImage: "fork.knife").font(StrandFont.headline)
@@ -35,6 +35,7 @@ struct ProteinLogCard: View {
                 Button { logDay = Repository.localDayKey(Date()); showEditor = true } label: { Label("Log protein", systemImage: "plus") }
                     .font(StrandFont.subhead).buttonStyle(.bordered).buttonBorderShape(.capsule)
                         .tint(StrandPalette.statusPositive).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             }
         }
         .onChange(of: day) { _, value in logDay = value }

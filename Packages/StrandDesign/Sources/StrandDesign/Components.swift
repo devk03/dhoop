@@ -138,17 +138,19 @@ public extension View {
 public struct NoopCard<Content: View>: View {
     private let padding: CGFloat
     private let tint: Color?
+    private let fillHeight: Bool
     @ViewBuilder private let content: () -> Content
     #if os(macOS)
     @State private var hover = false
     #endif
-    public init(padding: CGFloat = NoopMetrics.cardPadding, tint: Color? = nil, @ViewBuilder content: @escaping () -> Content) {
-        self.padding = padding; self.tint = tint; self.content = content
+    public init(padding: CGFloat = NoopMetrics.cardPadding, tint: Color? = nil, fillHeight: Bool = false, @ViewBuilder content: @escaping () -> Content) {
+        self.padding = padding; self.tint = tint; self.fillHeight = fillHeight; self.content = content
     }
     public var body: some View {
         content()
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxHeight: fillHeight ? .infinity : nil, alignment: .topLeading)
             // Hover chrome (fill + border + shadow) lives in the background so its animation is
             // scoped to the card surface ONLY. It must never animate the content() subtree, or a
             // chart inside re-animates its line every time the cursor crosses the card. (#104)

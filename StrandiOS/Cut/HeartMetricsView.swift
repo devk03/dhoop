@@ -28,7 +28,7 @@ struct HeartMetricsView: View, Equatable {
     private var scale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
     private var loadIdentity: String { "\(deviceId)|\(refreshToken)|\(dayCycleModeRaw)" }
     private var pairLayout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: NoopMetrics.gap)) : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.gap))
+        dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: NoopMetrics.gap)) : AnyLayout(DashboardPairLayout())
     }
 
     var body: some View {
@@ -81,7 +81,8 @@ struct HeartMetricsView: View, Equatable {
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                        if let battery {
+                    Spacer(minLength: NoopMetrics.space1)
+                    if let battery {
                         Label("\(Int(battery.rounded()))%", systemImage: "battery.100").font(StrandFont.captionNumber)
                             .accessibilityLabel("Battery at last check \(Int(battery.rounded())) percent")
                     }
@@ -138,7 +139,7 @@ struct HeartMetricsView: View, Equatable {
     }
 
     private func strainCard(now: Date) -> some View {
-        NoopCard(tint: StrandPalette.metricAmber) {
+        NoopCard(tint: StrandPalette.metricAmber, fillHeight: !dynamicTypeSize.isAccessibilitySize) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 title("Strain", "flame.fill", StrandPalette.metricAmber)
                 numeric(data(now)?.strain.map { UnitFormatter.effortDisplay($0, scale: scale) } ?? "—", unit: "/\(UnitFormatter.effortScaleMax(scale))")
@@ -150,6 +151,7 @@ struct HeartMetricsView: View, Equatable {
                 let points = dailyPoints(data(now)?.strainWeek ?? []).map {
                     TrendPoint(date: $0.date, value: UnitFormatter.effortValue($0.value, scale: scale), segment: $0.segment)
                 }
+                Spacer(minLength: NoopMetrics.space1)
                 plot(points, domain: weekDomain(now), tint: StrandPalette.metricAmber, style: .bars,
                      range: 0...UnitFormatter.effortValue(100, scale: scale), label: "Seven-day strain, scale \(UnitFormatter.effortScaleMax(scale))", dailyLabels: true, empty: "No recorded strain yet")
                 Text("7 days").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
@@ -158,7 +160,7 @@ struct HeartMetricsView: View, Equatable {
     }
 
     private func hrvCard(now: Date) -> some View {
-        NoopCard(tint: StrandPalette.metricCyan) {
+        NoopCard(tint: StrandPalette.metricCyan, fillHeight: !dynamicTypeSize.isAccessibilitySize) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 title("HRV", "waveform.path.ecg", StrandPalette.metricCyan)
                 numeric(data(now)?.hrv.map { number($0.value) } ?? "—", unit: "ms")
@@ -170,6 +172,7 @@ struct HeartMetricsView: View, Equatable {
                     Text("Needs suitable R–R and sleep data").font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
+                Spacer(minLength: NoopMetrics.space1)
                 plot(dailyPoints(data(now)?.hrvMonth ?? []), domain: monthDomain(now), tint: StrandPalette.metricCyan,
                      label: "Thirty-day HRV records; source and method changes break the line", empty: "No HRV records in this 30-day window")
                 Text("30 days · recorded values").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
