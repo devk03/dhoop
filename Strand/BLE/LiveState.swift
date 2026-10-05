@@ -532,7 +532,7 @@ public final class LiveState: ObservableObject {
     /// Attribution for collection evidence; a timestamp from another device must not become this one's.
     @Published public var lastSyncedDeviceId: String?
     /// WHOOP link identity, independent of whether it has received a readable heart-rate sample.
-    public var connectedWhoopDeviceId: String?
+    @Published public var connectedWhoopDeviceId: String?
 
     public func successfulSyncAt(for deviceId: String) -> TimeInterval? {
         lastSyncedDeviceId == deviceId ? lastSyncedAt : nil

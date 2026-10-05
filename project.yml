@@ -21,7 +21,7 @@ settings:
     # iOS build number (CFBundleVersion). GLOBAL so the iOS app AND its widget extension inherit the
     # SAME value — they must match or iOS warns "extension version must match parent app" (#416).
     # macOS sets its own CFBundleVersion on the Strand target and is unaffected by this.
-    CURRENT_PROJECT_VERSION: "421"
+    CURRENT_PROJECT_VERSION: "422"
     SWIFT_VERSION: "5.0"
     # Emit localizable strings so Xcode auto-extracts every LocalizedStringKey into the
     # String Catalog on build (the English (US) base entries).
@@ -85,6 +85,7 @@ targets:
       - StrandiOS/Cut/CutGoalPreferences.swift
       - StrandiOS/Cut/ProteinLogStore.swift
       - StrandiOS/Cut/HeartDashboardProjection.swift
+      - StrandiOS/Cut/TimedHeartRateSession.swift
       - Strand/BLE/LiveHeartRateEvidence.swift
       - Strand/Data/Profile.swift
       - Strand/Screens/ProfileAvatarView.swift

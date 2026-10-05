@@ -7,12 +7,15 @@ struct HeartMetricsView: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var model: AppModel
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
     @AppStorage(DayCycleMode.storageKey) private var dayCycleModeRaw = DayCycleMode.sleepOnset.rawValue
+    @AppStorage(PuffinExperiment.keepRealtimeForDataKey) private var continuousHrvEnabled = false
     @StateObject private var dashboard = HeartDashboardModel()
     @StateObject private var collection = WhoopCollectionModel()
+    @StateObject private var liveSession = TimedHeartRateSession()
     @State private var showCollection = false
     @State private var chartMode = "Today"
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize = NoopMetrics.dashboardHeroNumber
@@ -46,6 +49,14 @@ struct HeartMetricsView: View {
             }
         }
         .sheet(isPresented: $showCollection) { WhoopCollectionCard(collection: collection) }
+        .onDisappear { liveSession.stop() }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { liveSession.stop() } }
+        .onChange(of: repo.deviceId) { _, _ in liveSession.stop() }
+        .onChange(of: live.activeIsWhoop) { _, _ in rearmLiveSession() }
+        .onChange(of: live.connected) { _, _ in rearmLiveSession() }
+        .onChange(of: live.connectedWhoopDeviceId) { _, _ in rearmLiveSession() }
+        .onChange(of: live.bonded) { _, _ in rearmLiveSession() }
+        .onChange(of: live.historyReady) { _, _ in rearmLiveSession() }
         .task(id: repo.deviceId) {
             while !Task.isCancelled {
                 if scenePhase == .active { await collection.refresh(repo: repo, live: live) }
@@ -96,6 +107,33 @@ struct HeartMetricsView: View {
                     HStack { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); Spacer(); chartPicker }
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) { title("Heart rate", "heart.fill", StrandPalette.liquidHeart); chartPicker }
                 }
+                Button {
+                    if liveSession.isActive {
+                        liveSession.stop()
+                    } else if scenePhase == .active && live.activeIsWhoop && live.connected
+                                && live.connectedWhoopDeviceId == repo.deviceId {
+                        let owner = model
+                        if liveSession.start(deviceId: repo.deviceId, request: { owner.startRealtimeHR() },
+                                             release: { owner.stopRealtimeHR() }) {
+                            chartMode = "Live"
+                        }
+                    }
+                } label: {
+                    Label(liveSession.isActive ? "Stop · \(liveSession.remainingSeconds())s remaining" : "Live HR · 60 seconds",
+                          systemImage: liveSession.isActive ? "stop.circle.fill" : "waveform.path.ecg")
+                        .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                }
+                .buttonStyle(.bordered).buttonBorderShape(.capsule).tint(StrandPalette.liquidHeart)
+                .disabled(!liveSession.isActive && (!status.connected || scenePhase != .active))
+                .accessibilityHint(liveSession.isActive ? "Ends this live session immediately" : "Requests live heart rate for sixty seconds, then ends automatically")
+                Text(liveSession.isActive ? "60-second session requested · incoming data shown below" : "Tap to start a short live session. History sync continues.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if continuousHrvEnabled {
+                    Text("Continuous HRV capture is enabled in Settings and may continue after this session.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
                     Text(status.bpm.map(String.init) ?? "—").font(StrandFont.number(heroSize, weight: .bold))
                     Text("bpm").font(StrandFont.title2).foregroundStyle(StrandPalette.textSecondary)
@@ -103,7 +141,7 @@ struct HeartMetricsView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Current heart rate")
                 .accessibilityValue(status.bpm.map { "\($0) beats per minute, fresh live WHOOP sample" } ?? "Unavailable; no fresh readable sample")
-                Text(status.isReceiving ? "Live · \(age(status))" : "Waiting for a fresh readable sample")
+                Text(status.isReceiving ? "Fresh HR · \(age(status))" : "Waiting for a fresh readable sample")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                 if let resting = data(now)?.restingHR {
                     Text("Resting \(number(resting.value)) bpm · \(caption(resting))")
@@ -128,6 +166,13 @@ struct HeartMetricsView: View {
             }
             .foregroundStyle(StrandPalette.textPrimary)
         }
+    }
+
+    private func rearmLiveSession() {
+        guard scenePhase == .active else { liveSession.stop(); return }
+        liveSession.rearmIfValid(deviceId: repo.deviceId,
+            connected: live.connected && live.connectedWhoopDeviceId == repo.deviceId,
+            isWhoop: live.activeIsWhoop, rearm: { model.rearmRealtimeIfWanted() })
     }
 
     private var chartPicker: some View {

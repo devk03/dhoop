@@ -6,10 +6,6 @@ import StrandAnalytics
 /// Heart metrics and independent protein tracking, with optional weight-loss tools below.
 struct CutTodayView: View {
     @ObservedObject private var goal = CutGoalPreferences.shared
-    @EnvironmentObject private var model: AppModel
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var visible = false
-    @State private var wantsRealtime = false
     @EnvironmentObject var repo: Repository
     @EnvironmentObject var profile: ProfileStore
     @EnvironmentObject var live: LiveState
@@ -67,11 +63,6 @@ struct CutTodayView: View {
                 }
             }
         }
-        .onAppear { visible = true; updateRealtimeInterest() }
-        .onDisappear { visible = false; updateRealtimeInterest() }
-        .onChange(of: scenePhase) { _, _ in updateRealtimeInterest() }
-        .onChange(of: live.connected) { _, _ in rearmLiveFeed() }
-        .onChange(of: live.historyReady) { _, _ in rearmLiveFeed() }
         .task {
             seedPlanIfNeeded()
             while !Task.isCancelled {
@@ -115,20 +106,6 @@ struct CutTodayView: View {
                     }
             }
         }
-    }
-
-    /// Balance one live-feed interest while this Today surface is visible and foregrounded.
-    private func updateRealtimeInterest() {
-        let wanted = visible && scenePhase == .active
-        guard wanted != wantsRealtime else { return }
-        wantsRealtime = wanted
-        if wanted { model.startRealtimeHR(); model.getBattery() }
-        else { model.stopRealtimeHR() }
-    }
-
-    private func rearmLiveFeed() {
-        guard wantsRealtime, live.connected else { return }
-        model.rearmRealtimeIfWanted()
     }
 
     /// With the More tab gone, Devices (pairing) and Settings are reached from here.
