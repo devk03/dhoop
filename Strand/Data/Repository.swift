@@ -327,6 +327,16 @@ final class Repository: ObservableObject {
         }
     }
 
+    /// WHOOP-only namespaces for side-by-side sleep comparison; Apple is never a fallback.
+    func sleepComparisonSourceIds() async -> [String] {
+        guard let store = await ensureStore() else { return [] }
+        let registered = (try? DeviceRegistryStore(dbQueue: store.registryWriter).all()) ?? []
+        let ids = registered.filter { $0.brand.caseInsensitiveCompare("WHOOP") == .orderedSame }.map(\.id)
+        let active = ids.contains(deviceId) || deviceId == Self.whoopSource ? deviceId : Self.whoopSource
+        let raw = Self.rawWhoopSourceIds(activeDeviceId: active, registeredWhoopIds: ids)
+        return raw + raw.map { $0 + "-noop" }
+    }
+
     private func rawComputedReadIds(store: WhoopStore) -> [String] {
         rawPhysiologyReadIds(store: store).map { $0.hasSuffix("-noop") ? $0 : $0 + "-noop" }
     }

@@ -5,9 +5,9 @@ import WhoopStore
 struct SleepRangeSnapshot {
     let deviceId: String
     let window: MetricDateWindow
-    let readings: [SleepRangeReading]
-    let mainWindows: [String: (start: Int, end: Int)]
-    var averageSleep: Double? { SleepRangeProjection.mean(readings.map { $0.total.value }) }
+    let whoop: [SleepComparisonDay]
+    let apple: [SleepComparisonProvider]
+    let healthMessage: String?
 }
 
 @MainActor
@@ -21,40 +21,72 @@ final class SleepRangeModel: ObservableObject {
         let current = generation, id = repo.deviceId
         snapshot = nil; error = nil
         guard let store = await repo.storeHandle() else {
-            guard current == generation, !Task.isCancelled, id == repo.deviceId else { return }
+            guard current == generation, !Task.isCancelled else { return }
             error = "Local storage is unavailable"; return
         }
-        async let total = repo.resolvedSeries(key: "sleep_total_min", source: Repository.whoopSource, from: window.fromDay, to: window.toDay)
-        async let deep = repo.resolvedSeries(key: "sleep_deep_min", source: Repository.whoopSource, from: window.fromDay, to: window.toDay)
-        async let rem = repo.resolvedSeries(key: "sleep_rem_min", source: Repository.whoopSource, from: window.fromDay, to: window.toDay)
-        async let light = repo.resolvedSeries(key: "sleep_light_min", source: Repository.whoopSource, from: window.fromDay, to: window.toDay)
-        func map(_ rows: [ResolvedMetricPoint]) -> [DashboardDailyReading] {
-            rows.map { DashboardDailyReading(day: $0.day, value: $0.value, source: $0.source, key: $0.sourceKey) }
-        }
-        let records = await SleepRangeProjection.readings(totals: map(total.points), deep: map(deep.points),
-            rem: map(rem.points), light: map(light.points), window: window)
-        // Bound presentation-only main-window learning; range changes must not scan years of staging JSON.
-        let habitual = await repo.habitualMidsleepSec(days: 30)
-        var clocks: [String: (start: Int, end: Int)] = [:]
+        async let health = healthRead(window: window)
         do {
-            for source in Set(records.map { $0.total.source }) {
-                let sessions = try await store.sleepSessionsByWake(deviceId: source,
-                    from: Int(window.start.timeIntervalSince1970), to: Int(window.through.timeIntervalSince1970))
-                    .filter { $0.endTs > $0.effectiveStartTs }
-                let byDay = Dictionary(grouping: sessions) {
-                    Repository.localDayKey(Date(timeIntervalSince1970: Double($0.endTs)))
-                }
-                for record in records where record.total.source == source {
-                    if let group = byDay[record.total.day], let span = SleepView.mainNightSpan(group, habitualMidsleepSec: habitual) {
-                        clocks[record.total.day] = span
+            let ids = await repo.sleepComparisonSourceIds()
+            let rawIDs = Set(ids.filter { !$0.hasSuffix("-noop") })
+            var groups: [[SleepComparisonDay]] = []
+            for source in ids {
+                if Task.isCancelled { return }
+                let rows = try await stored(store: store, id: source, window: window, apple: false)
+                if source.hasSuffix("-noop") {
+                    var verified: [SleepComparisonDay] = []
+                    for row in rows {
+                        let owner = try await store.scoreInputSource(deviceId: source, day: row.day, key: "sleep_performance")
+                        if SleepComparisonProjection.hasWhoopOwner(owner, rawIDs: rawIDs) { verified.append(row) }
                     }
+                    groups.append(verified)
+                } else { groups.append(rows) }
+            }
+            let whoop = SleepComparisonProjection.preferred(groups, window: window)
+            let (providers, healthError) = await health
+            var apple = providers
+            var message = healthError
+            if providers.isEmpty {
+                let cached = try await stored(store: store, id: Repository.appleHealthSource, window: window, apple: true)
+                if !cached.isEmpty {
+                    apple = [SleepComparisonProvider(id: "saved-apple-health", name: "Saved Apple Health",
+                        detail: "Provider unavailable · legacy daily totals", days: cached)]
+                    message = "Saved Apple totals may combine providers. Enable sleep access for a provider-specific comparison."
+                        + (healthError.map { " \($0)" } ?? "")
+                } else if message == nil {
+                    message = "No readable Apple sleep in this range. Check sleep access in Health and the source app's sync."
                 }
             }
+            guard current == generation, !Task.isCancelled, id == repo.deviceId else { return }
+            snapshot = SleepRangeSnapshot(deviceId: id, window: window, whoop: whoop, apple: apple, healthMessage: message)
         } catch {
             guard current == generation, !Task.isCancelled, id == repo.deviceId else { return }
-            self.error = "Sleep timing could not be read: \(error.localizedDescription)"
+            self.error = "Sleep could not be read: \(error.localizedDescription)"
         }
-        guard current == generation, !Task.isCancelled, id == repo.deviceId else { return }
-        snapshot = SleepRangeSnapshot(deviceId: id, window: window, readings: records, mainWindows: clocks)
+    }
+    private func healthRead(window: MetricDateWindow) async -> ([SleepComparisonProvider], String?) {
+        do { return (try await SleepComparisonHealthReader.read(window: window), nil) }
+        catch { return ([], "Health read failed: \(error.localizedDescription)") }
+    }
+    private func stored(store: WhoopStore, id: String, window: MetricDateWindow, apple: Bool) async throws -> [SleepComparisonDay] {
+        let daily = try await store.dailyMetrics(deviceId: id, from: window.fromDay, to: window.toDay)
+        let keys = apple ? ["asleep_min", "deep_min", "rem_min", "core_min"] : ["sleep_total_min", "sleep_deep_min", "sleep_rem_min", "sleep_light_min"]
+        var fields: [[String: Double]] = []
+        for key in keys {
+            let values = try await store.metricSeries(deviceId: id, key: key, from: window.fromDay, to: window.toDay)
+            fields.append(Dictionary(values.filter { $0.value.isFinite && $0.value >= 0 }.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last }))
+        }
+        for d in daily {
+            for (i, value) in [d.totalSleepMin, d.deepMin, d.remMin, d.lightMin].enumerated() {
+                if fields[i][d.day] == nil, let value, value.isFinite, value >= 0 { fields[i][d.day] = value }
+            }
+        }
+        return fields[0].keys.sorted().compactMap { day in
+            guard day >= window.fromDay, day <= window.toDay, let total = fields[0][day], total > 0 else { return nil }
+            let deep = fields[1][day], rem = fields[2][day], light = fields[3][day]
+            var unknown: Double?
+            if let deep, let rem, let light, deep + rem + light <= total { unknown = total - deep - rem - light }
+            return SleepComparisonDay(day: day, sourceID: id, method: apple ? "Saved daily aggregate" : id.hasSuffix("-noop") ? "Dhoop estimate" : "Imported WHOOP record",
+                total: total, deep: deep, rem: rem, light: light, unspecified: unknown)
+        }
     }
 }

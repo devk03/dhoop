@@ -222,3 +222,65 @@ exposed only the container; final HIIT visual interaction could not be completed
 A user-operated 15-second real-WHOOP test was requested. Physical HIIT cue timing,
 full on-device visual/VoiceOver review and persisted HIIT hardware HR evidence
 remain pending; earlier single-buzz confirmation is not a HIIT workout test.
+
+## Build 429: separate sleep sources and comparison redesign
+
+Sleep presents independent WHOOP and Apple Health cards, source coverage and
+matched-date duration differences. It no longer uses a WHOOP-preferred resolver
+that can fill WHOOP with Apple values. WHOOP namespaces follow registered WHOOP
+identities plus retained canonical imports. Whole records win per date; computed
+rows are admitted only when recorded sleep_performance input provenance names a
+known WHOOP source. Unknown or non-WHOOP computed provenance is excluded.
+
+A new read-only HealthKit query preserves provider bundle identifiers and names
+in memory. It excludes this app's bundle and NOOP sync-identifier records, never
+combines providers, unions duplicate/overlapping intervals within one provider,
+and leaves conflicting stages unclassified. Coarse unspecified sleep does not
+become light/core. Nearby stage fragments (up to a 90-minute seam) form an episode;
+actual gaps remain excluded. Episodes contribute to their local wake date, with
+later naps contributing only recorded duration. Queries include 36-hour context
+on both sides of historical ranges before wake-date filtering, preventing a
+midnight boundary from misattributing part of the following night's sleep.
+
+A provider selector appears when several readable providers are present. The
+previously selected bundle ID is retained; otherwise a displayed source named
+Eight Sleep is preferred when available, without relabeling another provider.
+Legacy Apple aggregates remain a clearly labeled fallback when direct HealthKit
+records are unavailable; their producer is unknown and their totals can combine
+providers. Existing Health sync/storage is not rewritten. No migration, upload,
+Health write or automatic authorization prompt was added.
+
+Duration deltas use only dates with both sources. Stage comparisons use only
+paired nonnil values when total dates overlap; missing stages stay unavailable.
+If there are no shared dates, each source's available stage averages are labeled
+separately and no difference is asserted. Repository refresh revisions reload
+the comparison after sync/rescore. This is an iOS-only presentation/read feature;
+shared analytics formulas and the Android database/backup contract are unchanged.
+
+The built-in imagegen tool produced assets/dhoop-sleep-comparison-reference.png
+from the exact prompt in assets/dhoop-sleep-comparison-prompt.txt. Implemented
+changes include compact range chips, paired source tiles, a comparison strip,
+small multi-date lines with gaps, paired deep/REM/light-core/unclassified rows,
+and expandable source notes. A single selected date has no oversized duration
+chart or repeated latest-night total. No demographic comparisons or invented
+figures from the generated image were implemented. StrandDesign tokens and
+adaptive grid layouts are used; the established tab order is retained.
+
+Verification: 77 DhoopGoalTests passed, including ten new source-isolation,
+overlap, missing-data, matched-date, midnight-window and DST cases. Final signed
+iOS/simulator builds and the shared macOS build passed, as did source hygiene
+and whitespace checks. Simulator rendering/AX checks against the archived real
+phone data verified Today, seven-day and All history, missing WHOOP values,
+separate source coverage and stage totals. All history reads 345 WHOOP dated
+records (daily columns plus imported metric series) and 32 saved Apple dates;
+these have no overlap. The unsigned simulator cannot read HealthKit, and its
+explicit entitlement error exercises the labeled saved-data fallback. A simulator
+crash in HKSource.default() was fixed by filtering returned source bundle IDs
+instead; subsequent navigation/read checks passed.
+
+Build 429 installed and launched on the phone with stable identifiers. Imperial
+preferences, no active Running draft and a null HIIT draft were confirmed before
+installation. Live Eight Sleep provider retrieval on the phone, full spoken
+VoiceOver navigation and physiological agreement on a paired overnight record
+remain unverified. No successful live WHOOP/Apple comparison is claimed from
+non-overlapping archived dates.
