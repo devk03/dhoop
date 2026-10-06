@@ -10,7 +10,7 @@ struct MeditationCard: View {
         StrandCard(padding: NoopMetrics.space4, cornerRadius: NoopMetrics.cardRadius) {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 HStack(spacing: NoopMetrics.space3) {
-                    Image(systemName: "leaf").foregroundStyle(StrandPalette.metricPurple)
+                    Image(systemName: "leaf").foregroundStyle(StrandPalette.metricHRV)
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                         Text("Meditation").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                         Text("15 minutes · Quiet focus")
@@ -44,7 +44,7 @@ struct MeditationCard: View {
                     Text("Keep Dhoop open for the WHOOP buzz; iPhone notification when locked, if enabled.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
-                .tint(StrandPalette.metricPurple)
+                .tint(StrandPalette.metricHRV)
             }
         }
     }
@@ -63,7 +63,7 @@ struct MeditationCard: View {
                 }
             }
             ProgressView(value: 1 - remaining / MeditationSession.duration)
-                .tint(StrandPalette.metricPurple).accessibilityLabel("Meditation progress")
+                .tint(StrandPalette.metricHRV).accessibilityLabel("Meditation progress")
         }
     }
 
@@ -82,7 +82,7 @@ struct MeditationCard: View {
 
     private func action(_ title: LocalizedStringKey, icon: String, perform: @escaping () -> Void) -> some View {
         Button(action: perform) { Label(title, systemImage: icon) }
-            .font(StrandFont.subhead).buttonStyle(.borderedProminent).tint(StrandPalette.metricPurple)
+            .font(StrandFont.subhead).buttonStyle(.borderedProminent).tint(StrandPalette.metricHRV)
             .frame(minHeight: NoopMetrics.minimumTouchTarget)
     }
 

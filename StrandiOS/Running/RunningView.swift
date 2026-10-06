@@ -65,6 +65,7 @@ private struct RunningContent: View, Equatable {
                         }
                     }
 
+                    MeditationCard()
                 }
             }
         }

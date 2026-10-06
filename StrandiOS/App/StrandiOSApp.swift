@@ -36,6 +36,7 @@ struct StrandiOSApp: App {
     /// swiping the workout sheet away must not stop the clock, silence the strap or drop the
     /// double-tap handler. See `LiftSessionController`.
     @StateObject private var liftSession: LiftSessionController
+    @StateObject private var meditation = MeditationController()
     @Environment(\.scenePhase) private var scenePhase
     /// Appearance preference (System/Light/Dark). Default follows the OS; the Settings picker writes it.
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
@@ -225,6 +226,7 @@ struct StrandiOSApp: App {
                 .environmentObject(model.live)
                 .environmentObject(model.repo)
                 .environmentObject(model.profile)
+                .environmentObject(meditation)
                 .environmentObject(model.behavior)
                 .environmentObject(model.intelligence)
                 .environmentObject(model.coach)
@@ -334,6 +336,7 @@ struct StrandiOSApp: App {
                 // waiting for the next foreground. activate() is idempotent + a no-op where WC isn't
                 // supported, so this is safe on every device/simulator combination.
                 .task {
+                    meditation.attach(model: model, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.meditation, $0) })
                     watch.activate()
                     await watch.pushLatest(from: model)
                 }
@@ -347,6 +350,7 @@ struct StrandiOSApp: App {
         // HealthKitBridge.sync guards on `auth == .authorized`, so the scenePhase trigger stays a
         // safe no-op until the user opts in.
         .onChange(of: scenePhase) { _, phase in
+            meditation.setForeground(phase == .active)
             if phase == .active {
                 model.drainPendingIntents(router: router)
                 SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.anyEnabled)

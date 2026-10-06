@@ -83,6 +83,8 @@ enum PlatformOpen {
 /// sync finishing must not let the screen lock under a breathing session that is still running.
 enum ScreenIdle {
     enum Reason: Hashable {
+        /// An explicit meditation timer, independent of other watched sessions.
+        case meditation
         /// A watched on-screen session (breathing, intervals, workout, HRV snapshot) via `keepAwake`.
         case session
         /// A strap history sync, while Settings → "Keep screen on while syncing" is on (iOS).

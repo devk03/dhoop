@@ -96,6 +96,7 @@ targets:
       - StrandiOS/Cut/SleepRangeProjection.swift
       - StrandiOS/Cut/SleepComparisonProjection.swift
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
+      - StrandiOS/Meditation/MeditationSession.swift
       - StrandiOS/Running/RunningZoneSession.swift
       - StrandiOS/Running/RunningSessionStorage.swift
       - StrandiOS/Running/HIITSession.swift
