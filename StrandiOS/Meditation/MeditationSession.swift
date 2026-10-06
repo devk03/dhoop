@@ -89,3 +89,32 @@ struct MeditationSession: Codable, Equatable {
         return alert
     }
 }
+
+/// App-local timer state, excluded from device backups and unrelated to the health database.
+struct MeditationSessionFileStore {
+    let fileURL: URL
+
+    init(fileURL: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Dhoop/Meditation/session-v1.json")) {
+        self.fileURL = fileURL
+    }
+
+    func load() throws -> MeditationSession {
+        do {
+            return try JSONDecoder().decode(MeditationSession.self, from: Data(contentsOf: fileURL))
+        } catch CocoaError.fileReadNoSuchFile {
+            return MeditationSession()
+        }
+    }
+
+    func save(_ session: MeditationSession) throws {
+        let data = try JSONEncoder().encode(session)
+        var directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var resources = URLResourceValues()
+        resources.isExcludedFromBackup = true
+        try directory.setResourceValues(resources)
+        // The replacement must succeed before the caller updates memory or requests any buzz.
+        try data.write(to: fileURL, options: .atomic)
+    }
+}

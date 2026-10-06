@@ -10,25 +10,32 @@ final class MeditationController: ObservableObject {
 
     @Published private(set) var session: MeditationSession
     @Published private(set) var notificationStatus: NotificationStatus = .none
-    private let defaults: UserDefaults
+    @Published private(set) var storageError: String?
+    private let store: MeditationSessionFileStore
+    private var loaded = false
     private let notifications = UNUserNotificationCenter.current()
-    private let storageKey = "dhoop.meditation.session.v1"
     private weak var model: AppModel?
     private var isForeground = false
     private var timerTask: Task<Void, Never>?
+    private var keepAwake: ((Bool) -> Void)?
+    private var holdsScreenAwake = false
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        session = defaults.data(forKey: storageKey)
-            .flatMap { try? JSONDecoder().decode(MeditationSession.self, from: $0) } ?? MeditationSession()
+    init(store: MeditationSessionFileStore = MeditationSessionFileStore()) {
+        self.store = store
+        session = MeditationSession()
+        load()
     }
 
-    func attach(model: AppModel, foreground: Bool) {
+    func attach(model: AppModel, foreground: Bool, keepAwake: @escaping (Bool) -> Void) {
         self.model = model
+        // Release the old owner before replacing the callback on repeated root attachment.
+        if holdsScreenAwake { self.keepAwake?(false); holdsScreenAwake = false }
+        self.keepAwake = keepAwake
         isForeground = foreground
         reconcile()
         if session.phase == .running { scheduleNotification(requestPermission: false) }
         startTicker()
+        updateScreenAwake()
     }
 
     func setForeground(_ foreground: Bool) {
@@ -36,51 +43,104 @@ final class MeditationController: ObservableObject {
         reconcile()
         if foreground && session.phase == .running { scheduleNotification(requestPermission: false) }
         startTicker()
+        updateScreenAwake()
+    }
+
+    func retryStorage() {
+        if !loaded { load() } else if !commit(session) { return }
+        reconcile()
+        if loaded && session.phase == .running { scheduleNotification(requestPermission: false) }
+        startTicker()
+        updateScreenAwake()
     }
 
     func start() {
-        let deviceId = model?.deviceRegistry?.activeDeviceId
-        guard session.start(at: Date(), deviceId: deviceId) else { return }
-        persist()
+        guard loaded else { return }
+        var next = session
+        guard next.start(at: Date(), deviceId: model?.deviceRegistry?.activeDeviceId), commit(next) else { return }
+        log("started; foreground WHOOP cue only; no background strap alarm scheduled")
         scheduleNotification(requestPermission: true)
         startTicker()
+        updateScreenAwake()
     }
 
     func pause() {
-        // A tap after the deadline completes the session instead of reviving an expired timer.
         reconcile()
         let oldId = session.notificationId
-        guard session.pause(at: Date()) else { return }
-        persist()
+        var next = session
+        guard next.pause(at: Date()), commit(next) else { return }
         clearNotification(oldId)
         notificationStatus = .none
         timerTask?.cancel()
+        updateScreenAwake()
     }
 
     func resume() {
-        guard session.resume(at: Date()) else { return }
-        persist()
+        var next = session
+        guard next.resume(at: Date()), commit(next) else { return }
         scheduleNotification(requestPermission: false)
         startTicker()
+        updateScreenAwake()
     }
 
     func cancel() {
         let oldId = session.notificationId
-        guard session.cancel() else { return }
-        persist()
+        var next = session
+        guard next.cancel(), commit(next) else { return }
         clearNotification(oldId)
         notificationStatus = .none
         timerTask?.cancel()
+        updateScreenAwake()
     }
 
     private func reconcile() {
-        guard let disposition = session.completeIfDue(at: Date(), foreground: isForeground,
-                                                       strapReady: strapReady) else { return }
-        // Mark before writing: relaunch/repeated lifecycle events cannot request another buzz.
-        persist()
-        // Let the scheduled notification fire even if a background tick wins the deadline race.
+        guard loaded else { return }
+        var next = session
+        guard let disposition = next.completeIfDue(at: Date(), foreground: isForeground,
+                                                    strapReady: strapReady) else { return }
+        // Commit before the external effect. Failure keeps the old state and never requests a buzz.
+        guard commit(next) else { updateScreenAwake(); return }
+        // Let the notification fire even if a background tick wins the deadline race.
         timerTask?.cancel()
+        updateScreenAwake()
+        log("completion saved; disposition=\(disposition.rawValue); foreground=\(isForeground); physical delivery unconfirmed")
         if disposition == .buzzRequested { model?.buzz(loops: 1) }
+    }
+
+    private func load() {
+        do {
+            session = try store.load()
+            loaded = true
+            storageError = nil
+        } catch {
+            storageError = String(localized: "The saved meditation timer could not be read. Retry before starting.")
+        }
+    }
+
+    @discardableResult
+    private func commit(_ next: MeditationSession) -> Bool {
+        do {
+            try store.save(next)
+            session = next
+            storageError = nil
+            return true
+        } catch {
+            if storageError == nil { log("state save failed; transition not applied; no completion buzz requested") }
+            storageError = String(localized: "Timer change could not be saved. The previous timer is still in effect; no new completion buzz was requested. Retry the action.")
+            return false
+        }
+    }
+
+    private func updateScreenAwake() {
+        // Release even on a failed completion save: an expired timer must not hold the screen.
+        let wanted = isForeground && session.phase == .running && session.remaining(at: Date()) > 0
+        guard wanted != holdsScreenAwake else { return }
+        holdsScreenAwake = wanted
+        keepAwake?(wanted)
+    }
+
+    private func log(_ message: String) {
+        model?.live.append(log: AppModel.stamped("[Meditation] " + message))
     }
 
     private var strapReady: Bool {
@@ -102,10 +162,6 @@ final class MeditationController: ObservableObject {
                 if self.session.phase != .running { return }
             }
         }
-    }
-
-    private func persist() {
-        if let data = try? JSONEncoder().encode(session) { defaults.set(data, forKey: storageKey) }
     }
 
     private func clearNotification(_ id: String?, includeDelivered: Bool = true) {

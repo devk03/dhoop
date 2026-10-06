@@ -86,4 +86,34 @@ final class MeditationSessionTests: XCTestCase {
         XCTAssertFalse(session.pause(at: start.addingTimeInterval(900)))
         XCTAssertEqual(session.completeIfDue(at: start.addingTimeInterval(900), foreground: true, strapReady: true), .buzzRequested)
     }
+    func testAtomicFileRestoresCompletionWithoutAnotherDisposition() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = MeditationSessionFileStore(fileURL: directory.appendingPathComponent("session.json"))
+        XCTAssertEqual(try store.load().phase, .idle)
+        var session = MeditationSession()
+        session.start(at: start, deviceId: "strap-a")
+        try store.save(session)
+        XCTAssertEqual(try store.load(), session)
+        XCTAssertEqual(session.completeIfDue(at: start.addingTimeInterval(900), foreground: true, strapReady: true), .buzzRequested)
+        try store.save(session)
+        var restored = try store.load()
+        XCTAssertEqual(restored.completionAlert, .buzzRequested)
+        XCTAssertNil(restored.completeIfDue(at: start.addingTimeInterval(901), foreground: true, strapReady: true))
+        XCTAssertEqual(try directory.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup, true)
+    }
+
+    func testFailedFileWriteAndCorruptReadAreReportedWithoutReplacingBytes() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let blockingFile = directory.appendingPathComponent("blocker")
+        let original = Data("preserve existing bytes".utf8)
+        try original.write(to: blockingFile)
+        let blockedStore = MeditationSessionFileStore(fileURL: blockingFile.appendingPathComponent("session.json"))
+        XCTAssertThrowsError(try blockedStore.save(MeditationSession()))
+        XCTAssertEqual(try Data(contentsOf: blockingFile), original)
+        let corruptStore = MeditationSessionFileStore(fileURL: blockingFile)
+        XCTAssertThrowsError(try corruptStore.load())
+        XCTAssertEqual(try Data(contentsOf: blockingFile), original)
+    }
+
 }
