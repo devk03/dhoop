@@ -30,7 +30,7 @@ struct ProteinLogCard: View {
         let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
         NoopCard(padding: NoopMetrics.space3, tint: StrandPalette.metricProtein, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                Button { openedAt = Date(); logDay = Repository.localDayKey(openedAt); showEditor = true } label: {
+                Button { openedAt = Date(); logDay = Repository.localDayKey(openedAt); selection.preset = .today; showEditor = true } label: {
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                         HStack {
                             Text("Protein").font(StrandFont.subhead).fontWeight(.semibold)
@@ -94,21 +94,51 @@ private struct ProteinHistoryView: View {
     private var average: MetricAverageGroup? {
         MetricRangeProjection.groups(rows, window: window, separateMethods: false, allowZero: true).first
     }
+    private struct DayEntry: Identifiable {
+        let id: String
+        let name: String
+        let grams: Double
+        let time: Date?
+    }
+    private var dayEntries: [DayEntry] {
+        let standalone = store.entries.filter { $0.day == window.fromDay }.map {
+            DayEntry(id: "protein|\($0.id)", name: $0.name, grams: $0.grams, time: $0.loggedAt)
+        }
+        let meals = (food.food[window.fromDay] ?? []).compactMap { entry -> DayEntry? in
+            guard let grams = entry.protein, grams.isFinite, grams >= 0 else { return nil }
+            return DayEntry(id: "food|\(entry.id)", name: entry.name, grams: grams, time: entry.at)
+        }
+        return (standalone + meals).sorted {
+            if $0.time != $1.time { return ($0.time ?? .distantFuture) < ($1.time ?? .distantFuture) }
+            return $0.id < $1.id
+        }
+    }
+    private func proteinRow(name: String, grams: Double, time: Date?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space3) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                Text(name).font(StrandFont.subhead)
+                Text(time.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Time not recorded")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
+            Spacer(minLength: NoopMetrics.space1)
+            Text("\(grams.formatted()) g").font(StrandFont.bodyNumber).fixedSize()
+        }.accessibilityElement(children: .combine)
+    }
     var body: some View {
         NavigationStack {
             ScreenScaffold(title: nil) {
                 MetricRangeControl(selection: $selection, now: now)
                 NoopCard(tint: StrandPalette.metricProtein) {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Text("Average logged protein").font(StrandFont.headline).foregroundStyle(StrandPalette.metricProtein)
+                        Text(window.isSingleDay ? "Protein logged" : "Average logged protein").font(StrandFont.headline).foregroundStyle(StrandPalette.metricProtein)
                         Text(average.map { $0.mean.formatted(.number.precision(.fractionLength(0))) } ?? "—")
                             .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-                        Text("g/day · \(window.coverage(average?.readings.count ?? 0))")
+                        Text("\(window.isSingleDay ? "g" : "g/day") · \(window.coverage(average?.readings.count ?? 0))")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         if let target = store.targetGrams {
                             Text("Optional target · \(target.formatted()) g/day").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
-                        if let average {
+                        if let average, !window.isSingleDay {
                             let values = average.readings.map(\.value)
                             let points = average.readings.compactMap { row -> TrendPoint? in
                                 guard let date = HeartDashboardProjection.date(row.day) else { return nil }
@@ -121,12 +151,25 @@ private struct ProteinHistoryView: View {
                                 label: "Protein grams logged on recorded days in the selected range; unlogged days have no bars",
                                 inspectionData: points.map { ChartScrubDatum(id: String($0.date.timeIntervalSince1970), x: $0.date.timeIntervalSince1970, y: $0.value,
                                     value: "\($0.value.formatted()) g logged", context: $0.date.formatted(date: .abbreviated, time: .omitted), series: "Protein log") })
-                        } else {
+                        } else if average == nil {
                             Text("No protein logged in this range").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
                     }
                 }
-                Button { showEditor = true } label: { Label("Log protein", systemImage: "plus") }
+                if window.isSingleDay {
+                    NoopCard {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                            Text("Entries").font(StrandFont.headline)
+                            ForEach(dayEntries) { entry in
+                                proteinRow(name: entry.name, grams: entry.grams, time: entry.time)
+                            }
+                            if average == nil {
+                                Text("No entries for this day").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
+                        }
+                    }
+                }
+                Button { showEditor = true } label: { Label("Log protein today", systemImage: "plus") }
                     .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.metricProtein)
                     .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 Text("Includes known protein from protein-only and food entries. Unlogged days are excluded; logged grams do not imply complete intake tracking.")

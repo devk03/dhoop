@@ -2,6 +2,24 @@ import XCTest
 
 final class ProteinLogStoreTests: XCTestCase {
     @MainActor
+    func testLegacyEntriesRetainUnknownTimeAndNewEntriesPersistLoggingTime() throws {
+        let suite = "ProteinLogTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let legacy = "[{\"id\":\"00000000-0000-0000-0000-000000000001\",\"day\":\"2026-10-04\",\"name\":\"Lunch\",\"grams\":25}]"
+        defaults.set(Data(legacy.utf8), forKey: ProteinLogStore.entriesKey)
+        let store = ProteinLogStore(defaults: defaults)
+        XCTAssertEqual(store.entries.count, 1)
+        XCTAssertNil(store.entries.first?.loggedAt)
+        let at = Date(timeIntervalSince1970: 1_791_200_000)
+        store.add(grams: 15, name: "Snack", day: "2026-10-04", now: at)
+        let reopened = ProteinLogStore(defaults: defaults)
+        XCTAssertNil(reopened.entries.first?.loggedAt)
+        XCTAssertEqual(reopened.entries.last?.loggedAt, at)
+        XCTAssertEqual(reopened.total(day: "2026-10-04"), 40)
+    }
+
+    @MainActor
     func testProteinPersistsWithoutCreatingCalorieDaysOrChangingWeightGoals() {
         let suite = "ProteinLogTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

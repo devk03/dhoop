@@ -9,6 +9,7 @@ final class ProteinLogStore: ObservableObject {
         let day: String
         let name: String
         let grams: Double
+        var loggedAt: Date? = nil
     }
 
     static let entriesKey = "dhoop.protein.entries"
@@ -37,10 +38,10 @@ final class ProteinLogStore: ObservableObject {
         targetGrams = target.isFinite && target > 0 ? target : nil
     }
 
-    func add(grams: Double, name: String, day: String) {
+    func add(grams: Double, name: String, day: String, now: Date = Date()) {
         guard grams.isFinite, grams > 0 else { return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        entries.append(Entry(day: day, name: name.isEmpty ? "Protein" : name, grams: grams))
+        entries.append(Entry(day: day, name: name.isEmpty ? "Protein" : name, grams: grams, loggedAt: now))
     }
 
     func remove(_ id: UUID) { entries.removeAll { $0.id == id } }
