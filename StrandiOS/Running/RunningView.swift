@@ -50,7 +50,8 @@ private struct RunningContent: View, Equatable {
                     CardioDetectionView(localSpans: history.localSpans, sessionActive: controller.hasSession || history.loading)
                 } else {
                     if controller.session == nil && !hiit.hasSession {
-                        NoopSegmentedControl("Workout type", options: ["Zone run", "HIIT", "Intervals"], selection: $workoutMode)
+                        NoopSegmentedControl("Workout type", options: ["Zone run", "HIIT", "Intervals"], selection: $workoutMode,
+                            labels: ["Zone run": controller.isLoadingBaseline ? "Zone run" : controller.chosenTarget?.name ?? "Zone run"])
                     }
                     if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
                         HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,

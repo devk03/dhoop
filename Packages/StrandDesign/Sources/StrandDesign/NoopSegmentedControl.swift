@@ -4,11 +4,12 @@ import SwiftUI
 public struct NoopSegmentedControl: View {
     let title: String
     let options: [String]
+    let labels: [String: String]
     @Binding var selection: String
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    public init(_ title: String, options: [String], selection: Binding<String>) {
-        self.title = title; self.options = options; self._selection = selection
+    public init(_ title: String, options: [String], selection: Binding<String>, labels: [String: String] = [:]) {
+        self.title = title; self.options = options; self._selection = selection; self.labels = labels
     }
 
     public var body: some View {
@@ -29,7 +30,7 @@ public struct NoopSegmentedControl: View {
         HStack(spacing: NoopMetrics.space1) {
             ForEach(options, id: \.self) { option in
                 Button { selection = option } label: {
-                    Text(option).font(StrandFont.subhead).fixedSize()
+                    Text(labels[option] ?? option).font(StrandFont.subhead).fixedSize()
                         .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
                         .padding(.horizontal, NoopMetrics.space2)
                         .foregroundStyle(selection == option ? NoopVisualStyle.selectedControlInk : StrandPalette.textSecondary)

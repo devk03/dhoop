@@ -29,8 +29,8 @@ public enum NoopVisualStyle {
     public static let mintDeep = Color(light: "#0D765C", dark: "#13A982")
     public static let mintGlow = Color(light: "#38C99E", dark: "#54E6BD")
 
-    public static let cardRadius: CGFloat = 18
-    public static let compactRadius: CGFloat = 16
+    public static let cardRadius: CGFloat = 14
+    public static let compactRadius: CGFloat = 10
     public static let pillRadius: CGFloat = 999
     public static let pagePadding: CGFloat = 16
     public static let cardPadding: CGFloat = 16

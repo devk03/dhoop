@@ -66,7 +66,7 @@ struct HeartMetricsView: View, Equatable {
 
     private var statusRow: some View {
         Button { showCollection = true } label: {
-            NoopCard(padding: NoopMetrics.space3) {
+            NoopCard(padding: NoopMetrics.space2) {
                 HStack(spacing: NoopMetrics.space3) {
                     Circle().fill(observation?.connected == true ? StrandPalette.statusPositive : StrandPalette.textTertiary)
                         .frame(width: NoopMetrics.space2, height: NoopMetrics.space2).accessibilityHidden(true)
