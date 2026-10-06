@@ -38,7 +38,7 @@ private struct ChartTouchScrubModifier: ViewModifier {
     func body(content: Content) -> some View {
         #if os(iOS)
         content
-            .highPriorityGesture(LongPressGesture(minimumDuration: 0.2, maximumDistance: NoopMetrics.space2)
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.3, maximumDistance: NoopMetrics.space2)
                 .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
                 .updating($held) { value, held, _ in
                     if case .second(true, _) = value { held = true }
