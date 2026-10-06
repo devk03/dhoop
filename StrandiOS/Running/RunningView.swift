@@ -151,7 +151,7 @@ private struct RunningContent: View, Equatable {
     private var alertReadiness: String {
         if !controller.alertsEnabled { return "Buzz alerts are off." }
         if !controller.workoutHapticsEnabled { return "Workout haptics are off in Settings." }
-        if !controller.strapAlertsReady { return "Connect and pair WHOOP to enable strap buzzes." }
+        if !controller.strapAlertsReady { return "Strap buzz is not ready yet. Check fit and pairing." }
         return "After you enter the target, a buzz cues sustained readings outside it."
     }
 
