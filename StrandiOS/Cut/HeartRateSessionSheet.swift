@@ -69,7 +69,7 @@ struct InlineHeartRateCapture: View {
 
     private var startButton: some View {
         Button { start() } label: { Label("Live · 60s", systemImage: "waveform.path.ecg") }
-            .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.liquidHeart)
+            .font(StrandFont.caption).buttonStyle(.bordered).tint(StrandPalette.liquidHeart)
             .frame(minHeight: NoopMetrics.minimumTouchTarget)
             .disabled(!enabled || !status(Date()).connected)
             .accessibilityLabel("Live heart rate for sixty seconds")

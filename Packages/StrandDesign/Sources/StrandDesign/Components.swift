@@ -22,7 +22,10 @@ public enum NoopMetrics {
     public static let dashboardTraceHeight: CGFloat = 156
     public static let dashboardTrendHeight: CGFloat = 76
     /// Small history preview inside a two-column dashboard tile.
-    public static let dashboardTileChartHeight: CGFloat = 48
+    public static let dashboardTileChartHeight: CGFloat = 36
+    public static let dashboardTileNumber: CGFloat = 28
+    public static let dashboardHeartNumber: CGFloat = 32
+    public static let dashboardHeartChartHeight: CGFloat = 104
     public static let dashboardTileMinimumWidth: CGFloat = 160
     public static let dashboardHeroNumber: CGFloat = 64
     public static let dashboardMetricNumber: CGFloat = 36

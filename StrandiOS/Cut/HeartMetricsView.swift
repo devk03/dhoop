@@ -17,7 +17,9 @@ struct HeartMetricsView: View, Equatable {
     @State private var expandedAt = Date()
     @State private var rangeSelection = MetricRangeSelection()
     @State private var capturedAt = Date()
-    @ScaledMetric(relativeTo: .title) private var metricSize = NoopMetrics.dashboardMetricNumber
+    @ScaledMetric(relativeTo: .title) private var metricSize = NoopMetrics.dashboardTileNumber
+
+    @ScaledMetric(relativeTo: .title) private var heartSize = NoopMetrics.dashboardHeartNumber
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.model === rhs.model && lhs.deviceId == rhs.deviceId && lhs.refreshToken == rhs.refreshToken
@@ -25,7 +27,7 @@ struct HeartMetricsView: View, Equatable {
     private var loadIdentity: String { "\(deviceId)|\(refreshToken)" }
 
     var body: some View {
-        VStack(spacing: NoopMetrics.sectionGap) {
+        VStack(spacing: NoopMetrics.space3) {
             statusRow
             heartTile
             DashboardGridLayout(columns: dynamicTypeSize >= .xxxLarge ? 1 : 2,
@@ -67,150 +69,127 @@ struct HeartMetricsView: View, Equatable {
             NoopCard(padding: NoopMetrics.space3) {
                 HStack(spacing: NoopMetrics.space3) {
                     Circle().fill(observation?.connected == true ? StrandPalette.statusPositive : StrandPalette.textTertiary)
-                        .frame(width: NoopMetrics.space3, height: NoopMetrics.space3).accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                        Text("\(observation?.deviceName ?? "WHOOP") · \(observation?.connected == true ? "Connected" : "Not connected")")
-                            .font(StrandFont.subhead)
-                        Text(observationDetail)
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: NoopMetrics.space2, height: NoopMetrics.space2).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
+                        Text("WHOOP").font(StrandFont.subhead).fontWeight(.semibold)
+                        Text(observationDetail).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
                     Spacer(minLength: NoopMetrics.space1)
                     if let battery {
                         Label("\(Int(battery.rounded()))%", systemImage: "battery.100").font(StrandFont.captionNumber)
                             .accessibilityLabel("Battery at last check \(Int(battery.rounded())) percent")
                     }
-                    Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
-                .frame(minHeight: NoopMetrics.minimumTouchTarget).foregroundStyle(StrandPalette.textPrimary)
+                    Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                }.foregroundStyle(StrandPalette.textPrimary)
             }
         }
-        .buttonStyle(.plain).accessibilityElement(children: .combine)
-        .accessibilityHint("Opens current device and collection evidence")
+        .buttonStyle(.plain).frame(minHeight: NoopMetrics.minimumTouchTarget)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(observation?.connected == true ? "Connected at last check" : "Connection not confirmed at last check")
+        .accessibilityHint("Opens device identity, sample freshness and collection evidence")
     }
 
     private var observationDetail: String {
-        guard let observation else { return "Collection has not been checked yet" }
-        let checkDate = Date(timeIntervalSince1970: observation.capturedAt)
-        let checked = checkDate.formatted(date: .omitted, time: .shortened)
-        guard let received = observation.lastLiveHRAt, received <= observation.capturedAt else {
-            if let stored = observation.latestStoredHR, Double(stored) <= observation.capturedAt {
-                let storedDate = Date(timeIntervalSince1970: Double(stored))
-                let saved = storedDate.formatted(date: Calendar.current.isDate(storedDate, inSameDayAs: checkDate) ? .omitted : .abbreviated, time: .shortened)
-                return "HR saved \(saved) · checked \(checked)"
-            }
-            return "Checked \(checked) · No live HR sample at this check"
+        guard let observation else { return "Checking saved data…" }
+        guard let stored = observation.latestStoredHR, Double(stored) <= observation.capturedAt else {
+            return "No saved HR at last check"
         }
-        let age = observation.capturedAt - received
-        let receipt: String
-        if age < 60 { receipt = "Live HR \(Int(age))s before check" }
-        else if age < 3600 { receipt = "Live HR \(Int(age / 60))m before check" }
-        else { receipt = "Last live HR \(Date(timeIntervalSince1970: received).formatted(date: .abbreviated, time: .shortened))" }
-        return "Checked \(checked) · \(receipt)"
+        let date = Date(timeIntervalSince1970: Double(stored))
+        let checkDate = Date(timeIntervalSince1970: observation.capturedAt)
+        let saved = date.formatted(date: Calendar.current.isDate(date, inSameDayAs: checkDate) ? .omitted : .abbreviated, time: .shortened)
+        return "Saved HR · \(saved)"
     }
 
     private var heartTile: some View {
-        NoopCard(tint: StrandPalette.liquidHeart) {
+        let snapshot = data(capturedAt)
+        return NoopCard(padding: NoopMetrics.space3, tint: StrandPalette.liquidHeart) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 Button { expandedAt = Date(); expandedMetric = .heartRate } label: {
-                    HStack {
-                        Label { Text("Heart rate").foregroundStyle(StrandPalette.textPrimary) } icon: {
-                            Image(systemName: "heart.fill").foregroundStyle(StrandPalette.liquidHeart)
-                        }.font(StrandFont.headline)
-                        Spacer()
-                        Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    }
-                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                }
-                .buttonStyle(.plain).accessibilityLabel("Expand heart-rate history")
-            let snapshot = data(capturedAt)
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
-                    numeric(snapshot?.averageHR.map(number) ?? "—", unit: "avg bpm")
-                    historyDateLabel.fixedSize()
-                }
-                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                    numeric(snapshot?.averageHR.map(number) ?? "—", unit: "avg bpm")
-                    historyDateLabel
-                }
-            }
-            let lower = snapshot?.fromDay ?? Calendar.current.startOfDay(for: capturedAt)
-            let upper = max(lower.addingTimeInterval(1), snapshot?.through ?? capturedAt)
-            plot(snapshot?.measuredHR ?? [], domain: lower...upper, tint: StrandPalette.liquidHeart,
-                 height: NoopMetrics.dashboardTrendHeight, label: "Saved heart-rate preview, one-minute averages with gaps", compact: true, unit: "bpm",
-                 empty: snapshot == nil ? "Loading history…" : snapshot?.hrReadError != nil ? "Heart-rate history unavailable" : "No saved readings today")
-            if let error = snapshot?.hrReadError {
-                Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
-            }
-            InlineHeartRateCapture(expectedDeviceId: deviceId, enabled: expandedMetric == nil,
-                savedSummary: snapshot?.hrSampleCount.flatMap { $0 > 0 ? "\($0.formatted()) saved readings" : nil })
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                        HStack {
+                            Text("Heart rate").font(StrandFont.subhead).fontWeight(.semibold)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                        }
+                        HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space1) {
+                            numeric(snapshot?.averageHR.map(number) ?? "—", unit: "avg bpm", hero: true)
+                            Text("Today").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }.foregroundStyle(StrandPalette.textPrimary).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Expand heart-rate history").accessibilityValue("\(snapshot?.averageHR.map(number) ?? "Unavailable") average bpm")
+                let lower = snapshot?.fromDay ?? Calendar.current.startOfDay(for: capturedAt)
+                let upper = max(lower.addingTimeInterval(1), snapshot?.through ?? capturedAt)
+                plot(snapshot?.measuredHR ?? [], domain: lower...upper, tint: StrandPalette.liquidHeart,
+                     height: NoopMetrics.dashboardHeartChartHeight, label: "Saved heart-rate preview, one-minute averages with gaps", unit: "bpm",
+                     empty: snapshot == nil ? "Loading history…" : snapshot?.hrReadError != nil ? "History unavailable" : "No saved readings today")
+                if let error = snapshot?.hrReadError { Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
+                InlineHeartRateCapture(expectedDeviceId: deviceId, enabled: expandedMetric == nil,
+                    savedSummary: snapshot?.hrSampleCount.flatMap { $0 > 0 ? "\($0.formatted()) readings saved" : nil })
             }
         }
     }
 
-    private var historyDateLabel: some View {
-        Text(data(capturedAt).map { dateLabel($0.historyDay) } ?? dateLabel(Repository.localDayKey(capturedAt)))
-            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-    }
-
     private var hrvTile: some View {
-        metricTile(.hrv, icon: "waveform.path.ecg", tint: StrandPalette.metricCyan) {
-            numeric(data(capturedAt)?.hrv.map { number($0.value) } ?? "—", unit: "ms")
-            metricCaption(data(capturedAt)?.hrv, empty: "Needs R–R and sleep data")
+        metricTile(.hrv, value: data(capturedAt)?.hrv.map { number($0.value) } ?? "—", unit: "ms", tint: StrandPalette.metricCyan) {
             plot(dailyPoints(data(capturedAt)?.hrvMonth ?? []), domain: monthDomain(capturedAt),
                  tint: StrandPalette.metricCyan, height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: true, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No HRV records in the last 30 days")
+                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: true, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No recent HRV")
+            metricCaption(data(capturedAt)?.hrv, empty: "Needs overnight readings")
         }
     }
 
     private var stepsTile: some View {
-        metricTile(.steps, icon: "figure.walk", tint: StrandPalette.metricCyan) {
-            numeric(data(capturedAt)?.steps.map { number($0.value) } ?? "—", unit: "")
-            metricCaption(data(capturedAt)?.steps, empty: "No steps record today")
+        metricTile(.steps, value: data(capturedAt)?.steps.map { number($0.value) } ?? "—", unit: "", tint: StrandPalette.metricCyan) {
             plot(dailyPoints(data(capturedAt)?.stepsWeek ?? []), domain: weekDomain(capturedAt),
                  tint: StrandPalette.metricCyan, style: .bars,
                  range: 0...max(1, (data(capturedAt)?.stepsWeek.map(\.value).max() ?? 0) * 1.1),
                  height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Seven-day steps preview; missing days have no bars", compact: true, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No steps records in the last 7 days")
+                 label: "Seven-day steps preview; missing days have no bars", compact: true, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No recent steps")
+            metricCaption(data(capturedAt)?.steps, empty: "Today unavailable · 7d shown")
         }
     }
 
     private var vo2Tile: some View {
-        metricTile(.vo2, icon: "chart.bar.fill", tint: StrandPalette.metricCyan) {
-            numeric(data(capturedAt)?.vo2.map { $0.value.formatted(.number.precision(.fractionLength(1))) } ?? "—", unit: "mL/kg/min")
-            metricCaption(data(capturedAt)?.vo2, empty: "No VO₂ max record")
+        metricTile(.vo2, value: data(capturedAt)?.vo2.map { $0.value.formatted(.number.precision(.fractionLength(1))) } ?? "—",
+                   unit: data(capturedAt)?.vo2 == nil ? "" : "mL/kg/min", tint: StrandPalette.metricCyan) {
             let history = vo2History(capturedAt)
             plot(history.points, domain: history.domain, tint: StrandPalette.metricCyan,
                  height: NoopMetrics.dashboardTileChartHeight,
-                 label: "VO₂ max preview; method and source changes remain gaps", compact: true, unit: "mL/kg/min", readings: data(capturedAt)?.vo2History ?? [], empty: "Needs a measurement or estimate")
+                 label: "VO₂ max preview; method and source changes remain gaps", compact: true, unit: "mL/kg/min", readings: data(capturedAt)?.vo2History ?? [], empty: "No recorded value yet")
+            if let reading = data(capturedAt)?.vo2 { metricCaption(reading, empty: "") }
         }
     }
 
-    private func metricTile<Content: View>(_ metric: DashboardHistoryMetric, icon: String, tint: Color, fillHeight: Bool = true,
+    private func metricTile<Content: View>(_ metric: DashboardHistoryMetric, value: String, unit: String, tint: Color,
                                           @ViewBuilder content: @escaping () -> Content) -> some View {
-        NoopCard(tint: tint, fillHeight: fillHeight) {
+        NoopCard(padding: NoopMetrics.space3, tint: tint, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 Button { expandedAt = Date(); expandedMetric = metric } label: {
-                    HStack(alignment: .top, spacing: NoopMetrics.space1) {
-                        Label { Text(metric.title).foregroundStyle(StrandPalette.textPrimary) } icon: {
-                            Image(systemName: icon).foregroundStyle(tint)
-                        }.font(StrandFont.subhead)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).accessibilityHidden(true)
-                    }.frame(minHeight: NoopMetrics.minimumTouchTarget)
-                }
-                .buttonStyle(.plain).accessibilityLabel("Expand \(metric.title) history")
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                        HStack {
+                            Text(metric.title).font(StrandFont.subhead).fontWeight(.semibold)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                        }.foregroundStyle(StrandPalette.textPrimary)
+                        numeric(value, unit: unit)
+                    }.frame(minHeight: NoopMetrics.minimumTouchTarget).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Expand \(metric.title) history").accessibilityValue("\(value) \(unit)")
                 content()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
+            }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private func metricCaption(_ reading: DashboardDailyReading?, empty: String) -> some View {
-        Text(reading.map(caption) ?? empty).font(StrandFont.caption)
-            .foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
+        let text: String
+        if let reading {
+            let source = reading.source.hasSuffix("-noop") ? "Estimate" : reading.source == Repository.appleHealthSource ? "Health" : "WHOOP"
+            let date = HeartDashboardProjection.date(reading.day)
+            let sameYear = date.map { Calendar.current.component(.year, from: $0) == Calendar.current.component(.year, from: capturedAt) } ?? false
+            let dateText = date.map { sameYear ? $0.formatted(.dateTime.month(.abbreviated).day()) : $0.formatted(date: .abbreviated, time: .omitted) } ?? reading.day
+            text = "\(source) · \(dateText)"
+        } else { text = empty }
+        return Text(text).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            .fixedSize(horizontal: false, vertical: true).accessibilityLabel(reading.map(caption) ?? empty)
     }
 
     private func vo2History(_ now: Date) -> (points: [TrendPoint], domain: ClosedRange<Date>) {
@@ -224,14 +203,14 @@ struct HeartMetricsView: View, Equatable {
     private func title(_ text: String, _ icon: String, _ tint: Color) -> some View {
         Label(text, systemImage: icon).font(StrandFont.headline).foregroundStyle(tint)
     }
-    private func numeric(_ value: String, unit: String) -> some View {
+    private func numeric(_ value: String, unit: String, hero: Bool = false) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space1) {
-                Text(value).font(StrandFont.number(metricSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                Text(value).font(StrandFont.number(hero ? heartSize : metricSize, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
                 Text(unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
             VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                Text(value).font(StrandFont.number(metricSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                Text(value).font(StrandFont.number(hero ? heartSize : metricSize, weight: .semibold)).foregroundStyle(StrandPalette.textPrimary)
                 Text(unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
         }

@@ -14,7 +14,7 @@ struct ProteinLogCard: View {
     @ObservedObject private var food = CutPlanStore.shared
     @State private var showEditor = false
     @State private var showLog = false
-    @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
+    @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardTileNumber
 
     private var weekReadings: [DashboardDailyReading] {
         guard let today = HeartDashboardProjection.date(day),
@@ -28,20 +28,19 @@ struct ProteinLogCard: View {
     var body: some View {
         let grams = protein.total(day: logDay, foodProtein: food.protein(day: logDay))
         let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
-        NoopCard(tint: StrandPalette.statusPositive, fillHeight: true) {
+        NoopCard(padding: NoopMetrics.space3, tint: StrandPalette.statusPositive, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 Button { openedAt = Date(); logDay = Repository.localDayKey(openedAt); showEditor = true } label: {
-                    HStack(alignment: .top, spacing: NoopMetrics.space1) {
-                        Label { Text("Protein").foregroundStyle(StrandPalette.textPrimary) } icon: {
-                            Image(systemName: "fork.knife").foregroundStyle(StrandPalette.statusPositive)
-                        }.font(StrandFont.subhead)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).accessibilityHidden(true)
-                    }.frame(minHeight: NoopMetrics.minimumTouchTarget)
-                }.buttonStyle(.plain).accessibilityLabel("Expand protein history")
-                Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
-                    .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                        HStack {
+                            Text("Protein").font(StrandFont.subhead).fontWeight(.semibold)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                        }
+                        Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
+                            .font(StrandFont.number(numberSize, weight: .semibold))
+                    }.foregroundStyle(StrandPalette.textPrimary).frame(minHeight: NoopMetrics.minimumTouchTarget).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("Expand protein history").accessibilityValue("\(grams.formatted()) grams logged")
                 Text(protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

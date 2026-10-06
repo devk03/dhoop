@@ -77,7 +77,7 @@ public struct DashboardChart: View {
                         AxisValueLabel {
                             if let date = value.as(Date.self) {
                                 Text(date, format: domain.upperBound.timeIntervalSince(domain.lowerBound) <= 86_400
-                                     ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day())
+                                     ? .dateTime.hour() : .dateTime.month(.abbreviated).day())
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
                         }
