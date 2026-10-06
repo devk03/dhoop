@@ -128,6 +128,15 @@ extension SleepWebhookPolicy {
         }
         return (key(start), key(yesterday))
     }
+    /// Sleep belongs to its wake date, which can be eligible before that calendar day ends.
+    /// Keep the existing completed-day lookback for corrections and include today's stored summary.
+    static func sleepWakeDays(now: Date, calendar input: Calendar = .current) -> (from: String, through: String) {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = input.timeZone
+        let parts = calendar.dateComponents([.year, .month, .day], from: now)
+        let today = String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
+        return (completedDays(now: now, calendar: calendar).from, today)
+    }
+
     static func nextDailyOpportunity(now: Date, calendar: Calendar = .current) -> Date {
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
         return midnight.addingTimeInterval(5 * 60)
@@ -141,7 +150,7 @@ extension SleepWebhookPolicy {
         let end = completedDays(now: now, calendar: calendar).through
         if state.enabled {
             if let retry = state.nextAttempt { dates.append(max(now.addingTimeInterval(60), retry)) }
-            else if let pending = state.delivery.pending, pending.event.wakeDate <= end { dates.append(now.addingTimeInterval(60)) }
+            else if let pending = state.delivery.pending, pending.event.wakeDate <= sleepWakeDays(now: now, calendar: calendar).through { dates.append(now.addingTimeInterval(60)) }
             if state.sleepBacklog == true { dates.append(now.addingTimeInterval(900)) }
         }
         if state.proteinEnabled == true {

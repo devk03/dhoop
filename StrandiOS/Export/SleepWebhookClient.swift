@@ -98,7 +98,9 @@ final class SleepWebhookClient: ObservableObject {
                 let secret = try credentials()
                 if protein, !secret.hasProteinBearer { throw SleepWebhookFailure.credentials }
                 var next = checkpoint
-                let completed = SleepWebhookPolicy.completedDays(now: Date())
+                let selectionTime = Date()
+                let completed = SleepWebhookPolicy.completedDays(now: selectionTime)
+                let sleepDays = SleepWebhookPolicy.sleepWakeDays(now: selectionTime)
                 if protein {
                     if next.delivery.proteinPending == nil {
                         let all = try ProteinWebhookProjection.savedEntries()
@@ -127,17 +129,17 @@ final class SleepWebhookClient: ObservableObject {
                 } else {
                     if next.delivery.pending == nil {
                         guard !model.intelligence.computing, !RescoreBackgroundScheduler.isRescoreOwed else {
-                            next.sleepBacklog = true; next.message = "Waiting for completed-day sleep processing"
+                            next.sleepBacklog = true; next.message = "Waiting for sleep processing"
                             try commit(next); continue
                         }
                         guard let healthStore = await model.repo.storeHandle() else { throw SleepWebhookFailure.storage }
                         let ids = await model.repo.sleepComparisonSourceIds().filter { !$0.hasSuffix("-noop") }
-                        let rows = try await healthStore.verifiedWhoopSleepTotals(rawSourceIds: ids, from: completed.from, to: completed.through)
+                        let rows = try await healthStore.verifiedWhoopSleepTotals(rawSourceIds: ids, from: sleepDays.from, to: sleepDays.through)
                         try Task.checkCancellation()
                         guard ticket == generation, checkpoint.enabled else { return false }
                         next = checkpoint
                         guard !model.intelligence.computing, !RescoreBackgroundScheduler.isRescoreOwed else {
-                            next.sleepBacklog = true; next.message = "Waiting for completed-day sleep processing"
+                            next.sleepBacklog = true; next.message = "Waiting for sleep processing"
                             try commit(next); continue
                         }
                         let candidates = rows.reversed().map { SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
@@ -145,13 +147,13 @@ final class SleepWebhookClient: ObservableObject {
                         let differences = candidates.filter { next.delivery.acknowledged[$0.wakeDate] != $0 }
                         next.sleepBacklog = differences.count > 1
                         guard let candidate = oldestFirst ? differences.last : differences.first else {
-                            if next.delivery.lastAcceptedAt == nil { next.message = "No verified sleep available for a completed day" }
+                            if next.delivery.lastAcceptedAt == nil { next.message = "No verified sleep summary available through today" }
                             try commit(next); continue
                         }
-                        _ = try next.delivery.prepare(candidate); next.message = "Sending completed-day sleep"
+                        _ = try next.delivery.prepare(candidate); next.message = "Sending verified sleep summary"
                         try commit(next)
                     }
-                    guard let pending = checkpoint.delivery.pending, pending.event.wakeDate <= completed.through else { continue }
+                    guard let pending = checkpoint.delivery.pending, pending.event.wakeDate <= sleepDays.through else { continue }
                     guard TimeZone.current.identifier == "America/Los_Angeles" else { throw SleepWebhookFailure.travelPause }
                     let response = try await SleepWebhookTransport().send(pending.bytes, credentials: secret)
                     try Task.checkCancellation(); guard ticket == generation else { return false }

@@ -61,7 +61,7 @@ struct SleepWebhookSettingsView: View {
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
                         Button { client.enqueue(model: model, force: true) } label: {
-                            Label(client.isSending ? "Sending…" : "Send completed days", systemImage: "arrow.up.circle")
+                            Label(client.isSending ? "Sending…" : "Send available summaries", systemImage: "arrow.up.circle")
                                 .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
                         }.buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent)
                             .disabled(!client.checkpoint.anyEnabled || client.isSending || client.storageUnavailable)
@@ -108,7 +108,7 @@ struct SleepWebhookSettingsView: View {
                     }
                 }
                 if let error { Text(error).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical) }
-                Text("Only completed days are sent automatically. Opening Dhoop retries pending updates; iOS controls background timing. Export pauses outside America/Los_Angeles. No meal names, calories, weight or raw sensor traces are sent.")
+                Text("Verified sleep summaries can send on their wake date after processing. Protein sends after the consumption day ends. Opening Dhoop retries pending updates; iOS controls background timing. Export pauses outside America/Los_Angeles. No meal names, calories, weight or raw sensor traces are sent.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }.foregroundStyle(StrandPalette.textPrimary)

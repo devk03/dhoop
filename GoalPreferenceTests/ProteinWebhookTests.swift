@@ -60,6 +60,52 @@ final class ProteinWebhookTests: XCTestCase {
         defaults.set(Data("broken".utf8),forKey:ProteinLogStore.entriesKey)
         XCTAssertThrowsError(try ProteinWebhookProjection.savedEntries(defaults:defaults))
     }
+    func testMorningSleepIncludesWakeDateWhileProteinWaitsForDayEnd() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        for components in [DateComponents(year: 2026, month: 10, day: 6, hour: 8),
+                           DateComponents(year: 2026, month: 3, day: 8, hour: 8)] {
+            let now = try XCTUnwrap(calendar.date(from: components))
+            let sleep = SleepWebhookPolicy.sleepWakeDays(now: now, calendar: calendar)
+            let protein = SleepWebhookPolicy.completedDays(now: now, calendar: calendar)
+            XCTAssertEqual(sleep.through, components.month == 10 ? "2026-10-06" : "2026-03-08")
+            XCTAssertEqual(protein.through, components.month == 10 ? "2026-10-05" : "2026-03-07")
+            XCTAssertEqual(sleep.from, protein.from, "Retain the existing correction lookback")
+        }
+    }
+
+    func testTodaysProteinStillWaitsEvenWithEligibleSleepPending() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 6, hour: 8)))
+        var state = SleepWebhookCheckpoint(); state.proteinEnabled = true
+        try state.delivery.configure(endpoint: "https://example.com/api/webhooks/sleep")
+        _ = try state.delivery.prepareProtein(.init(day: "2026-10-06", proteinGrams: 25,
+            entryCount: 1, timeZone: "America/Los_Angeles"), now: now)
+        XCTAssertEqual(SleepWebhookPolicy.nextOpportunity(state: state, now: now, calendar: calendar),
+                       SleepWebhookPolicy.nextDailyOpportunity(now: now, calendar: calendar))
+        state.enabled = true
+        _ = try state.delivery.prepare(.init(wakeDate: "2026-10-06", sleepMinutes: 480,
+            method: "whoop_import", timeZone: "America/Los_Angeles"), now: now)
+        XCTAssertEqual(SleepWebhookPolicy.nextOpportunity(state: state, now: now, calendar: calendar), now.addingTimeInterval(60))
+    }
+
+    func testTodaysPendingSleepRetriesWithoutRewritingItsPayload() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 6, hour: 8)))
+        var state = SleepWebhookCheckpoint(); state.enabled = true
+        try state.delivery.configure(endpoint: "https://example.com/api/webhooks/sleep")
+        let pending = try XCTUnwrap(state.delivery.prepare(.init(wakeDate: "2026-10-06", sleepMinutes: 480,
+            method: "whoop_import", timeZone: "America/Los_Angeles"), now: now))
+        XCTAssertEqual(SleepWebhookPolicy.nextOpportunity(state: state, now: now, calendar: calendar), now.addingTimeInterval(60))
+        let retry = try XCTUnwrap(state.delivery.prepare(.init(wakeDate: "2026-10-06", sleepMinutes: 490,
+            method: "whoop_import", timeZone: "America/Los_Angeles"), now: now.addingTimeInterval(60)))
+        XCTAssertEqual(retry.bytes, pending.bytes)
+        XCTAssertEqual(retry.event, pending.event)
+        XCTAssertEqual(state.delivery.revision, pending.event.revision)
+    }
+
     func testCompletedDayBoundaryUsesLocalCalendarAcrossDST() throws {
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier:"America/Los_Angeles")!
         let before = calendar.date(from:DateComponents(year:2026,month:10,day:6,hour:23,minute:59))!
