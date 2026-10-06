@@ -14,7 +14,7 @@ public struct NoopSegmentedControl: View {
 
     public var body: some View {
         Group {
-            if typeSize.isAccessibilitySize {
+            if typeSize >= .xxLarge {
                 ScrollView(.horizontal, showsIndicators: false) { choices }
             } else {
                 choices
@@ -32,7 +32,7 @@ public struct NoopSegmentedControl: View {
                 Button { selection = option } label: {
                     Text(labels[option] ?? option).font(StrandFont.subhead).fixedSize()
                         .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
-                        .padding(.horizontal, NoopMetrics.space2)
+                        .padding(.horizontal, options.count > 3 ? NoopMetrics.space1 : NoopMetrics.space2)
                         .foregroundStyle(selection == option ? NoopVisualStyle.selectedControlInk : StrandPalette.textSecondary)
                         .background(selection == option ? NoopVisualStyle.selectedControlFill : .clear, in: Capsule())
                 }.buttonStyle(.plain).accessibilityAddTraits(selection == option ? .isSelected : [])

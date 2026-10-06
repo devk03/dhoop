@@ -23,6 +23,7 @@ private struct RunningContent: View, Equatable {
     @State private var discardRunID: UUID?
     @StateObject private var history = CardioHistoryModel()
     @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var meditation: MeditationController
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
 
@@ -49,11 +50,13 @@ private struct RunningContent: View, Equatable {
                 } else if section == "Review" {
                     CardioDetectionView(localSpans: history.localSpans, sessionActive: controller.hasSession || history.loading)
                 } else {
-                    if controller.session == nil && !hiit.hasSession {
-                        NoopSegmentedControl("Workout type", options: ["Zone run", "HIIT", "Intervals"], selection: $workoutMode,
+                    if controller.session == nil && !hiit.hasSession && !meditation.session.isInProgress {
+                        NoopSegmentedControl("Workout type", options: ["Zone run", "HIIT", "Intervals", "Meditation"], selection: $workoutMode,
                             labels: ["Zone run": controller.isLoadingBaseline ? "Zone run" : controller.chosenTarget?.name ?? "Zone run"])
                     }
-                    if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
+                    if workoutMode == "Meditation" && controller.session == nil && !hiit.hasSession {
+                        MeditationCard()
+                    } else if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
                         HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
                             testBuzz: { controller.testBuzz() }, canTestBuzz: controller.strapAlertsReady && controller.workoutHapticsEnabled,
                             buzzFeedback: controller.buzzTestMessage)
@@ -65,11 +68,10 @@ private struct RunningContent: View, Equatable {
                         }
                     }
 
-                    MeditationCard()
                 }
             }
         }
-        .onAppear { capturedAt = Date() }
+        .onAppear { capturedAt = Date(); if meditation.session.isInProgress { workoutMode = "Meditation" } }
         .confirmationDialog("Discard this workout?", isPresented: Binding(get: { discardRunID != nil }, set: { if !$0 { discardRunID = nil } }), titleVisibility: .visible, presenting: discardRunID) { id in
             Button("Discard workout", role: .destructive) { controller.discard(id: id) }
             Button("Keep workout", role: .cancel) { }
@@ -79,7 +81,7 @@ private struct RunningContent: View, Equatable {
         .onChange(of: hiit.historyRevision) { _, _ in capturedAt = Date() }
         .onChange(of: repo.refreshSeq) { _, _ in capturedAt = Date() }
         .onChange(of: workoutMode) { _, mode in
-            if mode != "Zone run" { hiit.selectKind(mode == "Intervals" ? .intervals : .hiit) }
+            if mode == "HIIT" || mode == "Intervals" { hiit.selectKind(mode == "Intervals" ? .intervals : .hiit) }
         }
         .task(id: "\(repo.refreshSeq)|\(repo.deviceId)|\(controller.summaries.count)|\(hiit.historyRevision)|\(historyRange.window(now: capturedAt).identity)") {
             await history.load(repo: repo, zones: controller.summaries, window: historyRange.window(now: capturedAt))
