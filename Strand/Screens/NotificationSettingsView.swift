@@ -13,6 +13,7 @@ struct NotificationSettingsView: View {
         ScreenScaffold(title: "Notifications",
                        subtitle: "Buzz your strap when these apps notify you. Everything runs on \(Platform.deviceNounPhrase).") {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
+                BuzzDeliveryStatusView(ble: model.ble)
                 masterCard
                     .staggeredAppear(index: 0)
                 // #926: the "every pattern buzzes the same on a 5/MG" note that used to sit here is GONE —

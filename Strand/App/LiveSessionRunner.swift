@@ -46,7 +46,7 @@ final class LiveSessionRunner: ObservableObject {
 
     /// The engine's latest verdict, verbatim — ring state, band, in-band time, smoothed bpm.
     @Published private(set) var output: LiveSessionEngine.Output?
-    /// Cues actually delivered to the wrist this session (a skipped cue was never sent, so it isn't counted).
+    /// Coaching cues selected this session; counters do not prove physical vibration.
     @Published private(set) var pushCount = 0
     @Published private(set) var easeCount = 0
     /// Set exactly once, when the session ends (End tap or the stale auto-end) — the view presents the
@@ -82,6 +82,7 @@ final class LiveSessionRunner: ObservableObject {
     /// outright (drop-tolerant): the pulses are already scheduled fire-and-forget, so overlapping walks
     /// would land on the wrist as one unreadable mush.
     private var hapticWalkUntil = Date.distantPast
+    private let buzzOwner = "live-session-\(UUID().uuidString)"
 
     deinit { timer?.invalidate() }
 
@@ -93,6 +94,7 @@ final class LiveSessionRunner: ObservableObject {
     /// the 1 Hz tick. No-op if already running or already ended.
     func start(model: AppModel, repo: Repository, ble: BLEManager, profile: ProfileStore) {
         guard timer == nil, finalRow == nil else { return }
+        guard ble.buzzDelivery.claim(buzzOwner) else { return }
         self.model = model
         self.repo = repo
         self.ble = ble
@@ -150,6 +152,7 @@ final class LiveSessionRunner: ObservableObject {
         timer = nil
         hrSink?.cancel()
         hrSink = nil
+        ble?.buzzDelivery.release(buzzOwner)
         model?.stopRealtimeHR()
 
         // Prefer the engine's live band (it may have drifted its ceiling on a strong day) over the base.
@@ -226,9 +229,9 @@ final class LiveSessionRunner: ObservableObject {
         if HapticPrefs.enabled(HapticPrefs.liveSession) {
             for pulse in pulses {
                 let loops = pulse.isLong ? 2 : 1
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(offsetMs)) { [weak ble] in
-                    ble?.send(.runHapticsPattern, payload: [2, UInt8(clamping: loops), 0, 0, 0])
-                }
+                ble.buzzDelivery.schedule(owner: buzzOwner, deviceId: repo?.deviceId ?? "",
+                    due: nowDate.addingTimeInterval(Double(offsetMs) / 1000), grace: 0.5,
+                    loops: UInt8(clamping: loops), gate: HapticPrefs.liveSession)
                 offsetMs += pulse.durationMs + pulse.gapMs
             }
         }

@@ -26,7 +26,11 @@ struct MeditationCard: View {
                 } else if meditation.session.phase == .paused {
                     countdown(at: Date())
                 }
-                if meditation.session.isInProgress { controls }
+                if meditation.session.isInProgress {
+                    controls
+                    Text(meditation.buzzStatus).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let completionMessage {
                     Text(completionMessage).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
@@ -41,7 +45,7 @@ struct MeditationCard: View {
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } label: {
-                    Text("Keep Dhoop open for the WHOOP buzz; iPhone notification when locked, if enabled.")
+                    Text("WHOOP completion cue: best-effort when locked. iPhone notification is a separate fallback.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
                 .tint(StrandPalette.metricHRV)
@@ -107,7 +111,7 @@ struct MeditationCard: View {
         case .checking: fallback = String(localized: "Checking iPhone notification availability.")
         case .none: fallback = String(localized: "The iPhone notification requires permission. Pausing or cancelling clears it.")
         }
-        return String(localized: "The screen stays awake during an active session. A WHOOP buzz needs the connected, ready strap and the app in the foreground. Background strap buzz is not guaranteed; no strap alarm is scheduled.") + " " + fallback
+        return String(localized: "The screen stays awake while Dhoop is foregrounded. The completion cue is scheduled in Dhoop, not on the strap. Background Bluetooth events may allow delivery while locked; suspension, disconnection, or force-quit can prevent it. No late cue is replayed. Wake alarms remain unchanged.") + " " + fallback
     }
 }
 #endif

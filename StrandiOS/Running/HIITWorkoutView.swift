@@ -27,7 +27,7 @@ struct HIITWorkoutView: View {
             Label(message, systemImage: "wave.3.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        Text("Keep your phone nearby and Dhoop open for reliable cues. HIIT pauses if iOS interrupts timing or WHOOP disconnects.")
+        Text("Keep your phone nearby. Locked-screen cues are best-effort through Bluetooth; no workout alarm is armed on WHOOP. Missed transitions or disconnection pause the workout. Reopen Dhoop after force-quitting.")
             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
     }
     private var setup: some View {

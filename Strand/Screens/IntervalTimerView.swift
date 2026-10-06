@@ -35,6 +35,8 @@ struct IntervalTimerView: View {
     @State private var currentRound: Int = 1
     @State private var remaining: Int = 30          // seconds left in the current phase
     @State private var running: Bool = false
+    @State private var lastService: Date?
+    @State private var buzzOwner = "legacy-interval-\(UUID().uuidString)"
     @State private var elapsed: Int = 0             // total elapsed seconds across the session
 
     // MARK: iPhone haptics (iOS only)
@@ -117,8 +119,11 @@ struct IntervalTimerView: View {
         // every running→false transition — manual pause, auto-finish, and reset — and the
         // onDisappear is a safety net so navigating away mid-run never leaves the idle timer
         // disabled app-wide.
-        .onChangeCompat(of: running) { ScreenIdle.keepAwake($0) }
-        .onDisappear { ScreenIdle.keepAwake(false) }
+        .onChangeCompat(of: running) {
+            ScreenIdle.keepAwake($0)
+            if !$0 { model.ble.buzzDelivery.release(buzzOwner) }
+        }
+        .onDisappear { running = false; model.ble.buzzDelivery.release(buzzOwner); ScreenIdle.keepAwake(false) }
         #if os(iOS)
         // iPhone haptics: one modifier emits a different feel per cue, re-firing on every
         // token bump. Fires regardless of strap bond so the timer is fully usable unstrapped.
@@ -379,6 +384,9 @@ struct IntervalTimerView: View {
 
     private func tick() {
         guard running, !isFinished else { return }
+        let now = Date()
+        guard lastService.map({ now.timeIntervalSince($0) <= 2 }) ?? true else { running = false; return }
+        lastService = now
 
         // Optional 3-2-1 countdown tick on the last seconds of the current phase.
         if remaining <= 3 && remaining >= 1 {
@@ -448,6 +456,8 @@ struct IntervalTimerView: View {
             // Starting fresh from a clean reset → fire the opening WORK cue.
             let startingFresh = (phase == .work && currentRound == 1
                                  && remaining == max(1, workSeconds) && elapsed == 0)
+            guard model.ble.buzzDelivery.claim(buzzOwner) else { return }
+            lastService = Date()
             running = true
             if startingFresh {
                 buzz(loops: 3)
@@ -475,7 +485,7 @@ struct IntervalTimerView: View {
     /// also skip the call entirely so this stays a pure visual tool when unbonded).
     private func buzz(loops: UInt8) {
         guard live.bonded else { return }
-        model.buzz(loops: loops, gate: HapticPrefs.intervals)
+        model.requestBuzz(owner: buzzOwner, loops: loops, gate: HapticPrefs.intervals)
     }
 
     #if os(iOS)

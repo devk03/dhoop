@@ -22,6 +22,7 @@ private struct RunningContent: View, Equatable {
     @State private var capturedAt = Date()
     @State private var discardRunID: UUID?
     @StateObject private var history = CardioHistoryModel()
+    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var meditation: MeditationController
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -45,6 +46,7 @@ private struct RunningContent: View, Equatable {
                         Button("Review") { section = "Review" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
                     }
                 }
+                if section == "Train" { BuzzDeliveryStatusView(ble: app.ble) }
                 if section == "History" {
                     CardioHistoryView(model: history, range: $historyRange, now: capturedAt, controller: controller)
                 } else if section == "Review" {

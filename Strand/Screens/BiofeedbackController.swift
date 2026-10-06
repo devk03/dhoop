@@ -99,9 +99,11 @@ final class BiofeedbackController: ObservableObject {
     /// taps stop). We schedule with `asyncAfter` carrying a `DispatchWorkItem`, exactly like the Haptic
     /// Clock walk but cancellable.
     private var pending: [DispatchWorkItem] = []
+    private let buzzOwner = "biofeedback-\(UUID().uuidString)"
     private var secondTimer: AnyCancellable?
     /// A repeating driver for L2 (it recomputes the interval each pulse rather than a fixed cue list).
     private var calmTick: DispatchWorkItem?
+    private var calmNextDue: Date?
     /// The sweep's live R-R subscription (L1) — held so stop() tears it down cleanly.
     private var sweepRRSub: AnyCancellable?
 
@@ -112,7 +114,7 @@ final class BiofeedbackController: ObservableObject {
     private func fireBuzz(loops: Int) {
         guard canBuzz else { return }
         // #haptics: biofeedback/resonance cues ride the Breathing toggle (parity with Android's Breathe path).
-        model.buzz(loops: UInt8(clamping: loops), gate: HapticPrefs.breathing)
+        model.requestBuzz(owner: buzzOwner, loops: UInt8(clamping: loops), gate: HapticPrefs.breathing)
     }
 
     private func startSecondTimer() {
@@ -144,6 +146,8 @@ final class BiofeedbackController: ObservableObject {
     /// stop and the disconnect-driven stop; on a graceful drop it can still reach the strap before the radio
     /// closes.
     func stop() {
+        model.ble.buzzDelivery.release(buzzOwner)
+        calmNextDue = nil
         clearSchedule()
         model.stopHaptics()
         ScreenIdle.keepAwake(false)
@@ -155,13 +159,14 @@ final class BiofeedbackController: ObservableObject {
 
     // MARK: - L1: paced resonance breathing session
 
-    /// Start a screen-off paced breathing session at `bpm` (the locked resonance pace, or a preset's bpm).
+    /// Start a paced breathing session with best-effort background cues at `bpm` (the locked resonance pace, or a preset's bpm).
     /// Builds the deterministic `BreathPacer` cue list and walks it, firing the proven buzz per cue. The
     /// orb/phase word (driven off `phase`) follow the same schedule when the screen is on; screen-off, the
     /// felt buzz is the whole cue. Keep-awake is held for the hands-free session.
     func startResonanceSession(bpm: Double, cycles: Int) {
         stop()
         session = .resonanceSession(bpm: bpm)
+        guard model.ble.buzzDelivery.claim(buzzOwner) else { return }
         running = true
         ScreenIdle.keepAwake(true)
         startSecondTimer()
@@ -175,11 +180,13 @@ final class BiofeedbackController: ObservableObject {
     /// the spec's "the existing asyncAfter walk drives it".
     private func walkCues(_ cues: [BreathCue], onComplete: @escaping () -> Void) {
         guard !cues.isEmpty else { onComplete(); return }
+        let startedAt = Date()
         for cue in cues {
+            model.requestBuzz(owner: buzzOwner, loops: UInt8(clamping: cue.loops),
+                due: startedAt.addingTimeInterval(Double(cue.offsetMs) / 1000), grace: 0.5, gate: HapticPrefs.breathing)
             let item = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 self.phase = cue.phase
-                self.fireBuzz(loops: cue.loops)
             }
             pending.append(item)
             DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(cue.offsetMs), execute: item)
@@ -203,6 +210,7 @@ final class BiofeedbackController: ObservableObject {
     func startSweep(quick: Bool, secondsPerPace: Int = 120) {
         stop()
         let paces = quick ? ResonanceEngine.quickSweepPaces : ResonanceEngine.fullSweepPaces
+        guard model.ble.buzzDelivery.claim(buzzOwner) else { return }
         running = true
         ScreenIdle.keepAwake(true)
         startSecondTimer()
@@ -275,6 +283,7 @@ final class BiofeedbackController: ObservableObject {
             return
         }
         session = .calmMe
+        guard model.ble.buzzDelivery.claim(buzzOwner) else { return }
         running = true
         calmStartHR = h0
         calmOutcome = nil
@@ -288,6 +297,12 @@ final class BiofeedbackController: ObservableObject {
     /// the next step at that interval. Recomputes from the latest smoothed HR each time.
     private func scheduleCalmStep(config: HRDownPacer.Config) {
         guard running, case .calmMe = session else { return }
+        let now = Date()
+        guard calmNextDue.map({ now.timeIntervalSince($0) <= 1 }) ?? true,
+              let sample = live.heartRateEvidence.samples.last,
+              live.heartRateEvidence.sourceDeviceId == model.repo.deviceId,
+              now.timeIntervalSince1970 >= sample.receivedAt,
+              now.timeIntervalSince1970 - sample.receivedAt <= 2 else { stop(); return }
         let hr = Double(model.bpm ?? 0)
         let step = HRDownPacer.next(currentHR: hr, elapsed: Double(elapsedSeconds), config: config)
 
@@ -299,6 +314,7 @@ final class BiofeedbackController: ObservableObject {
         fireBuzz(loops: 1)   // one light pulse per target beat — a felt metronome, not a shock
 
         let interval = step.intervalMs ?? 1_000
+        calmNextDue = now.addingTimeInterval(Double(interval) / 1000)
         let next = DispatchWorkItem { [weak self] in self?.scheduleCalmStep(config: config) }
         calmTick = next
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(interval), execute: next)

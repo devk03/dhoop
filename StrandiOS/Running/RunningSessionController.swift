@@ -77,7 +77,7 @@ final class RunningSessionController: ObservableObject {
         timer?.cancel()
         if ownsStream {
             let owner = app
-            Task { @MainActor in owner?.stopRealtimeHR() }
+            Task { @MainActor in owner?.ble.buzzDelivery.release("zone-run"); owner?.stopRealtimeHR() }
         }
     }
 
@@ -168,7 +168,7 @@ final class RunningSessionController: ObservableObject {
             statusMessage = buzzTestMessage
             return
         }
-        app.buzz(loops: 1, gate: HapticPrefs.workout)
+        app.requestBuzz(owner: "manual-test", loops: 1, gate: HapticPrefs.workout)
         buzzTestMessage = "WHOOP buzz requested at \(Date().formatted(date: .omitted, time: .shortened))."
         statusMessage = buzzTestMessage
     }
@@ -178,6 +178,7 @@ final class RunningSessionController: ObservableObject {
         if let reason = startBlockedReason { statusMessage = reason; return }
         guard let app, let target = chosenTarget,
               let run = RunningZoneSession(deviceId: app.repo.deviceId, target: target, goalSeconds: Double(targetMinutes * 60)) else { return }
+        guard app.ble.buzzDelivery.claim("zone-run") else { statusMessage = "Finish or pause the other WHOOP cue session first."; return }
         saveConfiguration()
         workingSession = run; session = run
         lastConsumedAt = run.startedAt.timeIntervalSince1970
@@ -194,6 +195,7 @@ final class RunningSessionController: ObservableObject {
             if workingSession != nil { statusMessage = "Connect the WHOOP used for this session before resuming." }
             return
         }
+        guard app.ble.buzzDelivery.claim("zone-run") else { statusMessage = "Another WHOOP cue session is active."; return }
         run.resume(); workingSession = run; session = run
         lastConsumedAt = Date().timeIntervalSince1970
         statusMessage = "Waiting for fresh readable WHOOP heart rate."
@@ -254,6 +256,7 @@ final class RunningSessionController: ObservableObject {
     }
 
     private func releaseStream() {
+        app?.ble.buzzDelivery.release("zone-run")
         timer?.cancel(); timer = nil
         guard ownsStream else { return }
         ownsStream = false; app?.stopRealtimeHR()
@@ -310,7 +313,8 @@ final class RunningSessionController: ObservableObject {
                 now: now, connected: isConnected && live.worn,
                 alertsEnabled: alertsEnabled && HapticPrefs.enabled(HapticPrefs.workout), mayBuzz: canBuzz)
             if let alert = observation.alert {
-                app.buzz(loops: 1, gate: HapticPrefs.workout)
+                app.requestBuzz(owner: "zone-run", id: "zone|\(run.id)|\(sample.receivedAt)",
+                    loops: 1, gate: HapticPrefs.workout, sampleAt: Date(timeIntervalSince1970: sample.receivedAt))
                 statusMessage = alert == .below ? "Below target · WHOOP buzz requested" : "Above target · WHOOP buzz requested"
             }
             if run.phase == .completed { break }

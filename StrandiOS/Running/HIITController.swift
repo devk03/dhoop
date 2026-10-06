@@ -7,7 +7,9 @@ final class HIITController: ObservableObject {
     @Published var plan = HIITPlan()
     @Published private(set) var selectedKind: HIITWorkoutKind = .hiit
     @Published private(set) var historyRevision = 0
-    @Published var cuesEnabled = true
+    @Published var cuesEnabled = true {
+        didSet { if !cuesEnabled { app?.ble.buzzDelivery.cancel(owner: buzzOwner) } }
+    }
     @Published private(set) var session: HIITSession?
     @Published private(set) var currentBPM: Int?
     @Published private(set) var message: String?
@@ -22,6 +24,9 @@ final class HIITController: ObservableObject {
     private var lastTick: Double?
     private var lastSave = 0.0
     private var lastPublish = 0.0
+    private var cueGeneration = UUID()
+    private var cueAnchor = Date()
+    private let buzzOwner = "interval-workout"
     private let directory: URL
     var hasSession: Bool { working != nil }
 
@@ -47,13 +52,16 @@ final class HIITController: ObservableObject {
 
     deinit {
         timer?.cancel()
-        if ownsStream { let owner = app; Task { @MainActor in owner?.stopRealtimeHR() } }
+        if ownsStream { let owner = app; Task { @MainActor in owner?.ble.buzzDelivery.release("interval-workout"); owner?.stopRealtimeHR() } }
     }
 
     func configure(app: AppModel) {
         guard self.app !== app else { return }
         pause(reason: "HIIT paused because the app source changed.")
         self.app = app; subscriptions.removeAll()
+        app.live.$connected.filter { !$0 }.sink { [weak self] _ in
+            self?.pause(reason: "Paused: WHOOP disconnected. Reconnect and resume; old cues were cancelled.")
+        }.store(in: &subscriptions)
         app.live.readableHeartRateReceipts.sink { [weak self] _ in self?.tick() }.store(in: &subscriptions)
         NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
             .sink { [weak self] _ in self?.persist() }.store(in: &subscriptions)
@@ -73,6 +81,7 @@ final class HIITController: ObservableObject {
         if app?.activeWorkout != nil { message = "End the other active workout before starting HIIT."; return }
         guard !hasSession, !otherSessionActive, ready, app?.activeWorkout == nil,
               let app, let run = HIITSession(deviceId: app.repo.deviceId, plan: plan, zones: zones, kind: selectedKind) else { return }
+        guard app.ble.buzzDelivery.claim(buzzOwner) else { message = "Finish or pause the other WHOOP cue session first."; return }
         working = run; session = run; lastReceipt = run.startedAt.timeIntervalSince1970
         if let data = try? JSONEncoder().encode(plan) { UserDefaults.standard.set(data, forKey: configurationKey) }
         UserDefaults.standard.set(cuesEnabled, forKey: "dhoop.hiit.cues")
@@ -80,6 +89,7 @@ final class HIITController: ObservableObject {
     }
     func resume() {
         guard ready, app?.activeWorkout == nil, var run = working, run.state == .paused, run.deviceId == app?.repo.deviceId else { return }
+        guard app?.ble.buzzDelivery.claim(buzzOwner) == true else { message = "Another WHOOP cue session is active."; return }
         run.resume(); working = run; session = run; lastReceipt = Date().timeIntervalSince1970
         acquire(); cue(run.interval); persist()
     }
@@ -125,6 +135,7 @@ final class HIITController: ObservableObject {
     private func acquire() {
         guard !ownsStream, let app, let run = working else { return }
         ownsStream = true; anchorElapsed = run.elapsed
+        cueGeneration = UUID(); cueAnchor = Date().addingTimeInterval(-run.elapsed)
         anchorUptime = ProcessInfo.processInfo.systemUptime; lastTick = anchorUptime
         app.startRealtimeHR()
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -132,6 +143,7 @@ final class HIITController: ObservableObject {
         timer.schedule(deadline: .now(), repeating: 1, leeway: .milliseconds(50)); timer.resume(); self.timer = timer
     }
     private func release() {
+        app?.ble.buzzDelivery.release(buzzOwner)
         timer?.cancel(); timer = nil; anchorUptime = nil; lastTick = nil
         if ownsStream { ownsStream = false; app?.stopRealtimeHR() }
     }
@@ -142,13 +154,12 @@ final class HIITController: ObservableObject {
         guard ready, run.deviceId == app.repo.deviceId, app.live.worn else {
             pause(reason: "Paused: reconnect and wear the same WHOOP before resuming."); return
         }
-        // iOS can suspend execution. Freeze at the last serviced moment instead of silently
-        // skipping intervals or replaying several late vibration instructions.
-        if let lastTick, uptime - lastTick > 3 {
-            pause(reason: "Paused because iOS interrupted interval timing. Keep Dhoop open for reliable cues."); return
+        let elapsed = anchorElapsed + max(0, uptime - anchorUptime)
+        // A gap inside a phase does not fabricate effort. A missed boundary cannot be replayed late.
+        if let boundary = run.interval?.end, elapsed > Double(boundary) + 2 {
+            pause(reason: "Paused: an interval cue deadline was missed. No late cues will be replayed."); return
         }
         lastTick = uptime
-        let elapsed = anchorElapsed + max(0, uptime - anchorUptime)
         let changed = run.advance(to: elapsed)
         let now = Date().timeIntervalSince1970
         let evidence = app.live.heartRateEvidence
@@ -177,8 +188,17 @@ final class HIITController: ObservableObject {
         }
         // Existing reversible pattern; loop count controls length, not distinct individual pulses.
         let loops: UInt8 = interval == nil ? 3 : interval?.kind == .work ? 1 : 2
-        app.buzz(loops: loops, gate: HapticPrefs.workout)
-        message = "\(interval?.label ?? "Complete") · WHOOP vibration requested"
+        let index = interval?.index ?? working?.plan.intervals.count ?? 0
+        let due = interval.map { cueAnchor.addingTimeInterval(Double($0.start)) } ?? Date()
+        app.requestBuzz(owner: buzzOwner, id: "\(cueGeneration)|\(index)", loops: loops,
+            due: due < Date().addingTimeInterval(-2) ? Date() : due, gate: HapticPrefs.workout)
+        if let run = working, let current = run.interval {
+            let next = run.plan.intervals.first { $0.index == current.index + 1 }
+            app.requestBuzz(owner: buzzOwner, id: "\(cueGeneration)|\(current.index + 1)",
+                loops: next == nil ? 3 : next?.kind == .work ? 1 : 2,
+                due: cueAnchor.addingTimeInterval(Double(current.end)), gate: HapticPrefs.workout)
+        }
+        message = app.ble.buzzDelivery.storageError ?? "\(interval?.label ?? "Complete") · See WHOOP alert delivery for the cue result"
     }
     private func persist() {
         guard let working else { return }

@@ -71,10 +71,12 @@ struct MeditationSession: Codable, Equatable {
     }
 
     /// Returns a disposition once per session. Persist it before attempting the external effect.
-    mutating func completeIfDue(at now: Date, foreground: Bool, strapReady: Bool) -> CompletionAlert? {
+    mutating func completeIfDue(at now: Date, foreground: Bool, strapReady: Bool, deliveryRequested: Bool = false) -> CompletionAlert? {
         guard phase == .running, let deadline, now >= deadline else { return nil }
         let alert: CompletionAlert
-        if !foreground || now.timeIntervalSince(deadline) > Self.alertGrace {
+        if deliveryRequested {
+            alert = .buzzRequested
+        } else if !foreground || now.timeIntervalSince(deadline) > Self.alertGrace {
             alert = .missedWhileAway
         } else if strapReady {
             alert = .buzzRequested
@@ -115,6 +117,10 @@ struct MeditationSessionFileStore {
         resources.isExcludedFromBackup = true
         try directory.setResourceValues(resources)
         // The replacement must succeed before the caller updates memory or requests any buzz.
+        #if os(iOS)
+        try data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        #else
         try data.write(to: fileURL, options: .atomic)
+        #endif
     }
 }

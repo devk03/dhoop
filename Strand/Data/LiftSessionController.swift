@@ -712,7 +712,8 @@ final class LiftSessionController: ObservableObject {
     private func fireRestWarningIfDue() {
         guard let engine, case .resting(_, let endsAt) = engine.stage else { return }
         guard warnedFor != endsAt else { return }
-        guard endsAt - Self.unixNow <= LiftSessionController.restWarningLeadSec else { return }
+        guard Self.unixNow <= endsAt,
+              endsAt - Self.unixNow <= LiftSessionController.restWarningLeadSec else { return }
         warnedFor = endsAt
         buzz(LiftSessionController.restWarningBuzzes)
     }

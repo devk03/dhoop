@@ -124,6 +124,7 @@ private struct BreathingContent: View {
     @State private var phaseLabel: String? = nil
     @State private var stageIndex: Int = 0
     @State private var phaseDeadline: Date = .distantFuture
+    @State private var buzzOwner = "breathing-\(UUID().uuidString)"
 
     @State private var sessionSeconds: Int = 0
     @State private var breathCount: Int = 0
@@ -716,6 +717,7 @@ private struct BreathingContent: View {
     // MARK: - Session control (catalog stages + guided timer)
 
     private func start() {
+        guard model.ble.buzzDelivery.claim(buzzOwner) else { return }
         running = true
         ScreenIdle.keepAwake(true)
         sessionSeconds = 0
@@ -738,6 +740,7 @@ private struct BreathingContent: View {
     }
 
     private func stop() {
+        model.ble.buzzDelivery.release(buzzOwner)
         let wasRunning = running
         running = false
         ScreenIdle.keepAwake(false)
@@ -822,7 +825,7 @@ private struct BreathingContent: View {
         if buzz {
             let loops = BreathProtocolPlayer.loops(for: stage.type)
             if loops > 0 {
-                model.buzz(loops: UInt8(clamping: loops), gate: HapticPrefs.breathing)
+                model.requestBuzz(owner: buzzOwner, loops: UInt8(clamping: loops), gate: HapticPrefs.breathing)
             }
             if audioCues {
                 switch mapped {
@@ -837,6 +840,7 @@ private struct BreathingContent: View {
     private func advance(now: Date) {
         guard !isGuided else { return }
         guard now >= phaseDeadline else { return }
+        guard now.timeIntervalSince(phaseDeadline) <= 2 else { stop(); return }
         let stages = currentStages()
         guard !stages.isEmpty else { return }
         let completed = stages[stageIndex % stages.count]
