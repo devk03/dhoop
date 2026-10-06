@@ -8,6 +8,7 @@
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).debugexport</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).healthwriteback</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).sleepwebhook</string>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).rescore</string>
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
@@ -60,7 +61,7 @@
 		<true/>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Dhoop connects directly to your WHOOP strap over Bluetooth to read heart rate, R-R intervals, battery, and sensor data locally on your iPhone. Nothing leaves your device.</string>
+	<string>Dhoop connects directly to your WHOOP strap over Bluetooth to read heart rate, R-R intervals, battery, and sensor data locally on your iPhone. Data stays on-device unless you enable an export.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Dhoop reads your own Apple Health data on-device to compute recovery, strain, and sleep. Nothing leaves your device.</string>
 	<key>NSHealthUpdateUsageDescription</key>

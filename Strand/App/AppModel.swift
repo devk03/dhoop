@@ -533,6 +533,9 @@ final class AppModel: ObservableObject {
                 // v5: recompute the skin-temp suite snapshots (cycle phase + body clock) from the
                 // freshly-scored history so the Health hub cards read a ready result.
                 await self.refreshV5Signals()
+                #if os(iOS)
+                self.sleepWebhookReady?()
+                #endif
                 // #836 battery: 30-min BACKSTOP cadence (twin of Android ANALYZE_INTERVAL_MS). The
                 // `force: false` gate above can't skip while the strap streams live HR — the fingerprint
                 // advances every second — so this re-scored the whole 21-day window every 15 min even though
@@ -701,6 +704,8 @@ final class AppModel: ObservableObject {
     /// A closure rather than a direct reference because `HealthKitBridge` owns iOS-only HealthKit state
     /// while this type is shared with macOS, and the bridge is a `@StateObject` the app scene owns.
     var healthWriteBack: (() async -> Void)?
+    // Independent opt-in export; enqueue only, never await network on the sync path.
+    var sleepWebhookReady: (() -> Void)?
     #endif
 
     /// Settle a re-score that is owed (#1538) — one an earlier attempt started and was killed partway
@@ -739,6 +744,7 @@ final class AppModel: ObservableObject {
         // not scored yet and only reached Health on some later foreground. This is the first moment they
         // exist. The bridge coalesces a call that lands during an in-flight write-back.
         await healthWriteBack?()
+        sleepWebhookReady?()
         #endif
     }
 
@@ -779,6 +785,7 @@ final class AppModel: ObservableObject {
         // raced the data it was meant to publish and last night's sleep reached Health an app-open late.
         // Set by StrandiOSApp; nil on macOS and in tests, where there is no bridge.
         await healthWriteBack?()
+        sleepWebhookReady?()
         #endif
     }
 

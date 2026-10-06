@@ -21,7 +21,7 @@ settings:
     # iOS build number (CFBundleVersion). GLOBAL so the iOS app AND its widget extension inherit the
     # SAME value — they must match or iOS warns "extension version must match parent app" (#416).
     # macOS sets its own CFBundleVersion on the Strand target and is unaffected by this.
-    CURRENT_PROJECT_VERSION: "436"
+    CURRENT_PROJECT_VERSION: "438"
     SWIFT_VERSION: "5.0"
     # Emit localizable strings so Xcode auto-extracts every LocalizedStringKey into the
     # String Catalog on build (the English (US) base entries).
@@ -85,6 +85,9 @@ targets:
     deploymentTarget: "13.0"
     sources:
       - GoalPreferenceTests
+      - StrandiOS/Export/SleepWebhookDelivery.swift
+      - StrandiOS/Export/SleepWebhookSecureSetup.swift
+      - StrandiOS/Export/SleepWebhookTransport.swift
       - StrandiOS/Cut/CutGoalPreferences.swift
       - StrandiOS/Cut/ProteinLogStore.swift
       - StrandiOS/Cut/HeartDashboardProjection.swift
@@ -343,10 +346,11 @@ targets:
           # Best-effort fallback that writes already-banked WHOOP data to HealthKit when iOS grants
           # background time. Fresh offloads also write immediately from their completion hook.
           - $(PRODUCT_BUNDLE_IDENTIFIER).healthwriteback
+          - $(PRODUCT_BUNDLE_IDENTIFIER).sleepwebhook
           # #1538: finishes a re-score that a backgrounded offload started and could not complete. The
-          # only BGProcessingTask of the three; the other two are refresh tasks.
+          # sleep-export processing job is independent; Health write-back uses a refresh task.
           - $(PRODUCT_BUNDLE_IDENTIFIER).rescore
-        NSBluetoothAlwaysUsageDescription: "Dhoop connects directly to your WHOOP strap over Bluetooth to read heart rate, R-R intervals, battery, and sensor data locally on your iPhone. Nothing leaves your device."
+        NSBluetoothAlwaysUsageDescription: "Dhoop connects directly to your WHOOP strap over Bluetooth to read heart rate, R-R intervals, battery, and sensor data locally on your iPhone. Data stays on-device unless you enable an export."
         NSLocationWhenInUseUsageDescription: "Dhoop records your route during an outdoor workout to show distance, pace, and a map, and keeps recording while the screen is off. The route stays on your device. Nothing leaves it."
         NSHealthShareUsageDescription: "Dhoop reads your own Apple Health data on-device to compute recovery, strain, and sleep. Nothing leaves your device."
         NSHealthUpdateUsageDescription: "Dhoop writes the metrics it computes from your strap back into Apple Health, on-device and only when you allow it."

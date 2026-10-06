@@ -159,6 +159,16 @@ struct StrandiOSApp: App {
         model.healthWriteBack = { [weak bridge] in
             _ = await bridge?.writeBackAfterNewData()
         }
+        SleepWebhookScheduler.register { [weak model] in
+            guard let model else { return false }
+            return await SleepWebhookClient.shared.deliver(model: model)
+        }
+        model.sleepWebhookReady = { [weak model] in
+            guard let model else { return }
+            SleepWebhookClient.shared.enqueue(model: model)
+        }
+        SleepWebhookClient.shared.handleDebugSetup(model: model)
+
     }
 
     /// The Shortcut-import alert's presentation binding, hoisted OUT of the `.alert` chain.
@@ -332,6 +342,8 @@ struct StrandiOSApp: App {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 model.drainPendingIntents(router: router)
+                SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.enabled)
+                SleepWebhookClient.shared.enqueue(model: model)
                 // iOS starts a Lift Log banner only for an app on screen, so a banner lost while NOOP was in
                 // the background comes back now, whether or not the strap is sending anything.
                 pushLiftActivity()
@@ -375,6 +387,7 @@ struct StrandiOSApp: App {
                     await watch.pushLatest(from: model)
                 }
             } else if phase == .background {
+                SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.enabled)
                 // Re-submit on every transition because iOS may discard an old best-effort request.
                 HealthWritebackBackgroundScheduler.updateSchedule(
                     isAuthorized: health.auth == .authorized)
