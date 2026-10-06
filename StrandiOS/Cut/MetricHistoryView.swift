@@ -26,6 +26,9 @@ struct MetricHistoryView: View {
         let groups = result?.groups ?? []
         return groups.first { $0.id == selectedSourceID }
             ?? groups.first { $0.isMeasuredHeartRate }
+            ?? (metric == .vo2 ? groups.first { $0.readings.last?.source == Repository.appleHealthSource
+                && $0.readings.last?.day == groups.compactMap { $0.readings.last?.day }.max() } : nil)
+            ?? (metric == .vo2 ? groups.max { ($0.readings.last?.day ?? "") < ($1.readings.last?.day ?? "") } : nil)
             ?? groups.max { $0.readings.count < $1.readings.count }
     }
 
@@ -51,22 +54,28 @@ struct MetricHistoryView: View {
                 }
                 NoopCard(tint: tint) {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Text(metric == .heartRate ? "Average recorded HR" : "Average \(metric.title)")
+                        Text(summaryTitle)
                             .font(StrandFont.headline).foregroundStyle(tint)
                         metricValue(selectedGroup?.displayedMean(sampleWeightedHR: result?.hrMean))
                         if let result {
-                            Text(window.coverage(selectedGroup?.readings.count ?? 0))
-                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            if !window.isSingleDay {
+                                Text(window.coverage(selectedGroup?.readings.count ?? 0))
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
                             if selectedGroup?.isMeasuredHeartRate == true {
                                 Text("\(result.hrCount.formatted()) measured readings · sample-weighted average")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             } else if let group = selectedGroup {
                                 Text(groupDescription(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
-                            if let group = selectedGroup {
+                            if let group = selectedGroup, !window.isSingleDay {
                                 Text(recordedDates(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
-                            rangeChart(selectedGroup?.readings ?? [])
+                            if window.isSingleDay {
+                                dayDetail(result)
+                            } else {
+                                rangeChart(selectedGroup?.readings ?? [])
+                            }
                             if history.isRefreshing { ProgressView("Updating saved history…").font(StrandFont.caption) }
                             if let error = history.error {
                                 Text("Showing the previous snapshot. \(error)").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
@@ -124,12 +133,64 @@ struct MetricHistoryView: View {
         }
         .onChange(of: repo.refreshSeq) { _, _ in refreshedAt = Date() }
         .task(id: "\(deviceId)|\(metric.rawValue)|\(window.identity)|\(repo.refreshSeq)") {
-            await history.load(repo: repo, deviceId: deviceId, metric: metric, window: window)
+            await history.load(repo: repo, deviceId: deviceId, metric: metric, window: window, now: referenceDate)
             if metric == .vo2 {
                 let days = try? await repo.recentFitnessDailyMetrics(now: referenceDate)
                 guard !Task.isCancelled, repo.deviceId == deviceId else { return }
                 fitnessInputs = days.map { FitnessInputStatus(days: $0, age: profile.age, sex: profile.sex) }
             }
+        }
+    }
+
+    private var summaryTitle: String {
+        if !window.isSingleDay { return metric == .heartRate ? "Average recorded HR" : "Average \(metric.title)" }
+        switch metric {
+        case .heartRate: return "Daily average"
+        case .steps: return "Daily total"
+        case .hrv: return "Recorded HRV"
+        case .vo2: return "Recorded VO₂ max"
+        }
+    }
+
+    @ViewBuilder private func dayDetail(_ result: MetricRangeSnapshot) -> some View {
+        if metric == .heartRate || metric == .steps {
+            let measured = metric == .heartRate
+            if measured && selectedGroup != nil && selectedGroup?.isMeasuredHeartRate != true {
+                Text("This source contains a daily average only. No timed readings are available for it.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            } else {
+                Text(measured ? "Throughout the day" : "Hourly steps · Apple Health")
+                    .font(StrandFont.subhead)
+                if let error = result.intradayError {
+                    Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+                } else if result.intraday.isEmpty {
+                    Text(measured ? "No timed heart-rate readings saved for this day." : "No hourly step records saved for this day. A daily total cannot show when the steps happened.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                } else {
+                    let values = result.intraday.map(\.value)
+                    let low = values.min() ?? 0
+                    let high = values.max() ?? 1
+                    let padding = max(1, (high - low) * 0.15)
+                    let end = Calendar.current.date(byAdding: .day, value: 1, to: window.start) ?? window.through
+                    DashboardChart(points: measured ? DashboardTraceSampling.reduce(result.intraday) : result.intraday,
+                        domain: window.start...end,
+                        range: measured ? max(0, low - padding)...(high + padding) : 0...max(1, high * 1.1),
+                        tint: tint, style: measured ? .line : .bars, height: NoopMetrics.chartHeight,
+                        label: measured ? "Saved heart rate throughout the selected day; missing intervals remain gaps" : "Recorded Apple Health steps by hour; missing hours remain empty",
+                        inspectionData: result.intraday.map { point in
+                            ChartScrubDatum(id: "\(point.date.timeIntervalSince1970)", x: point.date.timeIntervalSince1970,
+                                y: point.value, value: "\(point.value.formatted(.number.precision(.fractionLength(0)))) \(measured ? "bpm" : "steps")",
+                                context: "\(point.date.formatted(date: .abbreviated, time: .shortened)) · \(measured ? "WHOOP · one-minute average" : "Apple Health · hour starting")", segment: point.segment)
+                        }, barUnit: .hour)
+                    Text(measured ? "One-minute averages of saved readings. Gaps remain empty." : "Hourly records may be partial. They are separate from a WHOOP daily total and are not added to it.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }
+            }
+        } else {
+            Text(metric == .hrv
+                 ? "HRV is a dated nightly or daily result for this source. It is not a continuous heart-rate reading; no hourly values are inferred. Choose a longer range to compare recorded days."
+                 : "VO₂ max is a dated measurement or estimate, not a continuous reading. Choose a longer range to see its trend.")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
     }
 
@@ -150,7 +211,7 @@ struct MetricHistoryView: View {
     private func metricValue(_ value: Double?) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             Text(value.map(formatted) ?? "—").font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-            Text(metric.unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            Text(window.isSingleDay && metric == .steps ? "steps" : metric.unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
         .accessibilityElement(children: .combine)
     }

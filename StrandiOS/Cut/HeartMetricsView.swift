@@ -104,7 +104,7 @@ struct HeartMetricsView: View, Equatable {
         let snapshot = data(capturedAt)
         return NoopCard(padding: NoopMetrics.space3, tint: StrandPalette.liquidHeart) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                Button { expandedAt = Date(); expandedMetric = .heartRate } label: {
+                Button { expandedAt = Date(); rangeSelection.preset = .today; expandedMetric = .heartRate } label: {
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                         HStack {
                             Text("Heart rate").font(StrandFont.subhead).fontWeight(.semibold)
@@ -175,7 +175,14 @@ struct HeartMetricsView: View, Equatable {
                                           @ViewBuilder content: @escaping () -> Content) -> some View {
         NoopCard(padding: NoopMetrics.space3, tint: tint, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                Button { expandedAt = Date(); expandedMetric = metric } label: {
+                Button {
+                    expandedAt = Date()
+                    if metric == .vo2 { rangeSelection.preset = .all }
+                    else if metric == .hrv, let day = data(capturedAt)?.hrv?.day,
+                            let date = HeartDashboardProjection.date(day) { rangeSelection.selectDay(date, now: expandedAt) }
+                    else { rangeSelection.preset = .today }
+                    expandedMetric = metric
+                } label: {
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                         HStack {
                             Text(metric.title).font(StrandFont.subhead).fontWeight(.semibold)

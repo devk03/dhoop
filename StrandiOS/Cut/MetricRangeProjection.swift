@@ -26,6 +26,13 @@ struct MetricRangeSelection: Equatable {
         customEnd = now
     }
 
+    mutating func selectDay(_ date: Date, now: Date = Date(), calendar: Calendar = .current) {
+        let day = min(calendar.startOfDay(for: date), calendar.startOfDay(for: now))
+        customStart = day
+        customEnd = day
+        preset = calendar.isDate(day, inSameDayAs: now) ? .today : .custom
+    }
+
     func window(now: Date, calendar input: Calendar = .current) -> MetricDateWindow {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = input.timeZone
@@ -59,6 +66,7 @@ struct MetricDateWindow: Equatable {
     let fromDay: String
     let toDay: String
     let days: Int?
+    var isSingleDay: Bool { fromDay == toDay }
     var identity: String { "\(fromDay)|\(toDay)|\(Int(start.timeIntervalSince1970))|\(Int(through.timeIntervalSince1970))" }
     /// A refresh may retain an older snapshot of the same calendar range, never another range or future data.
     func canDisplaySnapshot(_ old: MetricDateWindow) -> Bool {

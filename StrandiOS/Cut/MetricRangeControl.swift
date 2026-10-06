@@ -31,11 +31,35 @@ struct MetricRangeControl: View {
                     .onChange(of: selection.preset) { _, value in proxy.scrollTo(value, anchor: .center) }
                 }
                 if selection.preset == .custom {
+                    DisclosureGroup("Custom date range") {
                     DatePicker("From", selection: $selection.customStart, in: ...min(selection.customEnd, now), displayedComponents: .date)
                     DatePicker("Through", selection: $selection.customEnd, in: min(selection.customStart, now)...now, displayedComponents: .date)
+                    }.font(StrandFont.subhead)
                 }
-                Text(selection.window(now: now).label).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if selection.window(now: now).isSingleDay {
+                    HStack(spacing: NoopMetrics.space2) {
+                        Button { moveDay(-1) } label: { Image(systemName: "chevron.left") }
+                            .accessibilityLabel("Previous day")
+                        Spacer(minLength: NoopMetrics.space1)
+                        DatePicker("Day", selection: Binding(get: { selection.window(now: now).start },
+                            set: { selection.selectDay($0, now: now) }), in: ...now, displayedComponents: .date)
+                            .labelsHidden().accessibilityLabel("Selected day")
+                        Spacer(minLength: NoopMetrics.space1)
+                        Button { moveDay(1) } label: { Image(systemName: "chevron.right") }
+                            .accessibilityLabel("Next day")
+                            .disabled(Calendar.current.isDate(selection.window(now: now).start, inSameDayAs: now))
+                    }.buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                }
+                if !selection.window(now: now).isSingleDay {
+                    Text(selection.window(now: now).label).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+        }
+    }
+    private func moveDay(_ offset: Int) {
+        let date = selection.window(now: now).start
+        if let next = Calendar.current.date(byAdding: .day, value: offset, to: date) {
+            selection.selectDay(next, now: now)
         }
     }
 }

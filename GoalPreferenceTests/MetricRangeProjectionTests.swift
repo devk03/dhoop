@@ -1,6 +1,18 @@
 import XCTest
 
 final class MetricRangeProjectionTests: XCTestCase {
+    func testSelectedDayUsesCalendarBoundsAcrossDSTAndClampsFuture() {
+        var selection = MetricRangeSelection(now: date(10))
+        selection.selectDay(date(8), now: date(10), calendar: calendar)
+        let day = selection.window(now: date(10), calendar: calendar)
+        XCTAssertTrue(day.isSingleDay)
+        XCTAssertEqual(day.fromDay, "2026-03-08")
+        XCTAssertEqual(day.through.timeIntervalSince(day.start), 23 * 3600 - 1)
+        selection.selectDay(date(12), now: date(10), calendar: calendar)
+        XCTAssertEqual(selection.preset, .today)
+        XCTAssertEqual(selection.window(now: date(10), calendar: calendar).through, date(10))
+    }
+
     func testRefreshCanRetainOnlyMatchingPastSnapshot() {
         let now = Date(timeIntervalSince1970: 1_791_200_000)
         var selection = MetricRangeSelection(now: now)

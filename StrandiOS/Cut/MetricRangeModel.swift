@@ -32,6 +32,8 @@ struct MetricRangeSnapshot {
     let hrCount: Int
     let resting: DashboardDailyReading?
     let availability: MetricHistoryAvailability
+    let intraday: [TrendPoint]
+    let intradayError: String?
     var mean: Double? { groups.first?.displayedMean(sampleWeightedHR: hrMean) }
 }
 
@@ -42,7 +44,7 @@ final class MetricRangeModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     private var generation = 0
 
-    func load(repo: Repository, deviceId: String, metric: DashboardHistoryMetric, window: MetricDateWindow) async {
+    func load(repo: Repository, deviceId: String, metric: DashboardHistoryMetric, window: MetricDateWindow, now: Date) async {
         generation += 1
         let current = generation
         if snapshot?.deviceId != deviceId || snapshot?.metric != metric || snapshot.map({ !window.canDisplaySnapshot($0.window) }) == true { snapshot = nil }
@@ -50,12 +52,13 @@ final class MetricRangeModel: ObservableObject {
         defer { if current == generation { isRefreshing = false } }
         var readings: [DashboardDailyReading] = []
         var availableReadings: [DashboardDailyReading] = []
-        let now = Date()
         let today = Repository.localDayKey(now)
         let allHistoryStart = "0001-01-01"
         var hrMean: Double?
         var hrCount = 0
         var resting: DashboardDailyReading?
+        var intraday: [TrendPoint] = []
+        var intradayError: String?
         func map(_ rows: [ResolvedMetricPoint]) -> [DashboardDailyReading] {
             rows.map { DashboardDailyReading(day: $0.day, value: $0.value, source: $0.source, key: $0.sourceKey) }
         }
@@ -69,6 +72,25 @@ final class MetricRangeModel: ObservableObject {
                 hrCount = days.reduce(0) { $0 + $1.count }
                 hrMean = MetricRangeProjection.weightedMean(days.map { ($0.sumBPM, $0.count) })
                 readings = days.map { DashboardDailyReading(day: $0.day, value: $0.averageBPM, source: deviceId, key: "measuredHR") }
+                if window.isSingleDay {
+                    do {
+                        let samples = try await store.measuredHeartRateSamples(deviceId: deviceId,
+                            from: Int(window.start.timeIntervalSince1970), to: Int(window.through.timeIntervalSince1970))
+                        let summary = await Task.detached(priority: .userInitiated) {
+                            HistoricalHeartRateProjection.summarize(samples.map {
+                                DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm))
+                            }, from: window.start.timeIntervalSince1970, through: window.through.timeIntervalSince1970)
+                        }.value
+                        hrCount = summary.sampleCount
+                        hrMean = summary.averageBPM
+                        readings = summary.averageBPM.map {
+                            [DashboardDailyReading(day: window.fromDay, value: $0, source: deviceId, key: "measuredHR")]
+                        } ?? []
+                        intraday = summary.readings.map {
+                            TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.averageBPM, segment: $0.segment)
+                        }
+                    } catch { intradayError = "Intraday heart rate could not be read. Try refreshing." }
+                }
                 let dailyRows = map((await daily).points)
                 readings += dailyRows
                 let allDays = try await allMeasured
@@ -82,6 +104,16 @@ final class MetricRangeModel: ObservableObject {
                 readings = map(rows.points)
             case .steps:
                 readings = map((await repo.resolvedSteps(from: allHistoryStart, to: today)).points)
+                if window.isSingleDay {
+                    do {
+                        guard let store = await repo.storeHandle() else { throw RangeError.storageUnavailable }
+                        let hours = try await store.appleStepHours(deviceId: Repository.appleHealthSource,
+                            fromTs: Int(window.start.timeIntervalSince1970), toTs: Int(window.through.timeIntervalSince1970))
+                        intraday = hours.filter { $0.steps >= 0 }.map {
+                            TrendPoint(date: Date(timeIntervalSince1970: Double($0.ts)), value: Double($0.steps))
+                        }
+                    } catch { intradayError = "Hourly steps could not be read. Try refreshing." }
+                }
             case .vo2:
                 async let estimated = repo.resolvedSeries(key: "vo2max_est", source: Repository.whoopSource, from: allHistoryStart, to: today)
                 async let measured = repo.resolvedSeries(key: "vo2max", source: Repository.appleHealthSource, from: allHistoryStart, to: today)
@@ -101,7 +133,7 @@ final class MetricRangeModel: ObservableObject {
                     separateMethods: metric != .steps, allowZero: metric == .steps),
                 hrMean: hrMean, hrCount: hrCount, resting: resting,
                 availability: MetricRangeProjection.availability(availableReadings, window: window, through: today,
-                    allowZero: metric == .steps))
+                    allowZero: metric == .steps), intraday: intraday, intradayError: intradayError)
         } catch {
             guard current == generation, !Task.isCancelled, repo.deviceId == deviceId else { return }
             self.error = "History could not be read: \(error.localizedDescription)"
