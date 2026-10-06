@@ -68,6 +68,7 @@ struct ScreenScaffold<Content: View, Trailing: View>: View {
         // permits horizontal bounce when content genuinely overflows the width (it does not here, the column
         // is width-capped), so the spurious horizontal rubber-band that caused the sideways drift is gone.
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .modifier(ScreenTopScrollEdge())
         #endif
         // The flat canvas, plus an optional full-bleed TOP backdrop (Today's day-cycle scene) drawn behind
         // the scroll content — edge-to-edge under the status bar. The scene is CONFINED to the header+hero
@@ -142,6 +143,19 @@ extension ScreenScaffold where Trailing == EmptyView {
                   topBackground: topBackground, trailing: { EmptyView() }, content: content)
     }
 }
+
+#if os(iOS)
+/// Keep scrolled cards distinct from the system status bar when the navigation bar is hidden.
+private struct ScreenTopScrollEdge: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.hard, for: .top)
+        } else {
+            content
+        }
+    }
+}
+#endif
 
 /// Applies `.refreshable` only when a refresh hook is provided. A ViewModifier (rather than an
 /// inline `if`) keeps the two branches the same opaque type, and means nil callers — every macOS
