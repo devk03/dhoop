@@ -2685,7 +2685,7 @@ object IntelligenceEngine {
     fun fitnessAgeRows(
         gateDays: List<DailyMetric>, profile: UserProfile, computedId: String, satKey: String,
     ): List<MetricSeriesRow> {
-        val rhrs = gateDays.mapNotNull { it.restingHr }.map { it.toDouble() }
+        val rhrs = gateDays.mapNotNull { it.restingHr }.filter { it > 0 }.map { it.toDouble() }
         val strains = gateDays.mapNotNull { it.strain }.filter { it >= 30.0 }
         val meanStrain = if (strains.isEmpty()) 0.0 else strains.average()
         val waist = if (profile.waistCm > 0) profile.waistCm else null

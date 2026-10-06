@@ -654,7 +654,7 @@ private fun ContributorBar(
  *  feeds the not-ready lead. Approximate by design; the weekly value is the authority, this explains gaps. */
 @Composable
 private fun rememberFitnessReadiness(days: List<DailyMetric>, profile: ProfileStore): Pair<Int, FitnessAgeReadiness> {
-    val rhrDays = remember(days) { days.takeLast(7).count { it.restingHr != null } }
+    val rhrDays = remember(days) { days.takeLast(7).count { (it.restingHr ?: 0) > 0 } }
     val readiness = remember(days, profile.age, profile.sex, profile.waistCm) {
         val activityDays = days.takeLast(7).count { it.strain != null }
         FitnessAgeEngine.assessReadiness(

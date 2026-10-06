@@ -745,6 +745,7 @@ struct MetricDetailView: View {
     @State private var others: [(metric: MetricDescriptor, series: [(day: String, value: Double)])] = []
     /// True once THIS metric's own series is in — the gate for the whole screen (hero, chart, stats,
     /// readings). Deliberately not "everything is in": see `load()`.
+    @State private var fitnessInputs: FitnessInputStatus?
     @State private var loaded = false
     /// True once the cross-catalog scan behind the correlation card has finished. Only that one card
     /// reads it, so it can lag the rest of the screen by a second without anyone noticing.
@@ -946,7 +947,7 @@ struct MetricDetailView: View {
                         // `what` is a LocalizedStringKey; the lead is an already-resolved String, so wrap
                         // it in an interpolation (renders verbatim) rather than passing it as a lookup key.
                         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                            ComingSoon(what: "\(fitnessReadyLeadCopy(rhrDays: repo.days.suffix(7).compactMap { $0.restingHr }.count, hasAge: profile.age > 0, hasSex: !profile.sex.isEmpty))", symbol: "figure.run")
+                            ComingSoon(what: "\(fitnessInputs?.summary ?? "Readiness unavailable")", symbol: "figure.run")
                             // Force the weekly recompute NOW from stored data (works offline), then re-read.
                             if refreshing {
                                 ProgressView().controlSize(.small).tint(StrandPalette.accent)
@@ -1054,6 +1055,10 @@ struct MetricDetailView: View {
     /// flips there. Phase 2 is the catalog scan, awaited afterwards, and only the correlation card waits
     /// on it. Same reads, same results, same order; only the gate moved.
     private func load() async {
+        if metric.key == "fitness_age" {
+            let days = try? await repo.recentFitnessDailyMetrics()
+            fitnessInputs = days.map { FitnessInputStatus(days: $0, age: profile.age, sex: profile.sex) }
+        }
         // Phase 1 — what the screen actually draws.
         let requestedRange = range
         let resolution: MetricSeriesResolution

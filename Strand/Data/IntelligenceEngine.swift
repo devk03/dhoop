@@ -522,7 +522,7 @@ final class IntelligenceEngine: ObservableObject {
         gateDays: [DailyMetric], age: Int, sex: String, waistCm: Double, heightCm: Double, weightKg: Double,
         computedId: String, satKey: String,
     ) -> [MetricPoint] {
-        let rhrs = gateDays.compactMap { $0.restingHr }.map(Double.init)
+        let rhrs = gateDays.compactMap { $0.restingHr }.filter { $0 > 0 }.map(Double.init)
         let strains = gateDays.compactMap { $0.strain }.filter { $0 >= 30 }
         let meanStrain = strains.isEmpty ? 0 : strains.reduce(0, +) / Double(strains.count)
         let waist: Double? = waistCm > 0 ? waistCm : nil
@@ -576,9 +576,7 @@ final class IntelligenceEngine: ObservableObject {
         let tzOffset = TimeZone.current.secondsFromGMT()
         let nowLocalMidnight = Self.midnightLocal(now, offsetSec: tzOffset)
         let newestDay = AnalyticsEngine.dayString(nowLocalMidnight, offsetSec: tzOffset)
-        let oldestDay = AnalyticsEngine.dayString(nowLocalMidnight - (maxDays - 1) * 86_400, offsetSec: tzOffset)
-        let gate7 = Array((await repo.dailyMetrics(fromDay: oldestDay, toDay: newestDay))
-            .sorted { $0.day < $1.day }.suffix(7))
+        guard let gate7 = try? await repo.recentFitnessDailyMetrics(now: Date(timeIntervalSince1970: Double(now)), maxDays: maxDays) else { return false }
         let rows = Self.fitnessAgeRows(
             gateDays: gate7, age: profile.age, sex: profile.sex, waistCm: profile.waistCm,
             heightCm: profile.heightCm, weightKg: profile.weightKg, computedId: computedId,
@@ -2409,7 +2407,7 @@ final class IntelligenceEngine: ObservableObject {
         // accumulated view the readiness card + dashboard read (incl. IMPORTED Apple Health / Health Connect
         // resting HR, which the engine's computed-only `dailies` never carries). Captured here so the
         // Fitness Age gate can't be undercut by this pass's own scoring/eviction. Windowed to the range.
-        let faPriorDaily = await repo.dailyMetrics(fromDay: oldestDay, toDay: newestDay)
+        let faPriorDaily = try? await repo.fitnessDailyMetrics(fromDay: oldestDay, toDay: newestDay)
 
         // Score provenance is metric-specific and lives outside dayOwnership (which remains solely a
         // resolver override). Persist scores + provenance atomically so a failed write can never label an
@@ -2487,10 +2485,10 @@ final class IntelligenceEngine: ObservableObject {
         // or came from an import. The gate + compute live in `fitnessAgeRows`, shared with the manual
         // "refresh Fitness Age" button so the two can never drift.
         var faGateByDay: [String: DailyMetric] = [:]
-        for d in faPriorDaily { faGateByDay[d.day] = d }
+        for d in faPriorDaily ?? [] { faGateByDay[d.day] = d }
         for d in dailies { faGateByDay[d.day] = d }
         let faGate7 = Array(faGateByDay.values.sorted { $0.day < $1.day }.suffix(7))
-        let faPts = Self.fitnessAgeRows(
+        let faPts = faPriorDaily == nil ? [] : Self.fitnessAgeRows(
             gateDays: faGate7, age: profile.age, sex: profile.sex, waistCm: profile.waistCm,
             heightCm: profile.heightCm, weightKg: profile.weightKg, computedId: computedId,
             satKey: IntelligenceEngine.saturdayKey(onOrBefore: newestDay))

@@ -63,4 +63,22 @@ final class Vo2maxFallbackTests: XCTestCase {
         XCTAssertEqual(nes?.sourceId, Vo2MaxEstimator.nes.rawValue)
         XCTAssertNil(Vo2MaxEstimator(rawValue: "my-whoop"))
     }
+    func testInvalidRestingRatesNeitherUnlockNorDistortEstimate() {
+        func result(_ rates: [Int]) -> [MetricPoint] {
+            let rows = rates.enumerated().map { i, rate in
+                DailyMetric(day: String(format: "2026-08-%02d", 9 + i), totalSleepMin: nil,
+                    efficiency: nil, deepMin: nil, remMin: nil, lightMin: nil, disturbances: nil,
+                    restingHr: rate, avgHrv: nil, recovery: nil, strain: nil, exerciseCount: nil)
+            }
+            return IntelligenceEngine.fitnessAgeRows(gateDays: rows, age: 40, sex: "male", waistCm: 0,
+                heightCm: 0, weightKg: 0, computedId: "my-whoop-noop", satKey: "2026-08-15")
+        }
+        let inputs = [[60, 60, 60, 0, -1], [60, 60, 60, 60, 0, -1], [50, 55, 60, 65, 0, -1], [80, 80, 80, 80, 0, -1]]
+        let output = inputs.map { rates in
+            result(rates).first { $0.key == "vo2max_est" }.map { String(format: "%.6f", $0.value) } ?? "unavailable"
+        }.joined(separator: "\n")
+        // Output from the extracted Swift eligibility/Uth oracle, also pinned in Kotlin.
+        XCTAssertEqual(output, "unavailable\n45.900000\n47.895652\n34.425000")
+    }
+
 }

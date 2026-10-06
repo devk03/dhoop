@@ -1178,6 +1178,37 @@ final class Repository: ObservableObject {
         return await unionDailyMetrics(store: store, from: fromDay, to: toDay)
     }
 
+    /// Persisted physiological inputs for fitness estimates. Imported values keep precedence;
+    /// computed nights fill gaps, matching Android's merged fitness-input read.
+    /// This is not a sleep-edit facade: fitness consumes resting HR and strain only.
+    func fitnessDailyMetrics(fromDay: String, toDay: String) async throws -> [DailyMetric] {
+        guard let store = await ensureStore() else { throw FitnessInputReadError.storageUnavailable }
+        func union(_ ids: [String]) async throws -> [DailyMetric] {
+            var days: [String: DailyMetric] = [:]
+            for id in ids {
+                for row in try await store.dailyMetrics(deviceId: id, from: fromDay, to: toDay) {
+                    days[row.day] = days[row.day].map { Self.coalesceDay($0, row) } ?? row
+                }
+            }
+            return days.values.sorted { $0.day < $1.day }
+        }
+        let imported = try await union(importedReadIds)
+        let computed = try await union(computedReadIds)
+        let activity = try await store.dailyMetrics(deviceId: Self.activityFileSource, from: fromDay, to: toDay)
+        return Self.mergeActivityFileSteps(into: Self.mergeDaily(imported: imported, computed: computed), activity)
+    }
+
+    enum FitnessInputReadError: Error { case storageUnavailable }
+
+    /// The manual estimator and its readiness presentation share this bounded input window.
+    func recentFitnessDailyMetrics(now: Date = Date(), maxDays: Int = 21) async throws -> [DailyMetric] {
+        let offset = TimeZone.current.secondsFromGMT(for: now)
+        let midnight = IntelligenceEngine.midnightLocal(Int(now.timeIntervalSince1970), offsetSec: offset)
+        let newest = AnalyticsEngine.dayString(midnight, offsetSec: offset)
+        let oldest = AnalyticsEngine.dayString(midnight - (max(1, maxDays) - 1) * 86_400, offsetSec: offset)
+        return Array((try await fitnessDailyMetrics(fromDay: oldest, toDay: newest)).suffix(7))
+    }
+
     /// #856: the same dedup over an EXPLICIT id list, so a workout's zone minutes bin the rows its own
     /// recording strap banked rather than the day-level active ∪ canonical. Order is precedence.
     func hrSamples(deviceIds: [String], from: Int, to: Int, limit: Int = 8000) async -> [HRSample] {

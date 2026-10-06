@@ -69,4 +69,17 @@ class Vo2maxFallbackTest {
         assertEquals(null, Vo2MaxEstimator.fromProvenanceId(null))
         assertEquals(null, Vo2MaxEstimator.fromProvenanceId("my-whoop"))
     }
+    @Test
+    fun invalidRestingRates_neitherUnlockNorDistortEstimate() {
+        fun result(rates: List<Int>) = IntelligenceEngine.fitnessAgeRows(
+            rates.mapIndexed { i, rate -> DailyMetric(deviceId = "my-whoop", day = "2026-08-%02d".format(9 + i), restingHr = rate) },
+            UserProfile(age = 40.0, sex = "male", waistCm = 0.0), "my-whoop-noop", "2026-08-15")
+        val inputs = listOf(listOf(60, 60, 60, 0, -1), listOf(60, 60, 60, 60, 0, -1), listOf(50, 55, 60, 65, 0, -1), listOf(80, 80, 80, 80, 0, -1))
+        val output = inputs.joinToString("\n") { rates ->
+            result(rates).firstOrNull { it.key == "vo2max_est" }?.let { String.format(java.util.Locale.US, "%.6f", it.value) } ?: "unavailable"
+        }
+        // Verbatim output from the extracted Swift eligibility/Uth oracle.
+        assertEquals("unavailable\n45.900000\n47.895652\n34.425000", output)
+    }
+
 }

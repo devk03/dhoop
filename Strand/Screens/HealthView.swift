@@ -759,9 +759,10 @@ private struct FitnessAgeSection: View {
 
     /// Build the readiness verdict from the same signals IntelligenceEngine feeds the engine: the last 7
     /// computed/imported days give the resting-HR + activity coverage counts; the profile gives the rest.
+    @State private var fitnessInputDays: [DailyMetric] = []
     private var readiness: FitnessAgeReadiness {
-        let last7 = repo.days.suffix(7)
-        let rhrDays = last7.compactMap { $0.restingHr }.count
+        let last7 = fitnessInputDays
+        let rhrDays = last7.compactMap { $0.restingHr }.filter { $0 > 0 }.count
         let activityDays = last7.compactMap { $0.strain }.count
         return FitnessAgeEngine.assessReadiness(
             hasAge: profile.age > 0,
@@ -776,7 +777,7 @@ private struct FitnessAgeSection: View {
     /// shared with the Today card's `MetricDetailView` tap-through so both surfaces show the SAME countdown.
     private func fitnessReadyLead() -> String {
         fitnessReadyLeadCopy(
-            rhrDays: repo.days.suffix(7).compactMap { $0.restingHr }.count,
+            rhrDays: fitnessInputDays.compactMap { $0.restingHr }.filter { $0 > 0 }.count,
             hasAge: profile.age > 0, hasSex: !profile.sex.isEmpty)
     }
 
@@ -1015,6 +1016,7 @@ private struct FitnessAgeSection: View {
     /// "my-whoop" (the Repository merges the computed "-noop" rows under any real import). Takes the
     /// freshest point — the weekly value is keyed to the week's Saturday and refines through the week.
     private func load() async {
+        fitnessInputDays = (try? await repo.recentFitnessDailyMetrics()) ?? []
         let faPts = await repo.exploreSeries(key: "fitness_age", source: "my-whoop")
         let vo2Resolution = await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")
         fitnessAge = faPts.last?.value
