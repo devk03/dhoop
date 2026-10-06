@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import WhoopStore
+import GRDB
 import WhoopProtocol
 import StrandAnalytics
 import StrandDesign   // TrendPoint , the shared chart point type the Deep Timeline series uses
@@ -182,6 +183,7 @@ final class Repository: ObservableObject {
     var activeDeviceIsOura: Bool { DeviceBrandCatalog.isOura(deviceId) }
     private var store: WhoopStore?
     private var workoutReviewSaving = false
+    private var workoutReviewJournal = WorkoutReviewOperationJournal()
     private var workoutReviewCaptureCadence = WorkoutReviewCaptureCadence()
 
     /// Daily metrics (recovery/strain/sleep/HRV/RHR…) over the recent window, oldest→newest.
@@ -263,7 +265,11 @@ final class Repository: ObservableObject {
     #if DEBUG
     /// Inject a pre-opened store so unit tests can exercise the read facades (e.g. `timelineSeries`)
     /// against an in-memory `WhoopStore` without touching the on-disk path. DEBUG-only test seam.
-    func setStoreForTesting(_ s: WhoopStore) { self.store = s }
+    func setStoreForTesting(_ s: WhoopStore, workoutReviewJournal: WorkoutReviewOperationJournal? = nil) {
+        self.store = s
+        self.workoutReviewJournal = workoutReviewJournal ?? WorkoutReviewOperationJournal(
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent("workout-review-tests-" + UUID().uuidString))
+    }
     #endif
 
     // MARK: - Union reads (active strap + canonical)
@@ -3323,11 +3329,14 @@ final class Repository: ObservableObject {
     func workoutReviews(discover: Bool, excluding localSessions: [SavedWorkoutSpan] = []) async throws -> [WorkoutReview] {
         let selectedDevice = deviceId
         let reviews = WorkoutReviewStore()
+        if !workoutReviewSaving, let store = await ensureStore() {
+            try await recoverWorkoutReviewOperations(deviceID: selectedDevice, store: store)
+        }
         if discover {
             let candidates = await autoDetectCandidates(excluding: localSessions, reviewDeviceID: selectedDevice)
             guard selectedDevice == deviceId, !Task.isCancelled else { throw WorkoutReviewError.unavailable }
             let exact = Set(autoDetectDismissedSpans + dismissedDetectedSpans)
-            for candidate in candidates {
+            for candidate in candidates where !workoutReviewSaving {
                 let wasRejected = exact.contains(Self.autoDetectToken(candidate))
                 // A non-exact legacy interval has no device or HR provenance. Preserve its suppression.
                 guard wasRejected || Self.selectAutoDetectCandidate([candidate],
@@ -3342,23 +3351,78 @@ final class Repository: ObservableObject {
         // History can remove or replace a linked recording. Keep the user's label, report that the
         // recording is gone, and require an explicit Save again; never resurrect it during a scan.
         if let store = await ensureStore() {
-            for var review in try reviews.reviews(deviceID: selectedDevice) {
+            for var review in try reviews.reviews(deviceID: selectedDevice) where !workoutReviewSaving {
                 guard let link = review.linkedWorkout else { continue }
-                let rows = try await store.workouts(deviceId: link.owner, from: link.startSec,
-                                                    to: link.startSec, limit: -1)
+                let exists = try await workoutReviewLinkExists(link, store: store)
                 // A concurrent explicit decision wins over this asynchronous reconciliation read.
-                guard try reviews.reviews(deviceID: selectedDevice).first(where: { $0.id == review.id }) == review
+                guard !workoutReviewSaving,
+                      try reviews.reviews(deviceID: selectedDevice).first(where: { $0.id == review.id }) == review
                 else { continue }
-                if !rows.contains(where: {
-                    $0.sport == link.sport && $0.source == link.source && $0.endTs == link.endSec
-                }) {
+                if !exists {
                     review.linkedWorkout = nil
                     review.recordingRemoved = true
                     try reviews.save(review)
+                } else if review.decision == .workout {
+                    // Also repair a crash between finalizing the label and clearing an old dismissal.
+                    clearRecoveredWorkoutDismissal(review)
                 }
             }
         }
         return try reviews.reviews(deviceID: selectedDevice)
+    }
+
+    private func workoutReviewLinkExists(_ link: WorkoutReview.Link, store: WhoopStore) async throws -> Bool {
+        try await store.registryWriter.read { db in
+            let rowID = try Int64.fetchOne(db, sql: """
+                SELECT rowid FROM workout WHERE deviceId = ? AND startTs = ? AND endTs = ? AND sport = ? AND source = ?
+                """, arguments: [link.owner, link.startSec, link.endSec, link.sport, link.source])
+            guard let rowID else { return false }
+            return link.sqliteRowID == nil || link.sqliteRowID == rowID
+        }
+    }
+
+    private func recoverWorkoutReviewOperations(deviceID: String, store: WhoopStore,
+                                                explicitDecision: Bool = false) async throws {
+        let reviews = WorkoutReviewStore()
+        for var operation in try workoutReviewJournal.operations(deviceID: deviceID) {
+            guard explicitDecision || !workoutReviewSaving else { return }
+            let current = try reviews.reviews(deviceID: deviceID).first { $0.id == operation.before.id }
+            guard current?.lastOperationID != operation.id else { continue }
+            var recovered = operation.completedReview ?? operation.before
+            if operation.completedReview == nil {
+                if let receipt = try await store.cursor(operation.receiptKey) {
+                    recovered.decision = operation.decision
+                    recovered.recordingRemoved = false
+                    if operation.decision == .workout, var link = operation.link, receipt > 0 {
+                        link.sqliteRowID = Int64(receipt)
+                        if try await workoutReviewLinkExists(link, store: store) {
+                            recovered.linkedWorkout = link
+                        } else {
+                            recovered.linkedWorkout = nil
+                            recovered.recordingRemoved = true
+                        }
+                    } else {
+                        recovered.linkedWorkout = nil
+                    }
+                }
+                // No receipt means the SQLite transaction never committed. Retain the prior decision
+                // and ownership; a preexisting row cannot acquire a link from the abandoned intent.
+                recovered.lastOperationID = operation.id
+                operation.completedReview = recovered
+            }
+            guard explicitDecision || !workoutReviewSaving,
+                  try reviews.reviews(deviceID: deviceID).first(where: { $0.id == operation.before.id }) == current
+            else { continue }
+            try workoutReviewJournal.save(operation)
+            try reviews.save(recovered)
+            if recovered.decision == .workout { clearRecoveredWorkoutDismissal(recovered) }
+        }
+    }
+
+    private func clearRecoveredWorkoutDismissal(_ review: WorkoutReview) {
+        let token = "\(review.startSec):\(review.endSec)"
+        autoDetectDismissedSpans = autoDetectDismissedSpans.filter { $0 != token }
+        dismissedDetectedSpans = dismissedDetectedSpans.filter { $0 != token }
     }
 
     func setWorkoutReview(_ id: String, deviceID: String, decision: WorkoutReview.Decision,
@@ -3368,9 +3432,12 @@ final class Repository: ObservableObject {
         workoutReviewSaving = true
         defer { workoutReviewSaving = false }
         let reviews = WorkoutReviewStore()
-        guard var review = try reviews.reviews(deviceID: deviceID).first(where: { $0.id == id }),
-              let store = await ensureStore(), deviceId == deviceID else { throw WorkoutReviewError.unavailable }
+        guard let store = await ensureStore(), deviceId == deviceID else { throw WorkoutReviewError.unavailable }
+        try await recoverWorkoutReviewOperations(deviceID: deviceID, store: store, explicitDecision: true)
+        guard var review = try reviews.reviews(deviceID: deviceID).first(where: { $0.id == id })
+        else { throw WorkoutReviewError.unavailable }
         guard decision != review.decision || (decision == .workout && review.recordingRemoved) else { return }
+        var link = review.linkedWorkout
         if decision == .workout {
             let saved = await workoutRows()
             guard deviceId == deviceID else { throw WorkoutReviewError.unavailable }
@@ -3378,45 +3445,76 @@ final class Repository: ObservableObject {
                   !localSessions.contains(where: { review.overlaps(start: $0.startSec, end: $0.endSec) })
             else { throw WorkoutReviewError.alreadySaved }
             let owner = deviceID + "-noop"
-            let link = WorkoutReview.Link(owner: owner, startSec: review.startSec,
+            link = WorkoutReview.Link(owner: owner, startSec: review.startSec,
                 endSec: review.endSec, sport: "Workout", source: owner)
-            // Atomic conflict handling never replaces an existing recording. Only a successful insert
-            // gives this review ownership of the row; a failed write must not grant deletion rights.
-            let average = review.avgBpm, peak = review.peakBpm
-            let inserted = try await store.registryWriter.write { db in
+        }
+        if let link {
+            guard link.owner == deviceID + "-noop", link.source == link.owner,
+                  link.startSec == review.startSec, link.endSec == review.endSec,
+                  link.sport == "Workout" else { throw WorkoutReviewError.changedRecording }
+        }
+        var operation = WorkoutReviewOperation(before: review, decision: decision, link: link)
+        // An atomic file closes the gap left by buffered UserDefaults writes. The full previous review
+        // is recoverable even if preferences never persisted this newly discovered suggestion.
+        try workoutReviewJournal.save(operation)
+        let receipt: Int64
+        do {
+            receipt = try await commitWorkoutReviewOperation(operation, store: store)
+        } catch {
+            // The transaction rolled back, including its receipt. Retire this intent without granting
+            // ownership of any preexisting/conflicting recording; preserve the user's previous label.
+            review.lastOperationID = operation.id
+            operation.completedReview = review
+            try workoutReviewJournal.save(operation)
+            try reviews.save(review)
+            throw error
+        }
+        if decision == .workout {
+            link?.sqliteRowID = receipt
+            review.linkedWorkout = link
+        } else { review.linkedWorkout = nil }
+        review.decision = decision
+        review.recordingRemoved = false
+        review.lastOperationID = operation.id
+        operation.completedReview = review
+        // Retain one completed journal per review, so a crash before preferences flush is replayable.
+        try workoutReviewJournal.save(operation)
+        try reviews.save(review)
+        if decision == .workout { clearRecoveredWorkoutDismissal(review) }
+    }
+
+    private func commitWorkoutReviewOperation(_ operation: WorkoutReviewOperation, store: WhoopStore) async throws -> Int64 {
+        try await store.registryWriter.write { db in
+            var receipt: Int64 = 0
+            if operation.decision == .workout, let link = operation.link {
                 try db.execute(sql: """
                     INSERT INTO workout (deviceId, startTs, endTs, sport, source, durationS, avgHr, maxHr)
                     SELECT ?, ?, ?, ?, ?, ?, ?, ?
                     WHERE NOT EXISTS (SELECT 1 FROM workout WHERE startTs < ? AND endTs > ?)
                     ON CONFLICT(deviceId, startTs, sport) DO NOTHING
-                    """, arguments: [owner, link.startSec, link.endSec, link.sport, link.source,
-                                     Double(link.endSec - link.startSec), average, peak,
+                    """, arguments: [link.owner, link.startSec, link.endSec, link.sport, link.source,
+                                     Double(link.endSec - link.startSec), operation.before.avgBpm, operation.before.peakBpm,
                                      link.endSec, link.startSec])
-                return db.changesCount
+                guard db.changesCount == 1 else { throw WorkoutReviewError.alreadySaved }
+                receipt = db.lastInsertedRowID
+            } else if let link = operation.link {
+                let existing = try Int64.fetchOne(db, sql: """
+                    SELECT rowid FROM workout WHERE deviceId = ? AND startTs = ? AND sport = ?
+                    """, arguments: [link.owner, link.startSec, link.sport])
+                if let existing {
+                    guard link.sqliteRowID == nil || link.sqliteRowID == existing else { throw WorkoutReviewError.changedRecording }
+                    try db.execute(sql: """
+                        DELETE FROM workout WHERE rowid = ? AND deviceId = ? AND startTs = ? AND endTs = ? AND sport = ? AND source = ?
+                        """, arguments: [existing, link.owner, link.startSec, link.endSec, link.sport, link.source])
+                    guard db.changesCount == 1 else { throw WorkoutReviewError.changedRecording }
+                }
             }
-            guard inserted == 1 else { throw WorkoutReviewError.alreadySaved }
-            review.linkedWorkout = link
-            let token = "\(review.startSec):\(review.endSec)"
-            autoDetectDismissedSpans = autoDetectDismissedSpans.filter { $0 != token }
-            dismissedDetectedSpans = dismissedDetectedSpans.filter { $0 != token }
-        } else if let link = review.linkedWorkout {
-            guard link.owner == deviceID + "-noop", link.source == link.owner,
-                  link.startSec == review.startSec, link.endSec == review.endSec,
-                  link.sport == "Workout" else { throw WorkoutReviewError.changedRecording }
-            // Only the linked detected row can be removed. A replacement manual row never matches.
-            let rows = try await store.workouts(deviceId: link.owner, from: link.startSec,
-                                                to: link.startSec, limit: -1)
-            if let row = rows.first(where: { $0.sport == link.sport }) {
-                guard row.source == link.source, row.endTs == link.endSec,
-                      WorkoutSource.classify(row.source) == .detected else { throw WorkoutReviewError.changedRecording }
-                guard try await store.deleteWorkoutRecording(row, deviceIds: [link.owner]) == 1
-                else { throw WorkoutReviewError.changedRecording }
-            }
-            review.linkedWorkout = nil
+            // The receipt commits atomically with the exact row change. Keep only one namespaced
+            // receipt per review; no schema change or modification of any sync cursor is involved.
+            try db.execute(sql: "DELETE FROM cursors WHERE name GLOB ?", arguments: [operation.receiptPrefix + "*"])
+            try db.execute(sql: "INSERT INTO cursors (name, value) VALUES (?, ?)", arguments: [operation.receiptKey, receipt])
+            return receipt
         }
-        review.decision = decision
-        review.recordingRemoved = false
-        try reviews.save(review)
     }
 
     /// SAVE a suggested window as a manual-style "Workout" (generic sport , we don't claim a sport we

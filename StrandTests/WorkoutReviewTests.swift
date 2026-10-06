@@ -1,6 +1,7 @@
 import XCTest
 import WhoopProtocol
 import WhoopStore
+import GRDB
 import StrandAnalytics
 @testable import Strand
 
@@ -78,7 +79,12 @@ final class WorkoutReviewTests: XCTestCase {
                 try await repo.setWorkoutReview(review.id, deviceID: "review-strap", decision: .workout)
                 XCTFail("Rejected database writes must not report a saved workout")
             } catch { }
-            XCTAssertEqual(try WorkoutReviewStore().reviews(deviceID: "review-strap"), [review])
+            let pending = try XCTUnwrap(WorkoutReviewStore().reviews(deviceID: "review-strap").first)
+            XCTAssertEqual(pending.id, review.id)
+            XCTAssertEqual(pending.decision, .pending)
+            XCTAssertNil(pending.linkedWorkout)
+            let rows = try await store.workouts(deviceId: "review-strap-noop", from: 0, to: 4000, limit: -1)
+            XCTAssertTrue(rows.isEmpty)
         }
     }
 
@@ -160,4 +166,129 @@ final class WorkoutReviewTests: XCTestCase {
             XCTAssertEqual(UserDefaults.standard.stringArray(forKey: "workouts.autoDetectDismissed"), [])
         }
     }
+    private func journal() -> WorkoutReviewOperationJournal {
+        WorkoutReviewOperationJournal(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("review-crash-test-" + UUID().uuidString))
+    }
+
+    private func fixtureRow(device: String, source: String? = nil) -> WorkoutRow {
+        WorkoutRow(startTs: 1000, endTs: 1900, sport: "Workout", source: source ?? device + "-noop",
+            durationS: 900, energyKcal: nil, avgHr: 130, maxHr: 160, strain: nil,
+            distanceM: nil, zonesJSON: nil, notes: nil, steps: nil)
+    }
+
+    func testInterruptedAcceptanceRecoversExactOwnershipEvenWhenPreferencesWereNotFlushed() async throws {
+        try await withPreferences {
+            let device = "crash-strap", store = try await WhoopStore.inMemory(), journal = journal()
+            let review = WorkoutReview(deviceID: device, startSec: 1000, endSec: 1900,
+                                       avgBpm: 130, peakBpm: 160, durationMin: 15)
+            let link = WorkoutReview.Link(owner: device + "-noop", startSec: 1000, endSec: 1900,
+                                          sport: "Workout", source: device + "-noop")
+            let intent = WorkoutReviewOperation(before: review, decision: .workout, link: link)
+            try journal.save(intent)
+            // Simulate SQLite committed, then process exit before the preference link was written.
+            try await store.upsertWorkouts([fixtureRow(device: device)], deviceId: device + "-noop")
+            let rowID = try await store.registryWriter.read { db in
+                try XCTUnwrap(Int64.fetchOne(db, sql: "SELECT rowid FROM workout"))
+            }
+            try await store.setCursor(intent.receiptKey, Int(rowID))
+            let repo = Repository(deviceId: device)
+            repo.setStoreForTesting(store, workoutReviewJournal: journal)
+            let recovered = try await repo.workoutReviews(discover: false)
+            XCTAssertEqual(recovered.count, 1)
+            XCTAssertEqual(recovered.first?.decision, .workout)
+            XCTAssertEqual(recovered.first?.linkedWorkout?.sqliteRowID, rowID)
+            XCTAssertEqual(recovered.first?.id, review.id)
+            // The completed journal also survives losing a buffered preference write after recovery.
+            UserDefaults.standard.removeObject(forKey: WorkoutReviewStore.key)
+            let replayed = try await repo.workoutReviews(discover: false)
+            XCTAssertEqual(replayed.first?.decision, .workout)
+            XCTAssertEqual(replayed.first?.linkedWorkout?.sqliteRowID, rowID)
+            try await repo.setWorkoutReview(review.id, deviceID: device, decision: .notWorkout)
+            let rows = try await store.workouts(deviceId: device + "-noop", from: 0, to: 4000, limit: -1)
+            XCTAssertTrue(rows.isEmpty, "The recovered link must make rejection remove its saved recording")
+        }
+    }
+
+    func testUncommittedIntentNeverClaimsPreexistingManualOrDetectedRecording() async throws {
+        try await withPreferences {
+            for isManual in [true, false] {
+                let device = "uncommitted-\(isManual)", store = try await WhoopStore.inMemory(), journal = journal()
+                let review = WorkoutReview(deviceID: device, startSec: 1000, endSec: 1900,
+                                           avgBpm: 130, peakBpm: 160, durationMin: 15)
+                let link = WorkoutReview.Link(owner: device + "-noop", startSec: 1000, endSec: 1900,
+                                              sport: "Workout", source: device + "-noop")
+                let existing = fixtureRow(device: device, source: isManual ? "manual" : device + "-noop")
+                try await store.upsertWorkouts([existing], deviceId: device + "-noop")
+                try journal.save(WorkoutReviewOperation(before: review, decision: .workout, link: link))
+                let repo = Repository(deviceId: device)
+                repo.setStoreForTesting(store, workoutReviewJournal: journal)
+                let recovered = try await repo.workoutReviews(discover: false)
+                XCTAssertEqual(recovered.first?.decision, .pending)
+                XCTAssertNil(recovered.first?.linkedWorkout, "An intent without a receipt does not prove ownership")
+                try await repo.setWorkoutReview(review.id, deviceID: device, decision: .notWorkout)
+                let rows = try await store.workouts(deviceId: device + "-noop", from: 0, to: 4000, limit: -1)
+                XCTAssertEqual(rows, [existing])
+            }
+        }
+    }
+
+    func testInterruptedRejectionRestoresNotWorkoutDecisionAndReceiptsStayBounded() async throws {
+        try await withPreferences {
+            let device = "reject-crash", store = try await WhoopStore.inMemory(), journal = journal()
+            let repo = Repository(deviceId: device)
+            repo.setStoreForTesting(store, workoutReviewJournal: journal)
+            let review = WorkoutReview(deviceID: device, startSec: 1000, endSec: 1900,
+                                       avgBpm: 130, peakBpm: 160, durationMin: 15)
+            try WorkoutReviewStore().capture(review)
+            try await repo.setWorkoutReview(review.id, deviceID: device, decision: .workout)
+            let accepted = try XCTUnwrap(WorkoutReviewStore().reviews(deviceID: device).first)
+            let intent = WorkoutReviewOperation(before: accepted, decision: .notWorkout, link: accepted.linkedWorkout)
+            try journal.save(intent)
+            // Simulate the rejection transaction completed but its preference write did not.
+            try await store.registryWriter.write { db in
+                try db.execute(sql: "DELETE FROM workout")
+                try db.execute(sql: "DELETE FROM cursors WHERE name GLOB ?", arguments: [intent.receiptPrefix + "*"])
+                try db.execute(sql: "INSERT INTO cursors (name,value) VALUES (?,0)", arguments: [intent.receiptKey])
+            }
+            let recovered = try await repo.workoutReviews(discover: false)
+            XCTAssertEqual(recovered.first?.decision, .notWorkout)
+            XCTAssertNil(recovered.first?.linkedWorkout)
+            for decision: WorkoutReview.Decision in [.workout, .notWorkout, .workout] {
+                try await repo.setWorkoutReview(review.id, deviceID: device, decision: decision)
+            }
+            let receipts = try await store.registryWriter.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM cursors WHERE name GLOB ?", arguments: [intent.receiptPrefix + "*"])
+            }
+            XCTAssertEqual(receipts, 1)
+            XCTAssertEqual(try journal.operations(deviceID: device).count, 1)
+        }
+    }
+
+    func testRecoveryRejectsRowWithDifferentIdentityAndConcurrentReadsCannotUndoDecision() async throws {
+        try await withPreferences {
+            let device = "identity-strap", store = try await WhoopStore.inMemory(), journal = journal()
+            let review = WorkoutReview(deviceID: device, startSec: 1000, endSec: 1900,
+                                       avgBpm: 130, peakBpm: 160, durationMin: 15)
+            let link = WorkoutReview.Link(owner: device + "-noop", startSec: 1000, endSec: 1900,
+                                          sport: "Workout", source: device + "-noop")
+            let intent = WorkoutReviewOperation(before: review, decision: .workout, link: link)
+            try journal.save(intent)
+            try await store.upsertWorkouts([fixtureRow(device: device)], deviceId: device + "-noop")
+            let rowID = try await store.registryWriter.read { db in try XCTUnwrap(Int64.fetchOne(db, sql: "SELECT rowid FROM workout")) }
+            try await store.setCursor(intent.receiptKey, Int(rowID + 100))
+            let repo = Repository(deviceId: device)
+            repo.setStoreForTesting(store, workoutReviewJournal: journal)
+            let recovered = try await repo.workoutReviews(discover: false)
+            XCTAssertEqual(recovered.first?.recordingRemoved, true)
+            XCTAssertNil(recovered.first?.linkedWorkout)
+            async let reload = repo.workoutReviews(discover: false)
+            try await repo.setWorkoutReview(review.id, deviceID: device, decision: .notWorkout)
+            _ = try await reload
+            XCTAssertEqual(try WorkoutReviewStore().reviews(deviceID: device).first?.decision, .notWorkout)
+            let rows = try await store.workouts(deviceId: device + "-noop", from: 0, to: 4000, limit: -1)
+            XCTAssertEqual(rows, [fixtureRow(device: device)], "A same-span replacement is not the receipted row")
+        }
+    }
+
 }

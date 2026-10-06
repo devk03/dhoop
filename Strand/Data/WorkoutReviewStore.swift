@@ -14,6 +14,7 @@ struct WorkoutReview: Codable, Equatable, Identifiable {
     var decision: Decision
     var linkedWorkout: Link?
     var recordingRemoved = false
+    var lastOperationID: String?
 
     // Workout rows have a natural key, not a UUID. Retain its owner, exact bounds and source so
     // a later label change can never sweep overlapping manual/imported sessions.
@@ -23,6 +24,7 @@ struct WorkoutReview: Codable, Equatable, Identifiable {
         let endSec: Int
         let sport: String
         let source: String
+        var sqliteRowID: Int64? = nil
     }
 
     init(deviceID: String, startSec: Int, endSec: Int, avgBpm: Int, peakBpm: Int,
@@ -105,4 +107,48 @@ struct WorkoutReviewCaptureCadence {
     }
 
     mutating func finish() { inFlight = false }
+}
+
+// One atomically replaced journal per reviewed suggestion bridges UserDefaults and SQLite. A
+// completed journal remains available if the process exits before buffered preferences reach disk.
+struct WorkoutReviewOperation: Codable, Equatable {
+    let id: String
+    let before: WorkoutReview
+    let decision: WorkoutReview.Decision
+    let link: WorkoutReview.Link?
+    var completedReview: WorkoutReview?
+
+    init(before: WorkoutReview, decision: WorkoutReview.Decision, link: WorkoutReview.Link?) {
+        id = UUID().uuidString
+        self.before = before
+        self.decision = decision
+        self.link = link
+    }
+
+    var receiptPrefix: String { "cardio.review.operation.\(before.id)." }
+    var receiptKey: String { receiptPrefix + id }
+}
+
+struct WorkoutReviewOperationJournal {
+    let directory: URL
+
+    init(directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("WorkoutReviewOperations", isDirectory: true)) {
+        self.directory = directory
+    }
+
+    func save(_ operation: WorkoutReviewOperation) throws {
+        guard UUID(uuidString: operation.before.id) != nil, UUID(uuidString: operation.id) != nil
+        else { throw CocoaError(.fileWriteInvalidFileName) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(operation).write(to: directory.appendingPathComponent(operation.before.id + ".json"), options: .atomic)
+    }
+
+    func operations(deviceID: String) throws -> [WorkoutReviewOperation] {
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension == "json" }
+            .map { try JSONDecoder().decode(WorkoutReviewOperation.self, from: Data(contentsOf: $0)) }
+            .filter { $0.before.deviceID == deviceID }
+    }
 }
