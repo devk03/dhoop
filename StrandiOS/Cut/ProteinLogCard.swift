@@ -28,7 +28,7 @@ struct ProteinLogCard: View {
     var body: some View {
         let grams = protein.total(day: logDay, foodProtein: food.protein(day: logDay))
         let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
-        NoopCard(padding: NoopMetrics.space3, tint: StrandPalette.statusPositive, fillHeight: true) {
+        NoopCard(padding: NoopMetrics.space3, tint: StrandPalette.metricProtein, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 Button { openedAt = Date(); logDay = Repository.localDayKey(openedAt); showEditor = true } label: {
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
@@ -45,7 +45,7 @@ struct ProteinLogCard: View {
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let target = protein.targetGrams {
-                    ProgressView(value: min(grams, target), total: target).tint(StrandPalette.statusPositive)
+                    ProgressView(value: min(grams, target), total: target).tint(StrandPalette.metricProtein)
                 }
                 if let today = HeartDashboardProjection.date(day), let start = Calendar.current.date(byAdding: .day, value: -6, to: today) {
                     let rows = weekReadings
@@ -56,14 +56,14 @@ struct ProteinLogCard: View {
                         DashboardChart(points: rows.compactMap { row in
                             HeartDashboardProjection.date(row.day).map { TrendPoint(date: $0, value: row.value) }
                         }, domain: start...today.addingTimeInterval(86_400), range: 0...max(1, (rows.map(\.value).max() ?? 0) * 1.1),
-                            tint: StrandPalette.statusPositive, style: .bars, height: NoopMetrics.dashboardTileChartHeight,
-                            label: "Protein logged over seven days; unlogged days have no bars", compact: true,
+                            tint: StrandPalette.metricProtein, style: .bars, height: NoopMetrics.dashboardTileChartHeight,
+                            label: "Protein logged over seven days; unlogged days have no bars", compact: false,
                             valueFormat: { "\($0.formatted()) g logged" })
                     }
                 }
                 Button { showLog = true } label: {
                     Label("Log protein", systemImage: "plus").font(StrandFont.caption)
-                        .foregroundStyle(StrandPalette.statusPositive)
+                        .foregroundStyle(StrandPalette.metricProtein)
                         .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }.buttonStyle(.plain)
             }
@@ -98,9 +98,9 @@ private struct ProteinHistoryView: View {
         NavigationStack {
             ScreenScaffold(title: nil) {
                 MetricRangeControl(selection: $selection, now: now)
-                NoopCard(tint: StrandPalette.statusPositive) {
+                NoopCard(tint: StrandPalette.metricProtein) {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Text("Average logged protein").font(StrandFont.headline).foregroundStyle(StrandPalette.statusPositive)
+                        Text("Average logged protein").font(StrandFont.headline).foregroundStyle(StrandPalette.metricProtein)
                         Text(average.map { $0.mean.formatted(.number.precision(.fractionLength(0))) } ?? "—")
                             .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
                         Text("g/day · \(window.coverage(average?.readings.count ?? 0))")
@@ -116,7 +116,7 @@ private struct ProteinHistoryView: View {
                             }
                             let start = window.days == nil ? (points.first?.date ?? window.end) : window.start
                             DashboardChart(points: DashboardTraceSampling.reduce(points), domain: start...max(start.addingTimeInterval(1), window.through),
-                                range: 0...max(1, (values.max() ?? 0) * 1.1), tint: StrandPalette.statusPositive,
+                                range: 0...max(1, (values.max() ?? 0) * 1.1), tint: StrandPalette.metricProtein,
                                 style: .bars, height: NoopMetrics.chartHeight,
                                 label: "Protein grams logged on recorded days in the selected range; unlogged days have no bars",
                                 inspectionData: points.map { ChartScrubDatum(id: String($0.date.timeIntervalSince1970), x: $0.date.timeIntervalSince1970, y: $0.value,
@@ -127,7 +127,7 @@ private struct ProteinHistoryView: View {
                     }
                 }
                 Button { showEditor = true } label: { Label("Log protein", systemImage: "plus") }
-                    .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.statusPositive)
+                    .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.metricProtein)
                     .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 Text("Includes known protein from protein-only and food entries. Unlogged days are excluded; logged grams do not imply complete intake tracking.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -166,7 +166,7 @@ private struct ProteinEntrySheet: View {
                     if let target = store.targetGrams {
                         Text("Target \(target.formatted(.number.precision(.fractionLength(0)))) g")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        ProgressView(value: min(total, target), total: target).tint(StrandPalette.statusPositive)
+                        ProgressView(value: min(total, target), total: target).tint(StrandPalette.metricProtein)
                     }
                     if food.protein(day: day) > 0 {
                         Text("Includes \(food.protein(day: day).formatted()) g from your food log.")

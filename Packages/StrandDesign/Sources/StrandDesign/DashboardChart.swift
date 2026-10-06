@@ -86,7 +86,7 @@ public struct DashboardChart: View {
             }
         }
         .chartYAxis {
-            if !compact && style == .line {
+            if !compact {
                 AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
                     AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(StrandChartStyle.gridOpacity))
                     AxisValueLabel().foregroundStyle(StrandPalette.textSecondary).font(StrandFont.caption)

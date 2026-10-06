@@ -52,6 +52,13 @@ struct StrandiOSApp: App {
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
 
     init() {
+        // Apply the selected Dhoop design once; later Settings choices remain user-controlled.
+        let appearancePrefs = UserDefaults.standard
+        if !appearancePrefs.bool(forKey: "dhoop.deepMetricAppearance.v1") {
+            appearancePrefs.set(AccentColor.neutral.rawValue, forKey: AccentColor.storageKey)
+            appearancePrefs.set(AppearanceMode.dark.rawValue, forKey: AppearanceMode.storageKey)
+            appearancePrefs.set(true, forKey: "dhoop.deepMetricAppearance.v1")
+        }
         // #1008: pin the pre-change Overnight-only default for existing installs before
         // anything reads it. Idempotent; a no-op on fresh installs and after the first launch.
         PuffinExperiment.migrateContinuousHrvOvernightDefault()

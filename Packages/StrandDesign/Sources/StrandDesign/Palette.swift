@@ -138,7 +138,13 @@ public enum StrandPalette {
     /// Opacity for dimmed/disabled sections (shared so screens don't invent their own value).
     public static let disabledOpacity: Double = 0.45
     /// Liquid-scene activity tint shared by heart-rate feedback and transient sync chrome.
-    public static let liquidHeart = Color(light: "#D94C64", dark: "#FF6B81")
+    public static let liquidHeart = Color(light: "#B92748", dark: "#EF526F")
+
+    // Stable metric identities for Dhoop's black, multicolor dashboard.
+    public static let metricHRV = Color(light: "#713FB0", dark: "#AC78E8")
+    public static let metricSteps = Color(light: "#1767AE", dark: "#479DE4")
+    public static let metricProtein = Color(light: "#936016", dark: "#DCAA51")
+    public static let metricVO2 = Color(light: "#4E45A9", dark: "#8880E6")
 
     // MARK: - Chart style (data-viz colour mode) — Titanium (brand) or Classic (throwback)
     //
