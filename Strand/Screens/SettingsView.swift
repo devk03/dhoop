@@ -680,7 +680,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
 
                 FormRow(label: "Scaling") {
@@ -1014,7 +1014,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .onChangeCompat(of: banisterEffortEnabled) { _ in
                     // Re-score immediately on the flip. The recipe changes stored Effort for EVERY day in
@@ -1291,7 +1291,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("Holds the liquid gauges, the sky and the tilt response still, and turns off the motion sensor that drives them. Saves battery. Low Power Mode and the system Reduce Motion setting already do this.")
                     .font(StrandFont.caption)
@@ -1307,7 +1307,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("Shows a soft sunrise, day, dusk and night scene behind the Today screen. Turn it off for a plain dark canvas. Your cards stay exactly as readable.")
                     .font(StrandFont.caption)
@@ -1324,7 +1324,7 @@ struct SettingsView: View {
                         // Greyed when day-cycle is off — the sky it extends isn't drawn then (Android parity).
                         .foregroundStyle(showDayCycleBackground ? StrandPalette.textPrimary : StrandPalette.textTertiary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .disabled(!showDayCycleBackground)
                 Text("Extends the sky behind the whole Today screen, so lowering Card transparency lets it show through every card. Needs the day-cycle background on.")
@@ -1345,7 +1345,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("Let the background show through every card. Tune how much just below.")
                     .font(StrandFont.caption)
@@ -1481,7 +1481,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("Shows your live heart rate on the Lock Screen and in the Dynamic Island while the strap is connected. Turn it off to keep your live HR out of the Dynamic Island. (Any one already showing clears within a moment.)")
                     .font(StrandFont.caption)
@@ -1495,7 +1495,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Shows sync progress on the Lock Screen and in the Dynamic Island")
                 Text("Shows Connecting… / Syncing… with the chunk count and elapsed time while Dhoop pulls history from your strap, including a sync started by the Sync Strap shortcut. Independent of the live heart rate switch above.")
@@ -1675,7 +1675,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Adds a water-log card to your dashboard")
 
@@ -1691,7 +1691,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Offers to save a workout when it spots sustained elevated heart rate")
 
@@ -1707,7 +1707,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Show a Today card reminding you to log your journal")
 
@@ -1723,7 +1723,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Stops the screen dimming while a workout is recording")
 
@@ -1752,7 +1752,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Stops the screen locking while your strap's history syncs")
 
@@ -1784,7 +1784,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .onChangeCompat(of: continuousHrvEnabled) { on in model.ble.setKeepRealtimeForData(on) }
                 Text("Keeps the detailed beat-to-beat heart-rate stream running all day and night, not just while a live screen is open, so Dhoop captures much more for overnight HRV, recovery and sleep. Uses more battery: your strap streams heart rate continuously while connected.")
@@ -1799,7 +1799,7 @@ struct SettingsView: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textPrimary)
                     }
-                    .toggleStyle(.switch)
+                    .toggleStyle(NoopSwitchStyle())
                     .tint(StrandPalette.accent)
                     .onChangeCompat(of: continuousHrvOvernightOnly) { _ in
                         model.ble.setKeepRealtimeForData(PuffinExperiment.keepRealtimeForDataEnabled)
@@ -1868,7 +1868,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("Replaces the Today tab with the prototype redesign. Turn it off any time to return to the classic dashboard. Reads the same live data from your strap.")
                     .font(StrandFont.caption)
@@ -1894,7 +1894,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("Silence-first strap coaching during workouts.")
                     .font(StrandFont.caption)
@@ -1920,7 +1920,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("A transparent cardiorespiratory recipe that recovers deep and REM better than the older V1 staging, and is now the default. It only changes how already-detected nights are split into stages (detection and scores are unchanged); turn it off to fall back to V1. Takes effect on the next nights staged.")
                     .font(StrandFont.caption)
@@ -1935,7 +1935,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 Text("Reviews each scored wake block for real evidence of getting up (walking cadence, a change in body position) instead of just a heart-rate rise. A wake block with no locomotion and a stable posture — a hot night, a brief turn-over — is folded back into light sleep; a real get-up is left alone. Self-checks how much motion detail your strap actually recorded and stays off on a night that's too sparse to trust (older WHOOP 4.0 firmware, mainly). Off by default; takes effect on the next nights staged.")
                     .font(StrandFont.caption)
@@ -1966,7 +1966,7 @@ struct SettingsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .onChangeCompat(of: spo2CandidateDisplayEnabled) { _ in
                     // Re-score immediately so the candidate is computed and persisted on this

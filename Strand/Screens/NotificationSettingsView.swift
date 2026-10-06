@@ -47,7 +47,7 @@ struct NotificationSettingsView: View {
                         .font(StrandFont.body)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
 
                 HStack(spacing: 10) {
@@ -151,7 +151,7 @@ struct NotificationSettingsView: View {
                 get: { store.isEnabled(app.id) },
                 set: { store.setEnabled(app.id, $0) }))
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityLabel("\(app.name) wrist alerts")
         }
@@ -348,7 +348,7 @@ private struct FormToggleRow: View {
             Spacer()
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(NoopSwitchStyle())
                 .tint(StrandPalette.accent)
                 .accessibilityLabel(label)
         }

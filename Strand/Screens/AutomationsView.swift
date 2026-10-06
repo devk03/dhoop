@@ -570,7 +570,7 @@ private struct ToggleRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Toggle("", isOn: $isOn).labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+            Toggle("", isOn: $isOn).labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 .accessibilityLabel(label)
         }
         .frame(minHeight: 42).padding(.vertical, 4)

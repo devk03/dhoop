@@ -128,7 +128,7 @@ struct CoachSettingsView: View {
                 }
                 Spacer(minLength: 8)
                 Toggle("", isOn: $coach.dataConsent)
-                    .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                    .labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                     .accessibilityLabel("Let the coach use my data")
             }
         }
@@ -153,7 +153,7 @@ struct CoachSettingsView: View {
                 }
                 Spacer(minLength: 8)
                 Toggle("", isOn: $coach.includeOnDeviceSignals)
-                    .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                    .labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                     .accessibilityLabel("Also share my patterns and Lab Book with the coach")
             }
         }
@@ -178,7 +178,7 @@ struct CoachSettingsView: View {
                 }
                 Spacer(minLength: 8)
                 Toggle("", isOn: $coach.multimodalChartEnabled)
-                    .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                    .labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                     .accessibilityLabel("Send chart image to Gemini")
             }
         }
@@ -273,7 +273,7 @@ struct CoachSettingsView: View {
                     }
                     Spacer(minLength: 8)
                     Toggle("", isOn: $briefEnabled)
-                        .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                        .labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                         .accessibilityLabel("Morning brief")
                 }
                 .onChangeCompat(of: briefEnabled) { on in

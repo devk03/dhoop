@@ -22,6 +22,8 @@ public enum NoopVisualStyle {
     public static let secondaryText = Color(light: "#555861", dark: "#B9BEC5")
     public static let tertiaryText = Color(light: "#7D808A", dark: "#8F969F")
 
+    public static let switchTint = Color(light: "#235D9F", dark: "#2968AC")
+
     public static let selectedControlFill = Color(light: "#20232A", dark: "#F0F1F4")
     public static let selectedControlInk = Color(light: "#FFFFFF", dark: "#111216")
 

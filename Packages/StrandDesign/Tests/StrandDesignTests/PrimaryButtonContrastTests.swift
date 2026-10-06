@@ -31,5 +31,22 @@ final class PrimaryButtonContrastTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(contrast, 7, "Primary button contrast in \(name)")
         }
     }
+    func testSwitchTrackSeparatesFromTheNativeWhiteThumb() throws {
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            var ratio: Double = 0
+            appearance.performAsCurrentDrawingAppearance {
+                guard let track = NSColor(NoopVisualStyle.switchTint).usingColorSpace(.sRGB) else { return }
+                func linear(_ component: CGFloat) -> Double {
+                    let value = Double(component)
+                    return value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
+                }
+                let luminance = 0.2126 * linear(track.redComponent) + 0.7152 * linear(track.greenComponent) + 0.0722 * linear(track.blueComponent)
+                ratio = 1.05 / (luminance + 0.05)
+            }
+            XCTAssertGreaterThanOrEqual(ratio, 3, "Switch thumb contrast in \(name)")
+        }
+    }
+
 }
 #endif

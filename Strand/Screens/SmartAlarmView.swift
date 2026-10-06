@@ -238,7 +238,7 @@ struct SmartAlarmView: View {
                     }
                     Spacer()
                     Toggle("", isOn: $behavior.smartAlarmEnabled)
-                        .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                        .labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                         .accessibilityLabel("Wake me with a strap buzz")
                 }
                 .frame(minHeight: 42)
@@ -354,7 +354,7 @@ struct SmartAlarmView: View {
                     }
                     Spacer()
                     Toggle("", isOn: $windDownOn)
-                        .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                        .labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                         .accessibilityLabel("Remind me to wind down")
                         .onChangeCompat(of: windDownOn) { on in
                             WindDownNudge.setEnabled(on) { outcome in
@@ -433,7 +433,7 @@ struct SmartAlarmView: View {
             }
             Spacer()
             Toggle("", isOn: $perDayOn)
-                .labelsHidden().toggleStyle(.switch).tint(StrandPalette.accent)
+                .labelsHidden().toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 .accessibilityLabel("Different wake time per day")
                 .onChangeCompat(of: perDayOn) { on in
                     // Turning the section OFF clears every override (so the nudge reverts to the single time);

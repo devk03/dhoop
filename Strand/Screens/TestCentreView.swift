@@ -257,20 +257,20 @@ struct TestCentreView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Toggle("Protocol probes", isOn: $puffinExperiments)
-                    .toggleStyle(.switch).tint(StrandPalette.accent)
+                    .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 Text("Sends experimental protocol queries and records the replies in the strap log.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
 
                 Divider().overlay(StrandPalette.hairline)
                 Toggle("Broadcast heart rate from the strap", isOn: $broadcastHrEnabled)
-                    .toggleStyle(.switch).tint(StrandPalette.accent)
+                    .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                     .onChangeCompat(of: broadcastHrEnabled) { model.ble.setBroadcastHr($0) }
                 Text("Writes the reversible 5/MG advertising flag for Garmin, Zwift, and compatible gym equipment.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
 
                 Divider().overlay(StrandPalette.hairline)
                 Toggle("Legacy R22 feature-flag experiment", isOn: $deepDataEnabled)
-                    .toggleStyle(.switch).tint(StrandPalette.accent)
+                    .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 Text("The strap accepts these writes, but Dhoop has not observed them enabling a separate live stream. This is not the Raw Data Collector.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 if deepDataEnabled {
@@ -290,7 +290,7 @@ struct TestCentreView: View {
 
                 Divider().overlay(StrandPalette.hairline)
                 Toggle("WHOOP MG ECG raw-data gate", isOn: $ecgRawDataEnabled)
-                    .toggleStyle(.switch).tint(StrandPalette.accent)
+                    .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 Text("MG-only protocol instrumentation, not a medical ECG feature.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 if ecgRawDataEnabled {
@@ -310,7 +310,7 @@ struct TestCentreView: View {
 
                 Divider().overlay(StrandPalette.hairline)
                 Toggle("Passive history/protocol trace", isOn: $puffinCapture)
-                    .toggleStyle(.switch).tint(StrandPalette.accent)
+                    .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 Text("Records frames that already arrive. It does not start sensors and can create large files. Use the export section below to save the trace with its strap log.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -659,7 +659,7 @@ struct TestCentreView: View {
                     Text("Daily auto-export of the strap log")
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch).tint(StrandPalette.accent)
+                .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 .onChangeCompat(of: debugExportOn) { on in ScheduledDebugExport.setEnabled(on) }
 
                 if debugExportOn {
@@ -720,7 +720,7 @@ struct TestCentreView: View {
                     Text("HR-from-PPG sub-lag interpolation (v26 gap-fill)")
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch).tint(StrandPalette.accent)
+                .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 Text("When Dhoop reconstructs heart rate from the WHOOP 5/MG v26 optical waveform (the seconds the strap stored no HR), refine the autocorrelation peak with a parabolic sub-lag fit so the estimate is not quantized to roughly 16 bpm steps near a high HR. It only fills seconds the strap never reported; it never overrides a stored HR. 5/MG only, off by default.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -731,7 +731,7 @@ struct TestCentreView: View {
                     Text("HRV readiness (Plews/Altini)")
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
                 }
-                .toggleStyle(.switch).tint(StrandPalette.accent)
+                .toggleStyle(NoopSwitchStyle()).tint(StrandPalette.accent)
                 Text("A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: it shows whether your 7-night HRV baseline sits above, inside, or below your personal normal band. It changes nothing else - the Charge ring is identical whether this is on or off. This is rough / early testing, not yet validated against varying real data (n=1).")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
