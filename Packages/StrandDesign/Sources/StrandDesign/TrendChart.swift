@@ -248,12 +248,12 @@ public struct TrendChart: View {
     public var body: some View {
         // Resolve against current data so the marker and readout never refer to a removed date.
         let currentSelection = selectedPoint.flatMap { selected in points.first { $0.date == selected.date } }
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
         if largeSelection {
             let point = currentSelection ?? points.last
-            VStack(alignment: .leading, spacing: 3) {
-                Text(point.map { dateFormat($0.date) } ?? "—").font(.headline)
-                Text(point.map { valueFormat($0.value) } ?? "—").font(.title2.bold()).monospacedDigit()
+            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                Text(point.map { dateFormat($0.date) } ?? "—").font(StrandFont.caption).lineLimit(1)
+                Text(point.map { valueFormat($0.value) } ?? "—").font(StrandFont.title2).monospacedDigit().lineLimit(1)
             }
             .foregroundStyle(StrandPalette.textPrimary)
         }

@@ -133,7 +133,7 @@ struct HeartMetricsView: View, Equatable {
         metricTile(.hrv, value: data(capturedAt)?.hrv.map { number($0.value) } ?? "—", unit: "ms", tint: StrandPalette.metricHRV) {
             plot(dailyPoints(data(capturedAt)?.hrvMonth ?? []), domain: monthDomain(capturedAt),
                  tint: StrandPalette.metricHRV, height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: false, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No recent HRV")
+                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: true, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No recent HRV")
             metricCaption(data(capturedAt)?.hrv, empty: "Needs overnight readings")
             if let count = data(capturedAt)?.hrvSavedDays, count > (data(capturedAt)?.hrvMonth.count ?? 0) {
                 Button("\(count.formatted()) saved days · View all") {
@@ -149,7 +149,7 @@ struct HeartMetricsView: View, Equatable {
                  tint: StrandPalette.metricSteps, style: .bars,
                  range: 0...max(1, (data(capturedAt)?.stepsWeek.map(\.value).max() ?? 0) * 1.1),
                  height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Seven-day steps preview; missing days have no bars", compact: false, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No recent steps")
+                 label: "Seven-day steps preview; missing days have no bars", compact: true, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No recent steps")
             metricCaption(data(capturedAt)?.steps, empty: "Today unavailable · 7d shown")
         }
     }
@@ -160,7 +160,7 @@ struct HeartMetricsView: View, Equatable {
             let history = vo2History(capturedAt)
             plot(history.points, domain: history.domain, tint: StrandPalette.metricVO2,
                  height: NoopMetrics.dashboardTileChartHeight,
-                 label: "VO₂ max preview; method and source changes remain gaps", compact: false, unit: "mL/kg/min", readings: data(capturedAt)?.vo2History ?? [], empty: "No recorded value yet")
+                 label: "VO₂ max preview; method and source changes remain gaps", compact: true, unit: "mL/kg/min", readings: data(capturedAt)?.vo2History ?? [], empty: "No recorded value yet")
             if let reading = data(capturedAt)?.vo2 { metricCaption(reading, empty: "") }
             else if let inputs = data(capturedAt)?.fitnessInputs {
                 Text(inputs.summary).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)

@@ -1,6 +1,9 @@
 #if !os(watchOS)
 import SwiftUI
 import Charts
+#if canImport(UIKit) && os(iOS)
+import UIKit
+#endif
 
 /// Coordinates chart gestures with ancestor navigation without adding a timer or a live data subscription.
 @MainActor public enum ChartScrubActivity {
@@ -25,40 +28,89 @@ public extension View {
     func chartInspectionAccessibility(_ data: [ChartScrubDatum], label: String) -> some View {
         modifier(ChartInspectionAccessibility(index: ChartScrubIndex(data), label: label))
     }
-    func chartInspection(_ data: [ChartScrubDatum], dateAxis: Bool = true, label: String = "Chart", tint: Color = StrandPalette.accent, dailyBuckets: Bool = false, readoutBelow: Bool = false) -> some View {
-        modifier(ChartInspectionModifier(data: data, dateAxis: dateAxis, label: label, tint: tint, dailyBuckets: dailyBuckets, readoutBelow: readoutBelow))
+    func chartInspection(_ data: [ChartScrubDatum], dateAxis: Bool = true, label: String = "Chart", tint: Color = StrandPalette.accent, dailyBuckets: Bool = false, readoutBelow _: Bool = false, compactReadout: Bool = false) -> some View {
+        modifier(ChartInspectionModifier(data: data, dateAxis: dateAxis, label: label, tint: tint, dailyBuckets: dailyBuckets, compactReadout: compactReadout))
     }
 }
 
 private struct ChartTouchScrubModifier: ViewModifier {
     let enabled: Bool
     let changed: (CGPoint?) -> Void
-    @State private var token = UUID()
-    @GestureState private var held = false
     func body(content: Content) -> some View {
         #if os(iOS)
-        content
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.3, maximumDistance: NoopMetrics.space2)
-                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .local))
-                .updating($held) { value, held, _ in
-                    if case .second(true, _) = value { held = true }
-                }
-                .onChanged { value in
-                    guard case .second(true, let drag) = value else { return }
-                    ChartScrubActivity.begin(token)
-                    if let drag {
-                        var transaction = Transaction(); transaction.disablesAnimations = true
-                        withTransaction(transaction) { changed(drag.location) }
-                    }
-                }
-                .onEnded { _ in ChartScrubActivity.end(token); changed(nil) }, including: enabled ? .all : .none)
-            .onChange(of: held) { active in if !active { ChartScrubActivity.end(token); changed(nil) } }
-            .onDisappear { ChartScrubActivity.end(token) }
+        content.overlay { ChartHoldSurface(enabled: enabled, changed: changed) }
         #else
         content
         #endif
     }
 }
+
+#if canImport(UIKit) && os(iOS)
+/// A single native hold recognizer never reserves an immediate drag from the enclosing scroll view.
+private struct ChartHoldSurface: UIViewRepresentable {
+    let enabled: Bool
+    let changed: (CGPoint?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(changed: changed) }
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+        view.isAccessibilityElement = false
+        let hold = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handle(_:)))
+        hold.minimumPressDuration = 0.3
+        hold.allowableMovement = NoopMetrics.space2
+        hold.cancelsTouchesInView = false
+        hold.delaysTouchesBegan = false
+        hold.delaysTouchesEnded = false
+        hold.delegate = context.coordinator
+        view.addGestureRecognizer(hold)
+        return view
+    }
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.changed = changed
+        view.isUserInteractionEnabled = enabled
+    }
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) { coordinator.finish() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var changed: (CGPoint?) -> Void
+        private let token = UUID()
+        private var active = false
+        private var origin: CGPoint?
+        init(changed: @escaping (CGPoint?) -> Void) { self.changed = changed }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+        @objc func handle(_ gesture: UILongPressGestureRecognizer) {
+            switch gesture.state {
+            case .began, .changed:
+                let point = gesture.location(in: gesture.view)
+                if gesture.state == .began { origin = point }
+                if let origin, gesture.state == .changed {
+                    let dx = abs(point.x - origin.x), dy = abs(point.y - origin.y)
+                    if dy > NoopMetrics.space2 && dy > dx {
+                        // Vertical intent belongs to the already-co-recognizing scroll pan.
+                        finish()
+                        gesture.isEnabled = false; gesture.isEnabled = true
+                        return
+                    }
+                }
+                if !active { active = true; ChartScrubActivity.begin(token) }
+                var transaction = Transaction(); transaction.disablesAnimations = true
+                withTransaction(transaction) { changed(point) }
+            case .ended, .cancelled, .failed: finish()
+            default: break
+            }
+        }
+        func finish() {
+            guard active else { return }
+            active = false
+            origin = nil
+            ChartScrubActivity.end(token)
+            changed(nil)
+        }
+    }
+}
+#endif
 
 private struct ChartInspectionModifier: ViewModifier {
     let data: [ChartScrubDatum]
@@ -66,22 +118,19 @@ private struct ChartInspectionModifier: ViewModifier {
     let label: String
     let tint: Color
     let dailyBuckets: Bool
-    let readoutBelow: Bool
-    @Environment(\.dynamicTypeSize) private var typeSize
+    let compactReadout: Bool
     let index: ChartScrubIndex
     @State private var selectedX: Double?
-    init(data: [ChartScrubDatum], dateAxis: Bool, label: String, tint: Color, dailyBuckets: Bool, readoutBelow: Bool) {
+    init(data: [ChartScrubDatum], dateAxis: Bool, label: String, tint: Color, dailyBuckets: Bool, compactReadout: Bool) {
         self.data = data; self.dateAxis = dateAxis; self.label = label; self.tint = tint; self.dailyBuckets = dailyBuckets
         self.index = ChartScrubIndex(data)
-        self.readoutBelow = readoutBelow
+        self.compactReadout = compactReadout
     }
     func body(content: Content) -> some View {
         let index = index
         let selection = selectedX.flatMap { x in
             return index.selection(at: x, exact: dailyBuckets)
         }
-        let inlineReadout = readoutBelow || typeSize.isAccessibilitySize
-        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
         content
             .chartOverlay { proxy in
                 GeometryReader { geometry in
@@ -101,11 +150,9 @@ private struct ChartInspectionModifier: ViewModifier {
                                         HighlightDot(color: tint).position(x: plot.minX + position, y: plot.minY + y)
                                     }
                                 }
-                                if !inlineReadout {
-                                    readout(selection)
-                                        .frame(maxWidth: min(geometry.size.width, NoopMetrics.detailSheetMinWidth / 2), alignment: .leading)
-                                        .allowsHitTesting(false)
-                                }
+                                readout(selection)
+                                    .frame(maxWidth: geometry.size.width, alignment: .leading)
+                                    .allowsHitTesting(false)
                             }
                         }
                     }
@@ -119,10 +166,6 @@ private struct ChartInspectionModifier: ViewModifier {
                     }
                 }
             }
-            if inlineReadout, let selection {
-                readout(selection).frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
             .accessibilityValue(selection.map { value in
@@ -133,7 +176,18 @@ private struct ChartInspectionModifier: ViewModifier {
             .accessibilityAction(named: Text("Clear selection")) { selectedX = nil }
             .onChange(of: data.map(\.id)) { _ in selectedX = nil }
     }
-    private func readout(_ selection: ChartScrubSelection) -> some View {
+    @ViewBuilder private func readout(_ selection: ChartScrubSelection) -> some View {
+        if compactReadout, let datum = selection.data.first {
+            HStack(spacing: NoopMetrics.space1) {
+                Text(datum.y.formatted(.number.precision(.fractionLength(0...1)))).font(StrandFont.captionNumber)
+                Spacer(minLength: NoopMetrics.space1)
+                Text(Date(timeIntervalSince1970: datum.x), format: .dateTime.month(.abbreviated).day())
+                    .font(StrandFont.caption)
+            }
+            .foregroundStyle(StrandPalette.textPrimary).lineLimit(1)
+            .padding(NoopMetrics.space1)
+            .background(StrandPalette.surfaceOverlay, in: RoundedRectangle(cornerRadius: NoopMetrics.space1))
+        } else {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             if selection.data.isEmpty {
                 Text("No recorded value").foregroundStyle(StrandPalette.textSecondary)
@@ -141,12 +195,13 @@ private struct ChartInspectionModifier: ViewModifier {
             } else if selection.isGap { Text("Gap · nearest recorded point").foregroundStyle(StrandPalette.textSecondary) }
             ForEach(selection.data) { datum in
                 Text(datum.value).font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textPrimary)
-                Text(datum.context).foregroundStyle(StrandPalette.textSecondary)
+                Text(datum.context).foregroundStyle(StrandPalette.textSecondary).lineLimit(2)
             }
         }
         .font(StrandFont.caption).fixedSize(horizontal: false, vertical: true)
         .padding(NoopMetrics.space2)
         .background(StrandPalette.surfaceOverlay, in: RoundedRectangle(cornerRadius: NoopMetrics.space2))
+        }
     }
     private func select(_ location: CGPoint?, proxy: ChartProxy, plot: CGRect) {
         guard let location, plot.contains(location) else { selectedX = nil; return }

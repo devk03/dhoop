@@ -443,6 +443,7 @@ public struct OverviewHRChart: View {
                 // what keeps zoom/pan untouched: an immediate drag exceeds the hold's max distance and
                 // still pans (ZoomPanModifier), pinch still zooms, double-tap still resets. `.subviews`
                 // masks the gesture entirely on the call sites that don't opt in.
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
                 .chartTouchScrub(enabled: touchScrub && showsHover) { location in
                     scrubEngaged = location != nil
                     hoverX = location.flatMap { plot.contains($0) ? $0.x : nil }
@@ -653,10 +654,9 @@ private struct ZoomPanModifier: ViewModifier {
         // host's scroll modifier (it owns the NSEvent monitor); here we wire pan + the double-tap reset.
         return AnyView(measured.gesture(drag).simultaneousGesture(doubleTapReset))
         #else
-        // #1342: mask the pan off while a scrub is engaged so a horizontal scrub no longer ALSO slides
-        // the window (the pan is `.simultaneous`, so it otherwise co-recognises alongside the scrub).
+        // A one-finger drag belongs to the page or the native chart hold recognizer on iOS.
+        // Pinch still zooms; date controls select the visible historical window.
         return AnyView(measured.gesture(magnify)
-            .simultaneousGesture(drag, including: scrubActive() ? .subviews : .all)
             .simultaneousGesture(doubleTapReset))
         #endif
     }

@@ -57,7 +57,7 @@ struct ProteinLogCard: View {
                             HeartDashboardProjection.date(row.day).map { TrendPoint(date: $0, value: row.value) }
                         }, domain: start...today.addingTimeInterval(86_400), range: 0...max(1, (rows.map(\.value).max() ?? 0) * 1.1),
                             tint: StrandPalette.metricProtein, style: .bars, height: NoopMetrics.dashboardTileChartHeight,
-                            label: "Protein logged over seven days; unlogged days have no bars", compact: false,
+                            label: "Protein logged over seven days; unlogged days have no bars", compact: true,
                             valueFormat: { "\($0.formatted()) g logged" })
                     }
                 }

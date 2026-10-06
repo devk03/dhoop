@@ -10,7 +10,8 @@ public struct DashboardChart: View {
     let range: ClosedRange<Double>
     let tint: Color
     let style: Style
-    let height: CGFloat
+    @ScaledMetric private var renderedHeight: CGFloat
+    @ScaledMetric(relativeTo: .caption) private var labelHeight = NoopMetrics.space5
     let label: String
     let dailyLabels: Bool
     let compact: Bool
@@ -26,7 +27,7 @@ public struct DashboardChart: View {
         self.points = points
         self.singletonSegments = Set(Dictionary(grouping: points, by: \.segment).filter { $0.value.count == 1 }.keys)
         self.domain = domain; self.range = range; self.tint = tint; self.style = style
-        self.height = height; self.label = label; self.dailyLabels = dailyLabels
+        self._renderedHeight = ScaledMetric(wrappedValue: height, relativeTo: .caption); self.label = label; self.dailyLabels = dailyLabels
         self.compact = compact
         self.inspectionData = inspectionData ?? points.map {
             ChartScrubDatum(id: "\($0.segment)|\($0.date.timeIntervalSince1970)", x: $0.date.timeIntervalSince1970,
@@ -39,6 +40,23 @@ public struct DashboardChart: View {
     }
 
     public var body: some View {
+        VStack(spacing: NoopMetrics.space1) {
+            chart
+                .frame(height: compact ? max(NoopMetrics.space5, renderedHeight - labelHeight - NoopMetrics.space1) : renderedHeight)
+            if compact {
+                HStack {
+                    Text(domain.lowerBound, format: .dateTime.month(.abbreviated).day())
+                    Spacer(minLength: NoopMetrics.space2)
+                    Text(domain.upperBound.addingTimeInterval(-1), format: .dateTime.month(.abbreviated).day())
+                }
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                .lineLimit(1).accessibilityHidden(true)
+                .frame(height: labelHeight)
+            }
+        }
+    }
+
+    private var chart: some View {
         Chart {
             ForEach(points) { point in
                 if style == .bars {
@@ -87,17 +105,16 @@ public struct DashboardChart: View {
         }
         .chartYAxis {
             if !compact {
-                AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { _ in
                     AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(StrandChartStyle.gridOpacity))
                     AxisValueLabel().foregroundStyle(StrandPalette.textSecondary).font(StrandFont.caption)
                 }
             }
         }
-        .frame(height: height)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(summary)
-        .chartInspection(inspectionData, label: label, tint: tint, dailyBuckets: style == .bars, readoutBelow: compact)
+        .chartInspection(inspectionData, label: label, tint: tint, dailyBuckets: style == .bars, compactReadout: compact)
     }
 
     private var summary: String {
