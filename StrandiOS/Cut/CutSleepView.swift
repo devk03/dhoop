@@ -15,6 +15,8 @@ struct CutSleepView: View {
     @State private var timelineSource = ""
     @State private var episodeSelection = ""
     @AppStorage("dhoop.sleep.appleComparisonSource") private var providerID = ""
+    @ScaledMetric(relativeTo: .title) private var ringDiameter = NoopMetrics.sleepGoalDiameter
+    @ScaledMetric(relativeTo: .title) private var ringNumberSize = NoopMetrics.sleepGoalNumber
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardTileNumber
     private var window: MetricDateWindow { selection.window(now: capturedAt) }
     private var result: SleepRangeSnapshot? {
@@ -51,16 +53,16 @@ struct CutSleepView: View {
             MetricRangeControl(selection: $selection, now: capturedAt)
             if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
             grid {
-                selectedDayCard("WHOOP", rows: whoop, tint: StrandPalette.metricPurple)
-                selectedDayCard(comparisonName, rows: apple, tint: StrandPalette.metricCyan)
+                selectedDayCard("WHOOP", rows: whoop, tint: StrandPalette.metricHRV)
+                selectedDayCard(comparisonName, rows: apple, tint: StrandPalette.metricSteps)
             }
             timelineCard
             NoopCard {
                 DisclosureGroup("Range averages & comparison") {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         grid {
-                            sourceCard("WHOOP", icon: "waveform.path", rows: whoop, detail: whoopMethod, tint: StrandPalette.metricPurple)
-                            sourceCard(comparisonName, icon: "bed.double", rows: apple, detail: comparisonDetail, tint: StrandPalette.metricCyan)
+                            sourceCard("WHOOP", icon: "waveform.path", rows: whoop, detail: whoopMethod, tint: StrandPalette.metricHRV)
+                            sourceCard(comparisonName, icon: "bed.double", rows: apple, detail: comparisonDetail, tint: StrandPalette.metricSteps)
                         }
                         comparisonSummary
                         if window.days != 1 && Set((whoop + apple).map(\.day)).count > 1 { trendCard }
@@ -117,8 +119,25 @@ struct CutSleepView: View {
         return NoopCard(padding: NoopMetrics.space3, tint: tint, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                 Text(title).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                Text(reading.map { sleepHM($0.total) } ?? "—").font(StrandFont.number(numberSize, weight: .semibold))
-                    .foregroundStyle(StrandPalette.textPrimary)
+                let goal = SleepDurationGoal(recordedMinutes: reading?.total)
+                ZStack {
+                    Circle().stroke(StrandPalette.textTertiary.opacity(0.2), lineWidth: NoopMetrics.sleepGoalStroke)
+                    Circle().trim(from: 0, to: goal.ringFraction)
+                        .stroke(tint, style: StrokeStyle(lineWidth: NoopMetrics.sleepGoalStroke, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    VStack(spacing: NoopMetrics.space1) {
+                        Text(goal.recordedMinutes.map(sleepHM) ?? "—")
+                            .font(StrandFont.number(ringNumberSize, weight: .semibold)).monospacedDigit()
+                        Text(goal.percentage.map { "\($0)% of goal" } ?? "No record")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    }.padding(NoopMetrics.space3)
+                }
+                .frame(width: ringDiameter, height: ringDiameter)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, NoopMetrics.space2)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(goal.recordedMinutes.map { "\(sleepHM($0)), \(goal.percentage ?? 0) percent of the 8 hour 15 minute duration goal" } ?? "No sleep duration recorded")
+                Text("Goal · 8h 15m").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 Text(selectedNight.map { "\(nightLabel($0)) · total sleep" } ?? "No sleep in range")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 Text(reading.map { title == "WHOOP" ? $0.method : "Via Apple Health" } ?? "No record for this date")
@@ -233,7 +252,7 @@ struct CutSleepView: View {
         .chartLegend(.hidden)
         .frame(height: typeSize.isAccessibilitySize ? NoopMetrics.dashboardTraceHeight * 2 : NoopMetrics.dashboardTraceHeight)
         .chartInspection(stageInspection(episode), label: "\(selectedSource == "whoop" ? "WHOOP" : comparisonName) sleep stages, \(episode.method), wake date \(episode.day)",
-            tint: StrandPalette.metricPurple, readoutBelow: true)
+            tint: StrandPalette.metricHRV, readoutBelow: true)
     }
     private func stageLevel(_ stage: SleepComparisonSample.Stage) -> Double {
         switch stage { case .awake: return 4; case .rem: return 3; case .core: return 2; case .deep: return 1; case .unspecified: return 0 }
@@ -330,8 +349,8 @@ struct CutSleepView: View {
                 if !pairs.isEmpty { Text("\(comparable.count) matched").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary) }
             }
             DashboardGridLayout(columns: typeSize >= .xxxLarge ? 1 : 2, squareMinimum: false) {
-                stageValue("WHOOP", values: left, maximum: maximum, tint: StrandPalette.metricPurple)
-                stageValue(comparisonName, values: right, maximum: maximum, tint: StrandPalette.metricCyan)
+                stageValue("WHOOP", values: left, maximum: maximum, tint: StrandPalette.metricHRV)
+                stageValue(comparisonName, values: right, maximum: maximum, tint: StrandPalette.metricSteps)
             }
         }
     }
@@ -358,26 +377,26 @@ struct CutSleepView: View {
                 Chart {
                     ForEach(whoopPoints) { p in
                         AreaMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment), stacking: .unstacked)
-                            .foregroundStyle(StrandChartStyle.area(StrandPalette.metricPurple)).interpolationMethod(.linear)
+                            .foregroundStyle(StrandChartStyle.area(StrandPalette.metricHRV)).interpolationMethod(.linear)
                             .alignsMarkStylesWithPlotArea()
                         LineMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment))
-                            .foregroundStyle(StrandPalette.metricPurple).interpolationMethod(.linear)
+                            .foregroundStyle(StrandPalette.metricHRV).interpolationMethod(.linear)
                             .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round))
                         if whoopPoints.count <= StrandChartStyle.sparsePointLimit || singletons.contains(p.segment) {
                             PointMark(x: .value("Date", p.date), y: .value("Hours", p.value))
-                                .foregroundStyle(StrandPalette.metricPurple).symbolSize(StrandChartStyle.pointArea)
+                                .foregroundStyle(StrandPalette.metricHRV).symbolSize(StrandChartStyle.pointArea)
                         }
                     }
                     ForEach(applePoints) { p in
                         AreaMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment), stacking: .unstacked)
-                            .foregroundStyle(StrandChartStyle.area(StrandPalette.metricCyan)).interpolationMethod(.linear)
+                            .foregroundStyle(StrandChartStyle.area(StrandPalette.metricSteps)).interpolationMethod(.linear)
                             .alignsMarkStylesWithPlotArea()
                         LineMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment))
-                            .foregroundStyle(StrandPalette.metricCyan).interpolationMethod(.linear)
+                            .foregroundStyle(StrandPalette.metricSteps).interpolationMethod(.linear)
                             .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round))
                         if applePoints.count <= StrandChartStyle.sparsePointLimit || singletons.contains(p.segment) {
                             PointMark(x: .value("Date", p.date), y: .value("Hours", p.value))
-                                .foregroundStyle(StrandPalette.metricCyan).symbolSize(StrandChartStyle.pointArea)
+                                .foregroundStyle(StrandPalette.metricSteps).symbolSize(StrandChartStyle.pointArea)
                         }
                     }
                 }
@@ -390,10 +409,10 @@ struct CutSleepView: View {
                 .frame(height: NoopMetrics.dashboardTraceHeight)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Sleep duration by date. WHOOP \(whoop.count) records, \(comparisonName) \(apple.count) records. Missing dates remain gaps.")
-                .chartInspection(sleepInspection, label: "WHOOP and \(comparisonName) sleep duration", tint: StrandPalette.metricCyan)
+                .chartInspection(sleepInspection, label: "WHOOP and \(comparisonName) sleep duration", tint: StrandPalette.metricSteps)
                 HStack(spacing: NoopMetrics.space3) {
-                    Label("WHOOP", systemImage: "circle.fill").foregroundStyle(StrandPalette.metricPurple)
-                    Label(comparisonName, systemImage: "circle.fill").foregroundStyle(StrandPalette.metricCyan)
+                    Label("WHOOP", systemImage: "circle.fill").foregroundStyle(StrandPalette.metricHRV)
+                    Label(comparisonName, systemImage: "circle.fill").foregroundStyle(StrandPalette.metricSteps)
                 }.font(StrandFont.caption)
             }
         }

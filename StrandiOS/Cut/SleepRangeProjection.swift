@@ -42,3 +42,15 @@ enum SleepRangeProjection {
         return Int(((angle < 0 ? angle + 2 * .pi : angle) / (2 * .pi) * 1440).rounded()) % 1440
     }
 }
+
+/// Personal duration target, independent of sleep staging or physiological quality scores.
+struct SleepDurationGoal: Equatable {
+    static let minutes: Double = 495
+    let recordedMinutes: Double?
+    init(recordedMinutes: Double?) {
+        self.recordedMinutes = recordedMinutes.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+    }
+    var fraction: Double? { recordedMinutes.map { $0 / Self.minutes } }
+    var ringFraction: Double { min(1, max(0, fraction ?? 0)) }
+    var percentage: Int? { fraction.map { Int(($0 * 100).rounded()) } }
+}

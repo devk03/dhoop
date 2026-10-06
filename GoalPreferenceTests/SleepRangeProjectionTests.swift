@@ -32,4 +32,16 @@ final class SleepRangeProjectionTests: XCTestCase {
         XCTAssertNil(SleepRangeProjection.clockMeanMinutes([0, 720]))
         XCTAssertNil(SleepRangeProjection.clockMeanMinutes([]))
     }
+    func testDurationGoalRetainsOverGoalAmountWithoutInventingMissingSleep() {
+        XCTAssertEqual(SleepDurationGoal(recordedMinutes: 495).percentage, 100)
+        XCTAssertEqual(SleepDurationGoal(recordedMinutes: 396).percentage, 80)
+        let longNight = SleepDurationGoal(recordedMinutes: 594)
+        XCTAssertEqual(longNight.percentage, 120)
+        XCTAssertEqual(longNight.ringFraction, 1)
+        XCTAssertNil(SleepDurationGoal(recordedMinutes: nil).percentage)
+        XCTAssertNil(SleepDurationGoal(recordedMinutes: .nan).recordedMinutes)
+        XCTAssertNil(SleepDurationGoal(recordedMinutes: -1).recordedMinutes)
+        XCTAssertEqual(SleepDurationGoal(recordedMinutes: 0).percentage, 0)
+    }
+
 }
