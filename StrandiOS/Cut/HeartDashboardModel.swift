@@ -52,10 +52,9 @@ final class HeartDashboardModel: ObservableObject {
         async let steps = repo.resolvedSteps(from: weekStart, to: day)
         async let vo2Estimates = repo.resolvedSeries(key: "vo2max_est", source: Repository.whoopSource, from: "0000-01-01", to: day)
         async let appleVo2 = repo.resolvedSeries(key: "vo2max", source: Repository.appleHealthSource, from: "0000-01-01", to: day)
-        let allHRV = HeartDashboardProjection.bounded(map((await hrvs).points), from: "0000-01-01", through: day)
-        // WHOOP nightly records take priority over Apple daily SDNN; those are different observations.
-        let nightlyHRV = allHRV.filter { $0.source != Repository.appleHealthSource }
-        let hrvRows = nightlyHRV.isEmpty ? allHRV : nightlyHRV
+        // The repository already prefers WHOOP per day and fills uncovered days from Apple Health.
+        // Preserve those dated sources; chart segmentation keeps SDNN and rMSSD disconnected.
+        let hrvRows = HeartDashboardProjection.bounded(map((await hrvs).points), from: "0000-01-01", through: day)
         let restingRows = map((await rests).points)
         let stepRows = HeartDashboardProjection.bounded(map((await steps).points), from: weekStart, through: day)
         let estimatePoints = (await vo2Estimates).points.filter { $0.day <= day && $0.value.isFinite && $0.value > 0 }

@@ -92,12 +92,18 @@ struct HeartMetricsView: View, Equatable {
     private var observationDetail: String {
         guard let observation else { return "Collection has not been checked yet" }
         let checked = Date(timeIntervalSince1970: observation.capturedAt).formatted(date: .abbreviated, time: .shortened)
-        guard let received = observation.lastLiveHRAt, received <= observation.capturedAt else { return "Checked \(checked) · No readable HR" }
+        guard let received = observation.lastLiveHRAt, received <= observation.capturedAt else {
+            if let stored = observation.latestStoredHR, Double(stored) <= observation.capturedAt {
+                let saved = Date(timeIntervalSince1970: Double(stored)).formatted(date: .abbreviated, time: .shortened)
+                return "Checked \(checked) · Saved HR through \(saved)"
+            }
+            return "Checked \(checked) · No live HR sample at this check"
+        }
         let age = observation.capturedAt - received
         let receipt: String
-        if age < 60 { receipt = "HR \(Int(age))s before check" }
-        else if age < 3600 { receipt = "HR \(Int(age / 60))m before check" }
-        else { receipt = "Last HR \(Date(timeIntervalSince1970: received).formatted(date: .abbreviated, time: .shortened))" }
+        if age < 60 { receipt = "Live HR \(Int(age))s before check" }
+        else if age < 3600 { receipt = "Live HR \(Int(age / 60))m before check" }
+        else { receipt = "Last live HR \(Date(timeIntervalSince1970: received).formatted(date: .abbreviated, time: .shortened))" }
         return "Checked \(checked) · \(receipt)"
     }
 
