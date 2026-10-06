@@ -28,8 +28,8 @@ public extension View {
     func chartInspectionAccessibility(_ data: [ChartScrubDatum], label: String) -> some View {
         modifier(ChartInspectionAccessibility(index: ChartScrubIndex(data), label: label))
     }
-    func chartInspection(_ data: [ChartScrubDatum], dateAxis: Bool = true, label: String = "Chart", tint: Color = StrandPalette.accent, dailyBuckets: Bool = false, readoutBelow _: Bool = false, compactReadout: Bool = false) -> some View {
-        modifier(ChartInspectionModifier(data: data, dateAxis: dateAxis, label: label, tint: tint, dailyBuckets: dailyBuckets, compactReadout: compactReadout))
+    func chartInspection(_ data: [ChartScrubDatum], dateAxis: Bool = true, label: String = "Chart", tint: Color = StrandPalette.accent, dailyBuckets: Bool = false, readoutBelow _: Bool = false, compactReadout: Bool = false, bucketUnit: Calendar.Component? = nil) -> some View {
+        modifier(ChartInspectionModifier(data: data, dateAxis: dateAxis, label: label, tint: tint, bucketUnit: bucketUnit ?? (dailyBuckets ? .day : nil), compactReadout: compactReadout))
     }
 }
 
@@ -117,19 +117,19 @@ private struct ChartInspectionModifier: ViewModifier {
     let dateAxis: Bool
     let label: String
     let tint: Color
-    let dailyBuckets: Bool
+    let bucketUnit: Calendar.Component?
     let compactReadout: Bool
     let index: ChartScrubIndex
     @State private var selectedX: Double?
-    init(data: [ChartScrubDatum], dateAxis: Bool, label: String, tint: Color, dailyBuckets: Bool, compactReadout: Bool) {
-        self.data = data; self.dateAxis = dateAxis; self.label = label; self.tint = tint; self.dailyBuckets = dailyBuckets
+    init(data: [ChartScrubDatum], dateAxis: Bool, label: String, tint: Color, bucketUnit: Calendar.Component?, compactReadout: Bool) {
+        self.data = data; self.dateAxis = dateAxis; self.label = label; self.tint = tint; self.bucketUnit = bucketUnit
         self.index = ChartScrubIndex(data)
         self.compactReadout = compactReadout
     }
     func body(content: Content) -> some View {
         let index = index
         let selection = selectedX.flatMap { x in
-            return index.selection(at: x, exact: dailyBuckets)
+            return index.selection(at: x, bucketUnit: bucketUnit)
         }
         content
             .chartOverlay { proxy in
@@ -139,8 +139,8 @@ private struct ChartInspectionModifier: ViewModifier {
                         Color.clear.contentShape(Rectangle())
                         if let selection {
                             let rawDate = Date(timeIntervalSince1970: selection.x)
-                            let bucketEnd = Calendar.current.date(byAdding: .day, value: 1, to: rawDate) ?? rawDate
-                            let markerDate = dailyBuckets ? rawDate.addingTimeInterval(bucketEnd.timeIntervalSince(rawDate) / 2) : rawDate
+                            let bucketEnd = Calendar.current.date(byAdding: bucketUnit ?? .day, value: 1, to: rawDate) ?? rawDate
+                            let markerDate = bucketUnit != nil ? rawDate.addingTimeInterval(bucketEnd.timeIntervalSince(rawDate) / 2) : rawDate
                             let position = dateAxis ? proxy.position(forX: markerDate) : proxy.position(forX: selection.x)
                             if let rawPosition = position {
                                 let position = min(plot.width, max(0, rawPosition))
@@ -169,7 +169,7 @@ private struct ChartInspectionModifier: ViewModifier {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(label)
             .accessibilityValue(selection.map { value in
-                value.data.isEmpty ? "No recorded value on \(Date(timeIntervalSince1970: value.x).formatted(date: .abbreviated, time: .omitted))" : (value.isGap ? "Gap. Nearest recorded point. " : "") + value.data.map { "\($0.value), \($0.context)" }.joined(separator: ". ")
+                value.data.isEmpty ? "No recorded value on \(Date(timeIntervalSince1970: value.x).formatted(date: .abbreviated, time: bucketUnit == .hour ? .shortened : .omitted))" : (value.isGap ? "Gap. Nearest recorded point. " : "") + value.data.map { "\($0.value), \($0.context)" }.joined(separator: ". ")
             } ?? "\(index.positions.count) recorded positions. Adjust to inspect values.")
             .accessibilityHint("Touch and hold, then drag to inspect. With VoiceOver, swipe up or down through recorded points.")
             .accessibilityAdjustableAction { direction in selectedX = index.adjacent(to: selectedX, forward: direction == .increment) }
@@ -191,7 +191,7 @@ private struct ChartInspectionModifier: ViewModifier {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             if selection.data.isEmpty {
                 Text("No recorded value").foregroundStyle(StrandPalette.textSecondary)
-                Text(Date(timeIntervalSince1970: selection.x).formatted(date: .abbreviated, time: .omitted))
+                Text(Date(timeIntervalSince1970: selection.x).formatted(date: .abbreviated, time: bucketUnit == .hour ? .shortened : .omitted))
             } else if selection.isGap { Text("Gap · nearest recorded point").foregroundStyle(StrandPalette.textSecondary) }
             ForEach(selection.data) { datum in
                 Text(datum.value).font(StrandFont.captionNumber).foregroundStyle(StrandPalette.textPrimary)
@@ -208,7 +208,7 @@ private struct ChartInspectionModifier: ViewModifier {
         let relative = location.x - plot.minX
         if dateAxis {
             let date = proxy.value(atX: relative) as Date?
-            selectedX = date.map { (dailyBuckets ? Calendar.current.startOfDay(for: $0) : $0).timeIntervalSince1970 }
+            selectedX = date.map { $0.timeIntervalSince1970 }
         }
         else { selectedX = proxy.value(atX: relative) as Double? }
     }

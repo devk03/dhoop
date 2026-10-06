@@ -2,6 +2,20 @@ import XCTest
 @testable import StrandDesign
 
 final class ChartScrubIndexTests: XCTestCase {
+    func testHourlyInspectionStaysInTouchedHourAndDoesNotFillMissingHours() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let index = ChartScrubIndex([
+            ChartScrubDatum(id: "nine", x: 9 * 3600, y: 100, value: "100 steps", context: "9 AM"),
+            ChartScrubDatum(id: "ten", x: 10 * 3600, y: 200, value: "200 steps", context: "10 AM")
+        ])
+        let nineFifty = try XCTUnwrap(index.selection(at: 9 * 3600 + 50 * 60, bucketUnit: .hour, calendar: calendar))
+        XCTAssertEqual(nineFifty.data.first?.id, "nine")
+        let missing = try XCTUnwrap(index.selection(at: 11 * 3600 + 20 * 60, bucketUnit: .hour, calendar: calendar))
+        XCTAssertTrue(missing.data.isEmpty)
+        XCTAssertTrue(missing.isGap)
+    }
+
     private func point(_ x: Double, _ y: Double, series: String = "hr", segment: String = "a") -> ChartScrubDatum {
         ChartScrubDatum(id: "\(series)-\(x)", x: x, y: y, value: String(y), context: "Recorded at \(x)", series: series, segment: segment)
     }

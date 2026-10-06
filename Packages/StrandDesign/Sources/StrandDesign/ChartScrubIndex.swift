@@ -31,6 +31,12 @@ public struct ChartScrubIndex {
         bySeries = Dictionary(grouping: data.filter { $0.x.isFinite && $0.y.isFinite }, by: \.series)
             .mapValues { $0.sorted { $0.x < $1.x } }
     }
+    public func selection(at x: Double, bucketUnit: Calendar.Component?, calendar: Calendar = .current) -> ChartScrubSelection? {
+        guard let bucketUnit else { return selection(at: x) }
+        guard x.isFinite, let interval = calendar.dateInterval(of: bucketUnit, for: Date(timeIntervalSince1970: x)) else { return nil }
+        return selection(at: interval.start.timeIntervalSince1970, exact: true)
+    }
+
     public func selection(at x: Double, exact: Bool = false) -> ChartScrubSelection? {
         guard x.isFinite, !positions.isEmpty else { return nil }
         if exact { return ChartScrubSelection(x: x, data: groups[x] ?? [], isGap: groups[x] == nil) }
