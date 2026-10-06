@@ -115,7 +115,7 @@ struct RootTabView: View {
         TabView(selection: nativeTabSelection) {
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(CutSleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
-            tab(runningTabRoot, "Cardio", "heart.fill", path: $tabPaths[5], scrollSignal: scrollTop[5]).tag(5)
+            tab(runningTabRoot, "Exercises", "figure.run", path: $tabPaths[5], scrollSignal: scrollTop[5]).tag(5)
         }
         .tint(StrandPalette.accent)
         .onAppear { if runningSession == nil { runningSession = RunningSessionController() } }

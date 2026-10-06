@@ -37,7 +37,7 @@ private struct RunningContent: View, Equatable {
                             Image(systemName: "arrow.left").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
                         }.accessibilityLabel("Back to training")
                     }
-                    Text(section == "Train" ? "Cardio" : section).font(StrandFont.title1)
+                    Text(section == "Train" ? "Exercises" : section).font(StrandFont.title1)
                     Spacer(minLength: 0)
                     if section == "Train" {
                         Button("History") { section = "History" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
