@@ -26,6 +26,14 @@ struct SleepComparisonProvider: Identifiable, Sendable {
     let name: String
     let detail: String
     let days: [SleepComparisonDay]
+
+    var isEightSleep: Bool {
+        let normalizedName = name.lowercased().filter { $0.isLetter || $0.isNumber }
+        let normalizedID = id.lowercased().filter { $0.isLetter || $0.isNumber }
+        return normalizedName.contains("eightsleep") || normalizedName.contains("8sleep")
+            || normalizedID.contains("eightsleep") || normalizedID.contains("8sleep")
+    }
+    var displayName: String { isEightSleep ? "8sleep" : name }
 }
 
 /// Presentation-only source partitions and interval unions; no persisted sleep score is changed.

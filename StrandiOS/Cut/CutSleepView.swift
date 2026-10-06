@@ -21,7 +21,12 @@ struct CutSleepView: View {
     private var whoop: [SleepComparisonDay] { result?.whoop ?? [] }
     private var appleProvider: SleepComparisonProvider? {
         let choices = result?.apple ?? []
-        return choices.first { $0.id == providerID } ?? choices.first { $0.name.localizedCaseInsensitiveContains("eight sleep") } ?? choices.first
+        return choices.first { $0.id == providerID } ?? choices.first { $0.isEightSleep } ?? choices.first
+    }
+    private var comparisonName: String { appleProvider?.displayName ?? "8sleep" }
+    private var comparisonDetail: String {
+        guard let provider = appleProvider else { return "No readable sleep" }
+        return provider.isEightSleep ? "Via Apple Health" : provider.detail
     }
     private var apple: [SleepComparisonDay] { appleProvider?.days ?? [] }
     private var pairs: [SleepComparisonProjection.Pair] { SleepComparisonProjection.matched(whoop, apple) }
@@ -44,11 +49,11 @@ struct CutSleepView: View {
             if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
             grid {
                 sourceCard("WHOOP", icon: "waveform.path", rows: whoop, detail: whoopMethod, tint: StrandPalette.metricPurple)
-                sourceCard("Apple Health", icon: "heart.fill", rows: apple, detail: appleProvider?.name ?? "No readable sleep", tint: StrandPalette.metricCyan)
+                sourceCard(comparisonName, icon: "bed.double", rows: apple, detail: comparisonDetail, tint: StrandPalette.metricCyan)
             }
             if let result, result.apple.count > 1 {
-                Picker("Apple sleep source", selection: Binding(get: { appleProvider?.id ?? "" }, set: { providerID = $0 })) {
-                    ForEach(result.apple) { Text($0.name).tag($0.id) }
+                Picker("Comparison sleep source", selection: Binding(get: { appleProvider?.id ?? "" }, set: { providerID = $0 })) {
+                    ForEach(result.apple) { Text($0.displayName).tag($0.id) }
                 }.pickerStyle(.menu).font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
             }
             comparisonSummary
@@ -98,7 +103,7 @@ struct CutSleepView: View {
                 VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                     if let difference = SleepComparisonProjection.mean(pairs.map { abs($0.apple.total - $0.whoop.total) }), !pairs.isEmpty {
                         let signed = pairs.reduce(0.0) { $0 + $1.apple.total - $1.whoop.total } / Double(pairs.count)
-                        Text(abs(signed) < 0.5 ? "Same average sleep duration" : "Apple recorded \(sleepHM(abs(signed))) \(signed > 0 ? "more" : "less")")
+                        Text(abs(signed) < 0.5 ? "Same average sleep duration" : "\(comparisonName) recorded \(sleepHM(abs(signed))) \(signed > 0 ? "more" : "less")")
                             .font(StrandFont.headline)
                         Text("\(pairs.count) matched \(pairs.count == 1 ? "date" : "dates")\(pairs.count > 1 ? " · average difference" : "")")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -144,7 +149,7 @@ struct CutSleepView: View {
             }
             DashboardGridLayout(columns: typeSize >= .xxxLarge ? 1 : 2, squareMinimum: false) {
                 stageValue("WHOOP", values: left, maximum: maximum, tint: StrandPalette.metricPurple)
-                stageValue("Apple", values: right, maximum: maximum, tint: StrandPalette.metricCyan)
+                stageValue(comparisonName, values: right, maximum: maximum, tint: StrandPalette.metricCyan)
             }
         }
     }
@@ -202,11 +207,11 @@ struct CutSleepView: View {
                 .chartPlotStyle { $0.clipped() }
                 .frame(height: NoopMetrics.dashboardTraceHeight)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Sleep duration by date. WHOOP \(whoop.count) records, Apple \(apple.count) records. Missing dates remain gaps.")
-                .chartInspection(sleepInspection, label: "WHOOP and Apple sleep duration", tint: StrandPalette.metricCyan)
+                .accessibilityLabel("Sleep duration by date. WHOOP \(whoop.count) records, \(comparisonName) \(apple.count) records. Missing dates remain gaps.")
+                .chartInspection(sleepInspection, label: "WHOOP and \(comparisonName) sleep duration", tint: StrandPalette.metricCyan)
                 HStack(spacing: NoopMetrics.space3) {
                     Label("WHOOP", systemImage: "circle.fill").foregroundStyle(StrandPalette.metricPurple)
-                    Label("Apple Health", systemImage: "circle.fill").foregroundStyle(StrandPalette.metricCyan)
+                    Label(comparisonName, systemImage: "circle.fill").foregroundStyle(StrandPalette.metricCyan)
                 }.font(StrandFont.caption)
             }
         }
@@ -219,7 +224,7 @@ struct CutSleepView: View {
                 guard let date = HeartDashboardProjection.date(row.day) else { return nil }
                 if let previous, date.timeIntervalSince(previous.date) > 90_000 || previous.source != row.sourceID { segment += 1 }
                 previous = (date, row.sourceID)
-                let source = index == 0 ? "WHOOP · \(row.method)" : "Apple · \(appleProvider?.name ?? "Health")"
+                let source = index == 0 ? "WHOOP · \(row.method)" : "\(comparisonName) · via Apple Health"
                 return ChartScrubDatum(id: "\(index)|\(row.sourceID)|\(row.day)", x: date.timeIntervalSince1970, y: row.total / 60,
                     value: "\(source): \(sleepHM(row.total))", context: date.formatted(date: .abbreviated, time: .omitted), series: String(index), segment: String(segment))
             }
@@ -237,10 +242,10 @@ struct CutSleepView: View {
         NoopCard {
             DisclosureGroup("About this comparison") {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    Text("WHOOP records and Dhoop estimates stay separate from Apple Health. Dhoop estimates are local algorithms, not WHOOP's official sleep scores. Computed records without recorded WHOOP input provenance are excluded.")
+                    Text("WHOOP records and Dhoop estimates stay separate from \(comparisonName) sleep received via Apple Health. Dhoop estimates are local algorithms, not WHOOP's official sleep scores. Computed records without recorded WHOOP input provenance are excluded.")
                     Text("Apple providers are kept separate and overlapping samples from one provider count once. Nearby stage fragments form a sleep period; totals include recorded sleep periods ending on that date, including naps. Awake gaps are not filled. Unknown or conflicting stages stay unclassified.")
                     Text("Dates can match while devices disagree on sleep boundaries. Differences show agreement, not which device is physiologically correct. Older saved Apple totals may combine providers and use segment-end dates.")
-                    if let provider = appleProvider { Text("Apple source: \(provider.name)\n\(provider.detail)").textSelection(.enabled) }
+                    if let provider = appleProvider { Text("HealthKit source: \(provider.name)\n\(provider.detail)").textSelection(.enabled) }
                     Text("WHOOP sources: \(Set(whoop.map(\.sourceID)).sorted().joined(separator: ", "))")
                 }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).padding(.top, NoopMetrics.space2)
             }.font(StrandFont.subhead)
