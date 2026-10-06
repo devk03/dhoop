@@ -128,9 +128,13 @@ struct HeartMetricsView: View, Equatable {
             let upper = max(lower.addingTimeInterval(1), snapshot?.through ?? capturedAt)
             plot(snapshot?.measuredHR ?? [], domain: lower...upper, tint: StrandPalette.liquidHeart,
                  height: NoopMetrics.dashboardTrendHeight, label: "Saved heart-rate preview, one-minute averages with gaps", compact: true, unit: "bpm",
-                 empty: snapshot == nil ? "Loading history…" : "No saved readings")
-            Text(snapshot.map { "\($0.hrSampleCount.formatted()) saved readings" } ?? "Reading stored history…")
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                 empty: snapshot == nil ? "Loading history…" : snapshot?.hrReadError != nil ? "Heart-rate history unavailable" : "No saved readings today")
+            if let error = snapshot?.hrReadError {
+                Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+            } else {
+                Text(snapshot?.hrSampleCount.map { "\($0.formatted()) saved readings today" } ?? "Reading stored history…")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
             InlineHeartRateCapture(expectedDeviceId: deviceId, enabled: expandedMetric == nil)
             }
         }
@@ -147,7 +151,7 @@ struct HeartMetricsView: View, Equatable {
             metricCaption(data(capturedAt)?.hrv, empty: "Needs R–R and sleep data")
             plot(dailyPoints(data(capturedAt)?.hrvMonth ?? []), domain: monthDomain(capturedAt),
                  tint: StrandPalette.metricCyan, height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: true, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No HRV history")
+                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: true, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No HRV records in the last 30 days")
         }
     }
 
@@ -159,7 +163,7 @@ struct HeartMetricsView: View, Equatable {
                  tint: StrandPalette.metricCyan, style: .bars,
                  range: 0...max(1, (data(capturedAt)?.stepsWeek.map(\.value).max() ?? 0) * 1.1),
                  height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Seven-day steps preview; missing days have no bars", compact: true, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No steps history")
+                 label: "Seven-day steps preview; missing days have no bars", compact: true, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No steps records in the last 7 days")
         }
     }
 

@@ -99,4 +99,63 @@ final class MetricRangeProjectionTests: XCTestCase {
         XCTAssertEqual(MetricRangeProjection.weightedMean([(120, 2), (100, 1)])!, 220.0 / 3.0, accuracy: 0.000001)
         XCTAssertNil(MetricRangeProjection.weightedMean([]))
     }
+    func testMeasuredHRStaysFirstAndNeverSharesAverageWithStoredDailyHistory() {
+        let groups = MetricRangeProjection.groups([
+            reading("2026-03-04", 60, key: "measuredHR"),
+            reading("2026-03-05", 100, key: "measuredHR"),
+            reading("2026-03-08", 65, source: "my-whoop", key: "avg_hr"),
+            reading("2026-03-10", 75, source: "my-whoop", key: "avg_hr")
+        ], window: window, separateMethods: true)
+        XCTAssertEqual(groups.count, 2)
+        XCTAssertTrue(groups[0].isMeasuredHeartRate, "The headline and first chart must describe measured samples when present")
+        XCTAssertEqual(groups[0].readings.map(\.day), ["2026-03-04", "2026-03-05"])
+        let measuredMean = MetricRangeProjection.weightedMean([(120, 2), (100, 1)])
+        XCTAssertEqual(groups[0].displayedMean(sampleWeightedHR: measuredMean)!, 220.0 / 3.0, accuracy: 0.000001)
+        XCTAssertEqual(groups[1].displayedMean(sampleWeightedHR: measuredMean), 70)
+        XCTAssertEqual(groups[1].readings.map(\.value), [65, 75], "Stored daily averages remain daily chart points")
+        XCTAssertNil(groups[0].displayedMean(sampleWeightedHR: nil), "Unavailable measured totals must not silently use day weights")
+    }
+
+    func testImportedDailyHRAloneHasADayWeightedAverageWithoutRawSamples() {
+        let groups = MetricRangeProjection.groups([
+            reading("2026-03-04", 60, source: "my-whoop", key: "avg_hr"),
+            reading("2026-03-10", 80, source: "my-whoop", key: "avg_hr")
+        ], window: window, separateMethods: true)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertFalse(groups[0].isMeasuredHeartRate)
+        XCTAssertEqual(groups[0].displayedMean(sampleWeightedHR: nil), 70)
+    }
+
+    func testAvailabilityCountsHiddenDaysAcrossSourcesWithoutBroadeningTheSelectedRange() {
+        let rows = [
+            reading("2026-03-01", 40, key: "hrv"),
+            reading("2026-03-01", 80, source: "apple-health", key: "hrv"),
+            reading("2026-03-03", 50, key: "hrv"),
+            reading("2026-03-05", 60, key: "hrv"),
+            reading("2026-03-11", 70, key: "hrv"),
+            reading("2026-03-13", 80, key: "hrv"),
+            reading("2026-02-30", 80, key: "hrv"),
+            reading("2026-02-28", .nan, key: "hrv"),
+            reading("2026-02-27", 0, key: "hrv")
+        ]
+        let available = MetricRangeProjection.availability(rows, window: window, through: "2026-03-12")
+        XCTAssertEqual(available, MetricHistoryAvailability(earlierDays: 2, laterDays: 1,
+            firstDay: "2026-03-01", lastDay: "2026-03-11"))
+        XCTAssertTrue(available.hasHiddenDays)
+        let selected = MetricRangeProjection.groups(rows, window: window, separateMethods: true)
+        XCTAssertEqual(selected.flatMap(\.readings).map(\.day), ["2026-03-05"])
+        var selection = MetricRangeSelection(now: date(12)); selection.preset = .all
+        let all = selection.window(now: date(12), calendar: calendar)
+        XCTAssertFalse(MetricRangeProjection.availability(rows, window: all, through: "2026-03-12").hasHiddenDays)
+        XCTAssertFalse(MetricRangeProjection.availability([], window: window, through: "2026-03-12").hasHiddenDays)
+    }
+
+    func testAvailabilityIncludesRecordedZeroStepsButNotNegativeValues() {
+        let available = MetricRangeProjection.availability([
+            reading("2026-03-01", 0), reading("2026-03-02", -1)
+        ], window: window, through: "2026-03-10", allowZero: true)
+        XCTAssertEqual(available.earlierDays, 1)
+        XCTAssertEqual(available.firstDay, "2026-03-01")
+    }
+
 }

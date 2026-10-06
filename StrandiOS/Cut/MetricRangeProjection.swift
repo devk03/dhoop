@@ -76,10 +76,37 @@ struct MetricAverageGroup: Identifiable {
     let id: String
     let readings: [DashboardDailyReading]
     var mean: Double { readings.reduce(0) { $0 + $1.value } / Double(readings.count) }
+    var isMeasuredHeartRate: Bool { readings.first?.key == "measuredHR" }
+    func displayedMean(sampleWeightedHR: Double?) -> Double? {
+        isMeasuredHeartRate ? sampleWeightedHR : mean
+    }
+}
+
+struct MetricHistoryAvailability: Equatable {
+    let earlierDays: Int
+    let laterDays: Int
+    let firstDay: String?
+    let lastDay: String?
+    var hasHiddenDays: Bool { earlierDays > 0 || laterDays > 0 }
 }
 
 /// Missing days never add zero; incompatible methods never acquire a shared average.
 enum MetricRangeProjection {
+    /// Count recorded calendar days, not sources, so overlapping methods do not inflate coverage.
+    static func availability(_ readings: [DashboardDailyReading], window: MetricDateWindow,
+                             through day: String, allowZero: Bool = false) -> MetricHistoryAvailability {
+        let days = Set(readings.filter {
+            $0.day <= day && valid($0, allowZero: allowZero)
+        }.map(\.day)).sorted()
+        return MetricHistoryAvailability(earlierDays: days.filter { $0 < window.fromDay }.count,
+            laterDays: days.filter { $0 > window.toDay }.count, firstDay: days.first, lastDay: days.last)
+    }
+
+    private static func valid(_ row: DashboardDailyReading, allowZero: Bool) -> Bool {
+        HeartDashboardProjection.date(row.day) != nil && row.value.isFinite
+            && (allowZero ? row.value >= 0 : row.value > 0)
+    }
+
     static func weightedMean(_ days: [(sum: Double, count: Int)]) -> Double? {
         let valid = days.filter { $0.count > 0 && $0.sum.isFinite && $0.sum >= 0 }
         let count = valid.reduce(0) { $0 + $1.count }
@@ -91,13 +118,13 @@ enum MetricRangeProjection {
                        separateMethods: Bool, allowZero: Bool = false) -> [MetricAverageGroup] {
         var groups: [String: [String: DashboardDailyReading]] = [:]
         for row in readings where row.day >= window.fromDay && row.day <= window.toDay
-            && HeartDashboardProjection.date(row.day) != nil
-            && row.value.isFinite && (allowZero ? row.value >= 0 : row.value > 0) {
+            && valid(row, allowZero: allowZero) {
             let key = separateMethods ? "\(row.source)|\(row.key)|\(row.method ?? "unknown")" : "combined"
             if groups[key]?[row.day] == nil { groups[key, default: [:]][row.day] = row }
         }
         return groups.map { MetricAverageGroup(id: $0.key, readings: $0.value.values.sorted { $0.day < $1.day }) }
             .sorted { lhs, rhs in
+                if lhs.isMeasuredHeartRate != rhs.isMeasuredHeartRate { return lhs.isMeasuredHeartRate }
                 let l = lhs.readings.last!.day, r = rhs.readings.last!.day
                 return l == r ? lhs.id < rhs.id : l > r
             }

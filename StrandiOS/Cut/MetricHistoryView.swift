@@ -31,11 +31,11 @@ struct MetricHistoryView: View {
                         if let result {
                             Text(window.coverage(result.groups.first?.readings.count ?? 0))
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            if metric == .heartRate {
+                            if result.groups.first?.isMeasuredHeartRate == true {
                                 Text("\(result.hrCount.formatted()) measured readings · sample-weighted average")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             } else if let group = result.groups.first {
-                                Text(source(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                Text(groupDescription(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
                             rangeChart(result.groups.first?.readings ?? [])
                             if history.isRefreshing { ProgressView("Updating saved history…").font(StrandFont.caption) }
@@ -49,17 +49,37 @@ struct MetricHistoryView: View {
                         }
                     }
                 }
-                if let result, result.groups.count > 1 {
-                    NoopCard {
-                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                            Text("Other methods in this range").font(StrandFont.headline)
-                            ForEach(result.groups.dropFirst()) { group in
-                                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                    Text("\(formatted(group.mean)) \(metric.unit)").font(StrandFont.bodyNumber)
-                                    Text("\(source(group)) · \(window.coverage(group.readings.count))")
+                if let result {
+                    ForEach(result.groups.dropFirst()) { group in
+                        NoopCard(tint: tint) {
+                            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                                Text(groupDescription(group)).font(StrandFont.headline).foregroundStyle(tint)
+                                metricValue(group.displayedMean(sampleWeightedHR: result.hrMean))
+                                Text(window.coverage(group.readings.count))
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                rangeChart(group.readings)
+                            }
+                        }
+                    }
+                    if result.availability.hasHiddenDays {
+                        NoopCard {
+                            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                                Text("More saved history").font(StrandFont.headline)
+                                if result.availability.earlierDays > 0 {
+                                    Text("\(result.availability.earlierDays.formatted()) recorded days before this range")
                                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                                 }
-                                .accessibilityElement(children: .combine)
+                                if result.availability.laterDays > 0 {
+                                    Text("\(result.availability.laterDays.formatted()) recorded days after this range")
+                                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                }
+                                if let first = result.availability.firstDay, let last = result.availability.lastDay {
+                                    Text("Saved dates: \(dateLabel(first)) – \(dateLabel(last))")
+                                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                }
+                                Button("Show all history") { selection.preset = .all }
+                                    .font(StrandFont.subhead)
+                                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
                             }
                         }
                     }
@@ -75,7 +95,7 @@ struct MetricHistoryView: View {
                         .accessibilityElement(children: .combine)
                     }
                 }
-                Text(metric == .heartRate ? "Only recorded measurements contribute. Missing intervals are not filled. The trend shows daily averages." : metric == .steps ? "Unrecorded days are excluded." : "Unrecorded days are excluded. Different methods are averaged separately.")
+                Text(metric == .heartRate ? "Measured samples use a sample-weighted average. Stored daily averages use equal weight per recorded day and stay separate. Missing intervals are not filled." : metric == .steps ? "Unrecorded days are excluded." : "Unrecorded days are excluded. Different methods are averaged separately.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 if window.toDay == Repository.localDayKey(referenceDate) {
                     Text("Includes today’s partial data.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -98,6 +118,12 @@ struct MetricHistoryView: View {
             Text(metric.unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
         .accessibilityElement(children: .combine)
+    }
+    private func dateLabel(_ day: String) -> String {
+        HeartDashboardProjection.date(day)?.formatted(date: .abbreviated, time: .omitted) ?? day
+    }
+    private func groupDescription(_ group: MetricAverageGroup) -> String {
+        metric == .heartRate && !group.isMeasuredHeartRate ? "\(source(group)) · day-weighted average" : source(group)
     }
     private func source(_ group: MetricAverageGroup) -> String {
         let sources = Set(group.readings.map(HeartDashboardModel.source)).sorted()

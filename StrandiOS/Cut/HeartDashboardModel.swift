@@ -9,7 +9,8 @@ struct HeartDashboardSnapshot {
     let calendarDay: String
     let historyDay: String
     let averageHR: Double?
-    let hrSampleCount: Int
+    let hrSampleCount: Int?
+    let hrReadError: String?
     let fromDay: Date
     let through: Date
     let measuredHR: [TrendPoint]
@@ -72,25 +73,26 @@ final class HeartDashboardModel: ObservableObject {
             vo2ByDay[point.day] = DashboardDailyReading(day: point.day, value: point.value, source: point.source, key: point.sourceKey)
         }
         let vo2Rows = vo2ByDay.values.sorted { $0.day < $1.day }
-        let raw: [TrendPoint]
-        let summary: HistoricalHeartRateSummary
+        var raw: [TrendPoint] = []
+        var summary: HistoricalHeartRateSummary?
+        var hrReadError: String?
         do {
             let samples = try await rawHR
-            summary = await Task.detached(priority: .userInitiated) {
+            let measured = await Task.detached(priority: .userInitiated) {
                 HistoricalHeartRateProjection.summarize(samples.map { DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm)) },
                     from: historyStart.timeIntervalSince1970, through: historyEnd.timeIntervalSince1970)
             }.value
-            raw = summary.readings.map {
+            summary = measured
+            raw = measured.readings.map {
                 TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.averageBPM, segment: $0.segment)
             }
         } catch {
             guard generation == self.generation, id == repo.deviceId else { return }
-            self.error = "Stored heart rate could not be read: \(error.localizedDescription)"
-            return
+            hrReadError = "Stored heart rate could not be read: \(error.localizedDescription)"
         }
         guard generation == self.generation, !Task.isCancelled, id == repo.deviceId,
               day == Repository.localDayKey(Date()) else { return }
-        self.data = HeartDashboardSnapshot(deviceId: id, calendarDay: day, historyDay: historyDay, averageHR: summary.averageBPM, hrSampleCount: summary.sampleCount, fromDay: historyStart, through: historyEnd,
+        self.data = HeartDashboardSnapshot(deviceId: id, calendarDay: day, historyDay: historyDay, averageHR: summary?.averageBPM, hrSampleCount: summary?.sampleCount, hrReadError: hrReadError, fromDay: historyStart, through: historyEnd,
             measuredHR: raw,
             hrv: HeartDashboardProjection.latest(hrvRows, through: day),
             hrvMonth: HeartDashboardProjection.bounded(hrvRows, from: monthStart, through: day),
@@ -105,6 +107,12 @@ final class HeartDashboardModel: ObservableObject {
     }
 
     static func source(_ reading: DashboardDailyReading) -> String {
+        if reading.key == "measuredHR" { return "Measured WHOOP samples" }
+        if reading.key == "avg_hr" {
+            let provider = reading.source == Repository.appleHealthSource ? "Apple Health"
+                : reading.source.hasSuffix("-noop") ? "On-device" : "WHOOP record"
+            return "\(provider) · stored daily HR average"
+        }
         if reading.key == "vo2max_est" {
             let method = vo2MaxEstimatorDisplayName(reading.method.flatMap(Vo2MaxEstimator.init(rawValue:)))
             return "Estimated · \(method)"
