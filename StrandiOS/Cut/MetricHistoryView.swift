@@ -2,6 +2,9 @@ import SwiftUI
 import StrandDesign
 
 struct MetricHistoryView: View {
+    @EnvironmentObject private var profile: ProfileStore
+    @State private var fitnessInputs: FitnessInputStatus?
+    @State private var selectedSourceID = ""
     @ObservedObject var repo: Repository
     let deviceId: String
     let metric: DashboardHistoryMetric
@@ -19,28 +22,51 @@ struct MetricHistoryView: View {
         return result
     }
 
+    private var selectedGroup: MetricAverageGroup? {
+        let groups = result?.groups ?? []
+        return groups.first { $0.id == selectedSourceID }
+            ?? groups.first { $0.isMeasuredHeartRate }
+            ?? groups.max { $0.readings.count < $1.readings.count }
+    }
+
     var body: some View {
         NavigationStack {
             ScreenScaffold(title: nil) {
                 MetricRangeControl(selection: $selection, now: referenceDate)
+                if metric == .vo2, let result, result.availability.firstDay == nil, let inputs = fitnessInputs {
+                    NoopCard {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                            Text(inputs.summary).font(StrandFont.headline)
+                            Text(inputs.detail).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                }
+                if let result, result.groups.count > 1 {
+                    Picker("Data source", selection: Binding(get: { selectedGroup?.id ?? "" }, set: { selectedSourceID = $0 })) {
+                        ForEach(result.groups) { group in
+                            Text("\(source(group)) · \(group.readings.count) days").tag(group.id)
+                        }
+                    }.pickerStyle(.menu).font(StrandFont.subhead)
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                }
                 NoopCard(tint: tint) {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Text(metric == .heartRate ? "Average recorded HR" : "Average \(metric.title.lowercased())")
+                        Text(metric == .heartRate ? "Average recorded HR" : "Average \(metric.title)")
                             .font(StrandFont.headline).foregroundStyle(tint)
-                        metricValue(result?.mean)
+                        metricValue(selectedGroup?.displayedMean(sampleWeightedHR: result?.hrMean))
                         if let result {
-                            Text(window.coverage(result.groups.first?.readings.count ?? 0))
+                            Text(window.coverage(selectedGroup?.readings.count ?? 0))
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            if result.groups.first?.isMeasuredHeartRate == true {
+                            if selectedGroup?.isMeasuredHeartRate == true {
                                 Text("\(result.hrCount.formatted()) measured readings · sample-weighted average")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            } else if let group = result.groups.first {
+                            } else if let group = selectedGroup {
                                 Text(groupDescription(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
-                            if let group = result.groups.first {
+                            if let group = selectedGroup {
                                 Text(recordedDates(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
-                            rangeChart(result.groups.first?.readings ?? [])
+                            rangeChart(selectedGroup?.readings ?? [])
                             if history.isRefreshing { ProgressView("Updating saved history…").font(StrandFont.caption) }
                             if let error = history.error {
                                 Text("Showing the previous snapshot. \(error)").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
@@ -53,18 +79,6 @@ struct MetricHistoryView: View {
                     }
                 }
                 if let result {
-                    ForEach(result.groups.dropFirst()) { group in
-                        NoopCard(tint: tint) {
-                            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                                Text(groupDescription(group)).font(StrandFont.headline).foregroundStyle(tint)
-                                metricValue(group.displayedMean(sampleWeightedHR: result.hrMean))
-                                Text(window.coverage(group.readings.count))
-                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                                Text(recordedDates(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                                rangeChart(group.readings)
-                            }
-                        }
-                    }
                     if result.availability.hasHiddenDays {
                         NoopCard {
                             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
@@ -111,6 +125,11 @@ struct MetricHistoryView: View {
         .onChange(of: repo.refreshSeq) { _, _ in refreshedAt = Date() }
         .task(id: "\(deviceId)|\(metric.rawValue)|\(window.identity)|\(repo.refreshSeq)") {
             await history.load(repo: repo, deviceId: deviceId, metric: metric, window: window)
+            if metric == .vo2 {
+                let days = try? await repo.recentFitnessDailyMetrics(now: referenceDate)
+                guard !Task.isCancelled, repo.deviceId == deviceId else { return }
+                fitnessInputs = days.map { FitnessInputStatus(days: $0, age: profile.age, sex: profile.sex) }
+            }
         }
     }
 
@@ -119,7 +138,14 @@ struct MetricHistoryView: View {
         return first.day == last.day ? "Recorded \(dateLabel(first.day))" : "Recorded \(dateLabel(first.day)) – \(dateLabel(last.day))"
     }
 
-    private var tint: Color { metric == .heartRate ? StrandPalette.liquidHeart : StrandPalette.metricCyan }
+    private var tint: Color {
+        switch metric {
+        case .heartRate: StrandPalette.liquidHeart
+        case .hrv: StrandPalette.metricHRV
+        case .steps: StrandPalette.metricSteps
+        case .vo2: StrandPalette.metricVO2
+        }
+    }
     private func formatted(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(metric == .vo2 ? 1 : 0))) }
     private func metricValue(_ value: Double?) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
@@ -158,7 +184,7 @@ struct MetricHistoryView: View {
             let padding = max(1, (higher - lower) * 0.15)
             DashboardChart(points: points, domain: start...upper,
                 range: metric == .steps ? 0...max(1, higher * 1.1) : max(0, lower - padding)...(higher + padding),
-                tint: tint, style: metric == .steps ? .bars : .line, height: NoopMetrics.chartHeight,
+                tint: tint, style: metric == .steps ? .bars : .line, height: rows.count == 1 ? NoopMetrics.dashboardTrendHeight : NoopMetrics.chartHeight,
                 label: "Recorded \(metric.title) history in the selected range; missing days remain gaps",
                 inspectionData: rows.compactMap { row in
                     guard let date = HeartDashboardProjection.date(row.day) else { return nil }

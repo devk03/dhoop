@@ -65,7 +65,7 @@ struct MetricDateWindow: Equatable {
         start == old.start && end == old.end && fromDay == old.fromDay && toDay == old.toDay && old.through <= through
     }
     func coverage(_ observed: Int) -> String {
-        days.map { "\(observed) of \($0) recorded days" } ?? "\(observed) recorded days"
+        days.map { "\(observed) of \($0) recorded days" } ?? "\(observed) recorded day\(observed == 1 ? "" : "s")"
     }
     var label: String {
         days == nil ? "All recorded history" : "\(start.formatted(date: .abbreviated, time: .omitted)) – \(end.formatted(date: .abbreviated, time: .omitted))"

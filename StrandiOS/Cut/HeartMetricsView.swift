@@ -54,7 +54,7 @@ struct HeartMetricsView: View, Equatable {
         let now = Date()
         let id = deviceId
         if dashboard.data?.deviceId != id { observation = nil; battery = nil }
-        await dashboard.refresh(repo: repo, historyDate: now, now: now)
+        await dashboard.refresh(repo: repo, profile: model.profile, historyDate: now, now: now)
         guard !Task.isCancelled, id == repo.deviceId else { return }
         let collection = WhoopCollectionModel()
         await collection.refresh(repo: repo, live: model.live, now: now)
@@ -130,33 +130,44 @@ struct HeartMetricsView: View, Equatable {
     }
 
     private var hrvTile: some View {
-        metricTile(.hrv, value: data(capturedAt)?.hrv.map { number($0.value) } ?? "—", unit: "ms", tint: StrandPalette.metricCyan) {
+        metricTile(.hrv, value: data(capturedAt)?.hrv.map { number($0.value) } ?? "—", unit: "ms", tint: StrandPalette.metricHRV) {
             plot(dailyPoints(data(capturedAt)?.hrvMonth ?? []), domain: monthDomain(capturedAt),
-                 tint: StrandPalette.metricCyan, height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: true, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No recent HRV")
+                 tint: StrandPalette.metricHRV, height: NoopMetrics.dashboardTileChartHeight,
+                 label: "Thirty-day HRV preview; missing days and source changes remain gaps", compact: false, unit: "ms", readings: data(capturedAt)?.hrvMonth ?? [], empty: "No recent HRV")
             metricCaption(data(capturedAt)?.hrv, empty: "Needs overnight readings")
+            if let count = data(capturedAt)?.hrvSavedDays, count > (data(capturedAt)?.hrvMonth.count ?? 0) {
+                Button("\(count.formatted()) saved days · View all") {
+                    rangeSelection.preset = .all; expandedAt = Date(); expandedMetric = .hrv
+                }.font(StrandFont.caption).frame(minHeight: NoopMetrics.minimumTouchTarget)
+            }
         }
     }
 
     private var stepsTile: some View {
-        metricTile(.steps, value: data(capturedAt)?.steps.map { number($0.value) } ?? "—", unit: "", tint: StrandPalette.metricCyan) {
+        metricTile(.steps, value: data(capturedAt)?.steps.map { number($0.value) } ?? "—", unit: "", tint: StrandPalette.metricSteps) {
             plot(dailyPoints(data(capturedAt)?.stepsWeek ?? []), domain: weekDomain(capturedAt),
-                 tint: StrandPalette.metricCyan, style: .bars,
+                 tint: StrandPalette.metricSteps, style: .bars,
                  range: 0...max(1, (data(capturedAt)?.stepsWeek.map(\.value).max() ?? 0) * 1.1),
                  height: NoopMetrics.dashboardTileChartHeight,
-                 label: "Seven-day steps preview; missing days have no bars", compact: true, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No recent steps")
+                 label: "Seven-day steps preview; missing days have no bars", compact: false, unit: "steps", readings: data(capturedAt)?.stepsWeek ?? [], empty: "No recent steps")
             metricCaption(data(capturedAt)?.steps, empty: "Today unavailable · 7d shown")
         }
     }
 
     private var vo2Tile: some View {
         metricTile(.vo2, value: data(capturedAt)?.vo2.map { $0.value.formatted(.number.precision(.fractionLength(1))) } ?? "—",
-                   unit: data(capturedAt)?.vo2 == nil ? "" : "mL/kg/min", tint: StrandPalette.metricCyan) {
+                   unit: data(capturedAt)?.vo2 == nil ? "" : "mL/kg/min", tint: StrandPalette.metricVO2) {
             let history = vo2History(capturedAt)
-            plot(history.points, domain: history.domain, tint: StrandPalette.metricCyan,
+            plot(history.points, domain: history.domain, tint: StrandPalette.metricVO2,
                  height: NoopMetrics.dashboardTileChartHeight,
-                 label: "VO₂ max preview; method and source changes remain gaps", compact: true, unit: "mL/kg/min", readings: data(capturedAt)?.vo2History ?? [], empty: "No recorded value yet")
+                 label: "VO₂ max preview; method and source changes remain gaps", compact: false, unit: "mL/kg/min", readings: data(capturedAt)?.vo2History ?? [], empty: "No recorded value yet")
             if let reading = data(capturedAt)?.vo2 { metricCaption(reading, empty: "") }
+            else if let inputs = data(capturedAt)?.fitnessInputs {
+                Text(inputs.summary).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    .accessibilityHint(inputs.detail)
+            } else if data(capturedAt) != nil {
+                Text("Readiness unavailable · retry refresh").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
         }
     }
 

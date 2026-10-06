@@ -21,6 +21,8 @@ struct HeartDashboardSnapshot {
     let stepsWeek: [DashboardDailyReading]
     let vo2: DashboardDailyReading?
     let vo2History: [DashboardDailyReading]
+    let fitnessInputs: FitnessInputStatus?
+    let hrvSavedDays: Int
 }
 
 @MainActor
@@ -29,7 +31,7 @@ final class HeartDashboardModel: ObservableObject {
     @Published private(set) var error: String?
     private var generation = 0
 
-    func refresh(repo: Repository, historyDate: Date, now: Date = Date()) async {
+    func refresh(repo: Repository, profile: ProfileStore, historyDate: Date, now: Date = Date()) async {
         generation += 1
         let generation = generation
         let id = repo.deviceId
@@ -46,6 +48,7 @@ final class HeartDashboardModel: ObservableObject {
         let historyStart = calendar.startOfDay(for: historyDate)
         let historyDay = Repository.localDayKey(historyStart)
         let historyEnd = min(now, (calendar.date(byAdding: .day, value: 1, to: historyStart) ?? now).addingTimeInterval(-1))
+        async let fitnessDays = try? repo.recentFitnessDailyMetrics(now: now)
         async let rawHR = store.measuredHeartRateSamples(deviceId: id, from: Int(historyStart.timeIntervalSince1970), to: Int(historyEnd.timeIntervalSince1970))
         async let hrvs = repo.resolvedSeries(key: "hrv", source: Repository.whoopSource, from: "0000-01-01", to: day)
         async let rests = repo.resolvedSeries(key: "rhr", source: Repository.whoopSource, from: "0000-01-01", to: day)
@@ -89,6 +92,7 @@ final class HeartDashboardModel: ObservableObject {
             guard generation == self.generation, id == repo.deviceId else { return }
             hrReadError = "Stored heart rate could not be read: \(error.localizedDescription)"
         }
+        let fitnessInputs = await fitnessDays.map { FitnessInputStatus(days: $0, age: profile.age, sex: profile.sex) }
         guard generation == self.generation, !Task.isCancelled, id == repo.deviceId,
               day == Repository.localDayKey(Date()) else { return }
         self.data = HeartDashboardSnapshot(deviceId: id, calendarDay: day, historyDay: historyDay, averageHR: summary?.averageBPM, hrSampleCount: summary?.sampleCount, hrReadError: hrReadError, fromDay: historyStart, through: historyEnd,
@@ -97,7 +101,7 @@ final class HeartDashboardModel: ObservableObject {
             hrvMonth: HeartDashboardProjection.bounded(hrvRows, from: monthStart, through: day),
             restingHR: HeartDashboardProjection.latest(restingRows, through: historyDay),
             steps: stepRows.last { $0.day == day }, stepsWeek: stepRows,
-            vo2: vo2Rows.last, vo2History: vo2Rows)
+            vo2: vo2Rows.last, vo2History: vo2Rows, fitnessInputs: fitnessInputs, hrvSavedDays: Set(hrvRows.map(\.day)).count)
         self.error = nil
     }
 
