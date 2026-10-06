@@ -181,6 +181,8 @@ final class Repository: ObservableObject {
     /// Not a stored value and never crosses `.noopbak`, so no Android twin is required.
     var activeDeviceIsOura: Bool { DeviceBrandCatalog.isOura(deviceId) }
     private var store: WhoopStore?
+    private var workoutReviewSaving = false
+    private var workoutReviewCaptureCadence = WorkoutReviewCaptureCadence()
 
     /// Daily metrics (recovery/strain/sleep/HRV/RHR…) over the recent window, oldest→newest.
     @Published var days: [DailyMetric] = []
@@ -989,6 +991,15 @@ final class Repository: ObservableObject {
         // Generation guard (#review): if a newer refresh() started while this one merged off-actor, drop
         // this now-stale result so it can't clobber the newer caches or re-fire loadAll out of order.
         guard myGen == refreshGen else { return }
+        #if os(iOS)
+        // Capture after foreground/sync processing even if only raw HR changed and daily caches did
+        // not. The cadence guard prevents refresh bursts from rescanning each packet or pass.
+        defer {
+            if PuffinExperiment.autoDetectWorkoutsEnabled {
+                Task { await captureWorkoutReviewsIfNeeded() }
+            }
+        }
+        #endif
 
         // DIFF before publishing (FIX 3): if this refresh produced byte-identical caches AND we've already
         // loaded once, skip the re-publish and the `refreshSeq` bump entirely , assigning an equal value to
@@ -3220,11 +3231,29 @@ final class Repository: ObservableObject {
     /// Returns nil when the toggle is off, there's nothing to suggest, or detection finds nothing.
     /// PURE READ: never writes a workout. The window scans from `daysBack` days ago to now.
     func autoDetectCandidate(daysBack: Int = 2, excluding localSessions: [SavedWorkoutSpan] = []) async -> DetectedWorkout? {
-        guard PuffinExperiment.autoDetectWorkoutsEnabled else { return nil }
+        let candidates = await autoDetectCandidates(daysBack: daysBack, excluding: localSessions)
+        let reviewed = (try? WorkoutReviewStore().reviews(deviceID: deviceId)) ?? []
+        let unseen = candidates.filter { candidate in
+            !reviewed.contains { $0.decision != .pending && $0.overlaps(start: candidate.startSec, end: candidate.endSec) }
+        }
+        return Self.selectAutoDetectCandidate(unseen,
+            autoDismissedTokens: autoDetectDismissedSpans,
+            detectedDismissedTokens: dismissedDetectedSpans)
+    }
+
+    private func autoDetectCandidates(daysBack: Int = 2,
+                                      excluding localSessions: [SavedWorkoutSpan] = [],
+                                      reviewDeviceID: String? = nil) async -> [DetectedWorkout] {
+        guard PuffinExperiment.autoDetectWorkoutsEnabled else { return [] }
         let now = Int(Date().timeIntervalSince1970)
         let from = now - daysBack * 86_400
-        let samples = await hrSamples(from: from, to: now, limit: 200_000)
-        guard samples.count >= 2 else { return nil }
+        let samples: [HRSample]
+        if let reviewDeviceID {
+            samples = await hrSamples(deviceIds: [reviewDeviceID], from: from, to: now, limit: 200_000)
+        } else {
+            samples = await hrSamples(from: from, to: now, limit: 200_000)
+        }
+        guard samples.count >= 2 else { return [] }
         let hr = samples.map { (ts: $0.ts, bpm: $0.bpm) }
 
         // Resting HR: most recent nightly RHR in range, else the detector's own default (60).
@@ -3264,10 +3293,130 @@ final class Repository: ObservableObject {
                                                     motion: nil, savedSpans: savedSpans,
                                                     minimumSustainedMinutes: AutoWorkoutDetector.minSustainedMin)
         }
-        return Self.selectAutoDetectCandidate(
-            candidates,
-            autoDismissedTokens: autoDetectDismissedSpans,
-            detectedDismissedTokens: dismissedDetectedSpans)
+        return candidates
+    }
+
+    #if os(iOS)
+    private func captureWorkoutReviewsIfNeeded(now: Date = Date()) async {
+        let selectedDevice = deviceId
+        guard PuffinExperiment.autoDetectWorkoutsEnabled,
+              workoutReviewCaptureCadence.begin(deviceID: selectedDevice, now: now) else { return }
+        defer { workoutReviewCaptureCadence.finish() }
+        do {
+            let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("DhoopHIIT", isDirectory: true)
+            let local = try await Task.detached(priority: .utility) {
+                try WorkoutReviewLocalSessions.spans(directory: directory, now: now)
+            }.value
+            guard selectedDevice == deviceId, !Task.isCancelled else { return }
+            _ = try await workoutReviews(discover: true, excluding: local)
+        } catch {
+            // Preserve existing metadata and local recordings when storage is unavailable/corrupt.
+            emitWorkouts("workout review capture unavailable: \(error.localizedDescription)")
+        }
+    }
+
+    #endif
+
+    // iOS review history keeps snapshots, including decisions, beyond the detector's rolling scan.
+    // Exact legacy dismissals can be recovered only when current HR redetects that same span.
+    func workoutReviews(discover: Bool, excluding localSessions: [SavedWorkoutSpan] = []) async throws -> [WorkoutReview] {
+        let selectedDevice = deviceId
+        let reviews = WorkoutReviewStore()
+        if discover {
+            let candidates = await autoDetectCandidates(excluding: localSessions, reviewDeviceID: selectedDevice)
+            guard selectedDevice == deviceId, !Task.isCancelled else { throw WorkoutReviewError.unavailable }
+            let exact = Set(autoDetectDismissedSpans + dismissedDetectedSpans)
+            for candidate in candidates {
+                let wasRejected = exact.contains(Self.autoDetectToken(candidate))
+                // A non-exact legacy interval has no device or HR provenance. Preserve its suppression.
+                guard wasRejected || Self.selectAutoDetectCandidate([candidate],
+                    autoDismissedTokens: autoDetectDismissedSpans,
+                    detectedDismissedTokens: dismissedDetectedSpans) != nil else { continue }
+                try reviews.capture(WorkoutReview(deviceID: selectedDevice,
+                    startSec: candidate.startSec, endSec: candidate.endSec,
+                    avgBpm: candidate.avgBpm, peakBpm: candidate.peakBpm,
+                    durationMin: candidate.durationMin, decision: wasRejected ? .notWorkout : .pending))
+            }
+        }
+        // History can remove or replace a linked recording. Keep the user's label, report that the
+        // recording is gone, and require an explicit Save again; never resurrect it during a scan.
+        if let store = await ensureStore() {
+            for var review in try reviews.reviews(deviceID: selectedDevice) {
+                guard let link = review.linkedWorkout else { continue }
+                let rows = try await store.workouts(deviceId: link.owner, from: link.startSec,
+                                                    to: link.startSec, limit: -1)
+                // A concurrent explicit decision wins over this asynchronous reconciliation read.
+                guard try reviews.reviews(deviceID: selectedDevice).first(where: { $0.id == review.id }) == review
+                else { continue }
+                if !rows.contains(where: {
+                    $0.sport == link.sport && $0.source == link.source && $0.endTs == link.endSec
+                }) {
+                    review.linkedWorkout = nil
+                    review.recordingRemoved = true
+                    try reviews.save(review)
+                }
+            }
+        }
+        return try reviews.reviews(deviceID: selectedDevice)
+    }
+
+    func setWorkoutReview(_ id: String, deviceID: String, decision: WorkoutReview.Decision,
+                          excluding localSessions: [SavedWorkoutSpan] = []) async throws {
+        guard deviceID == deviceId else { throw WorkoutReviewError.unavailable }
+        guard !workoutReviewSaving else { throw WorkoutReviewError.busy }
+        workoutReviewSaving = true
+        defer { workoutReviewSaving = false }
+        let reviews = WorkoutReviewStore()
+        guard var review = try reviews.reviews(deviceID: deviceID).first(where: { $0.id == id }),
+              let store = await ensureStore(), deviceId == deviceID else { throw WorkoutReviewError.unavailable }
+        guard decision != review.decision || (decision == .workout && review.recordingRemoved) else { return }
+        if decision == .workout {
+            let saved = await workoutRows()
+            guard deviceId == deviceID else { throw WorkoutReviewError.unavailable }
+            guard !saved.contains(where: { review.overlaps(start: $0.startTs, end: $0.endTs) }),
+                  !localSessions.contains(where: { review.overlaps(start: $0.startSec, end: $0.endSec) })
+            else { throw WorkoutReviewError.alreadySaved }
+            let owner = deviceID + "-noop"
+            let link = WorkoutReview.Link(owner: owner, startSec: review.startSec,
+                endSec: review.endSec, sport: "Workout", source: owner)
+            // Atomic conflict handling never replaces an existing recording. Only a successful insert
+            // gives this review ownership of the row; a failed write must not grant deletion rights.
+            let average = review.avgBpm, peak = review.peakBpm
+            let inserted = try await store.registryWriter.write { db in
+                try db.execute(sql: """
+                    INSERT INTO workout (deviceId, startTs, endTs, sport, source, durationS, avgHr, maxHr)
+                    SELECT ?, ?, ?, ?, ?, ?, ?, ?
+                    WHERE NOT EXISTS (SELECT 1 FROM workout WHERE startTs < ? AND endTs > ?)
+                    ON CONFLICT(deviceId, startTs, sport) DO NOTHING
+                    """, arguments: [owner, link.startSec, link.endSec, link.sport, link.source,
+                                     Double(link.endSec - link.startSec), average, peak,
+                                     link.endSec, link.startSec])
+                return db.changesCount
+            }
+            guard inserted == 1 else { throw WorkoutReviewError.alreadySaved }
+            review.linkedWorkout = link
+            let token = "\(review.startSec):\(review.endSec)"
+            autoDetectDismissedSpans = autoDetectDismissedSpans.filter { $0 != token }
+            dismissedDetectedSpans = dismissedDetectedSpans.filter { $0 != token }
+        } else if let link = review.linkedWorkout {
+            guard link.owner == deviceID + "-noop", link.source == link.owner,
+                  link.startSec == review.startSec, link.endSec == review.endSec,
+                  link.sport == "Workout" else { throw WorkoutReviewError.changedRecording }
+            // Only the linked detected row can be removed. A replacement manual row never matches.
+            let rows = try await store.workouts(deviceId: link.owner, from: link.startSec,
+                                                to: link.startSec, limit: -1)
+            if let row = rows.first(where: { $0.sport == link.sport }) {
+                guard row.source == link.source, row.endTs == link.endSec,
+                      WorkoutSource.classify(row.source) == .detected else { throw WorkoutReviewError.changedRecording }
+                guard try await store.deleteWorkoutRecording(row, deviceIds: [link.owner]) == 1
+                else { throw WorkoutReviewError.changedRecording }
+            }
+            review.linkedWorkout = nil
+        }
+        review.decision = decision
+        review.recordingRemoved = false
+        try reviews.save(review)
     }
 
     /// SAVE a suggested window as a manual-style "Workout" (generic sport , we don't claim a sport we
