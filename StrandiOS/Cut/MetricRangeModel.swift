@@ -63,7 +63,7 @@ final class MetricRangeModel: ObservableObject {
             switch metric {
             case .heartRate:
                 guard let store = await repo.storeHandle() else { throw RangeError.storageUnavailable }
-                async let allMeasured = store.measuredHeartRateDays(deviceId: deviceId, from: Int.min, to: Int(now.timeIntervalSince1970))
+                async let allMeasured = store.measuredHeartRateDays(deviceId: deviceId, from: 0, to: Int(now.timeIntervalSince1970))
                 async let daily = repo.resolvedSeries(key: "avg_hr", source: Repository.whoopSource, from: allHistoryStart, to: today)
                 let days = try await store.measuredHeartRateDays(deviceId: deviceId, from: Int(window.start.timeIntervalSince1970), to: Int(window.through.timeIntervalSince1970))
                 hrCount = days.reduce(0) { $0 + $1.count }

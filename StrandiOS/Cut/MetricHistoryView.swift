@@ -37,6 +37,9 @@ struct MetricHistoryView: View {
                             } else if let group = result.groups.first {
                                 Text(groupDescription(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
+                            if let group = result.groups.first {
+                                Text(recordedDates(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
                             rangeChart(result.groups.first?.readings ?? [])
                             if history.isRefreshing { ProgressView("Updating saved history…").font(StrandFont.caption) }
                             if let error = history.error {
@@ -57,6 +60,7 @@ struct MetricHistoryView: View {
                                 metricValue(group.displayedMean(sampleWeightedHR: result.hrMean))
                                 Text(window.coverage(group.readings.count))
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                Text(recordedDates(group)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                                 rangeChart(group.readings)
                             }
                         }
@@ -97,7 +101,7 @@ struct MetricHistoryView: View {
                 }
                 Text(metric == .heartRate ? "Measured samples use a sample-weighted average. Stored daily averages use equal weight per recorded day and stay separate. Missing intervals are not filled." : metric == .steps ? "Unrecorded days are excluded." : "Unrecorded days are excluded. Different methods are averaged separately.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                if window.toDay == Repository.localDayKey(referenceDate) {
+                if window.toDay == Repository.localDayKey(referenceDate), result?.groups.contains(where: { $0.readings.contains(where: { $0.day == window.toDay }) }) == true {
                     Text("Includes today’s partial data.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
             }
@@ -108,6 +112,11 @@ struct MetricHistoryView: View {
         .task(id: "\(deviceId)|\(metric.rawValue)|\(window.identity)|\(repo.refreshSeq)") {
             await history.load(repo: repo, deviceId: deviceId, metric: metric, window: window)
         }
+    }
+
+    private func recordedDates(_ group: MetricAverageGroup) -> String {
+        guard let first = group.readings.first, let last = group.readings.last else { return "" }
+        return first.day == last.day ? "Recorded \(dateLabel(first.day))" : "Recorded \(dateLabel(first.day)) – \(dateLabel(last.day))"
     }
 
     private var tint: Color { metric == .heartRate ? StrandPalette.liquidHeart : StrandPalette.metricCyan }
