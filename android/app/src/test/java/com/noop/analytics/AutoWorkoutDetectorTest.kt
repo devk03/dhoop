@@ -180,4 +180,58 @@ class AutoWorkoutDetectorTest {
         assertTrue(AutoWorkoutDetector.detect(elevenMinutesFiftyNine, restingHR = 60).isEmpty())
         assertEquals(1, AutoWorkoutDetector.detect(exactlyTwelveMinutes, restingHR = 60).size)
     }
+
+    @Test fun missingReadingsCannotEstablishOrMergeSustainedActivity() {
+        val start = 20_000_000L
+        assertTrue("two isolated readings are not a sustained workout",
+            AutoWorkoutDetector.detect(listOf(hr(start, 120), hr(start + 720, 120)), restingHR = 60).isEmpty())
+        val shortBursts = block(start, 361, 120) + block(start + 540, 361, 120)
+        assertTrue("missing readings must not combine short bursts",
+            AutoWorkoutDetector.detect(shortBursts, restingHR = 60).isEmpty())
+        val first = block(start, 721, 120)
+        val second = block(start + 900, 721, 140)
+        assertEquals("the merge step must not reconnect missing coverage", listOf(
+            AutoWorkoutDetector.DetectedWorkout(start, start + 720, 120, 120, 12),
+            AutoWorkoutDetector.DetectedWorkout(start + 900, start + 1620, 140, 140, 12),
+        ), AutoWorkoutDetector.detect(first + second, restingHR = 60))
+        val later = block(start + 1000, 721, 140)
+        val interruptedRest = block(start + 721, 279, 65).filter { it.ts < start + 830 || it.ts >= start + 930 }
+        assertEquals("missing coverage after span closure must still block merging", 2,
+            AutoWorkoutDetector.detect(first + interruptedRest + later, restingHR = 60).size)
+        val observedRest = block(start + 721, 179, 65)
+        assertEquals("recorded rest remains mergeable", 1,
+            AutoWorkoutDetector.detect(first + observedRest + second, restingHR = 60).size)
+    }
+
+
+    @Test fun sampleGapBoundaryMatchesStandaloneSwiftOracle() {
+        // Verbatim stdout from swiftc -O AutoWorkoutDetector.swift main.swift over these inputs.
+        val expected = """
+            duration=360 gap=1 1000:1721:130:140:12
+            duration=360 gap=89 1000:1809:130:140:13
+            duration=360 gap=90 1000:1810:130:140:13
+            duration=360 gap=91 none
+            duration=360 gap=180 none
+            duration=360 gap=299 none
+            duration=360 gap=300 none
+            duration=720 gap=1 1000:2441:130:140:24
+            duration=720 gap=89 1000:2529:130:140:25
+            duration=720 gap=90 1000:2530:130:140:25
+            duration=720 gap=91 1000:1720:120:120:12,1811:2531:140:140:12
+            duration=720 gap=180 1000:1720:120:120:12,1900:2620:140:140:12
+            duration=720 gap=299 1000:1720:120:120:12,2019:2739:140:140:12
+            duration=720 gap=300 1000:1720:120:120:12,2020:2740:140:140:12
+        """.trimIndent()
+        val lines = mutableListOf<String>()
+        for (duration in listOf(360, 720)) {
+            for (gap in listOf(1, 89, 90, 91, 180, 299, 300)) {
+                val hr = block(1000, duration + 1, 120) + block(1000L + duration + gap, duration + 1, 140)
+                val rows = AutoWorkoutDetector.detect(hr.reversed(), restingHR = 60)
+                val output = rows.joinToString(",") { "${it.startSec}:${it.endSec}:${it.avgBpm}:${it.peakBpm}:${it.durationMin}" }
+                lines.add("duration=$duration gap=$gap ${output.ifEmpty { "none" }}")
+            }
+        }
+        assertEquals(expected, lines.joinToString("\n"))
+    }
+
 }

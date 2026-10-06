@@ -71,6 +71,9 @@ public enum AutoWorkoutDetector {
     public static let shadowSustainedMinutes: [Double] = [10.0, 15.0]
     /// A dip below the gate no longer than this does NOT break the span (a red light, a sip of water).
     public static let maxDipS = 90
+    /// Largest interval between recorded HR samples that can support a continuous window.
+    /// Missing readings are not observed rest; longer gaps also block the nearby-window merge.
+    public static let maxSampleGapS = 90
     /// Two detected windows whose gap is strictly less than this are merged into one (5 min).
     public static let mergeGapS = 5 * 60
     /// When an OPTIONAL continuous motion series is supplied, a window must ALSO show elevated motion
@@ -131,8 +134,10 @@ public enum AutoWorkoutDetector {
     ///     (does not end the span) ONLY while the dip's wall-clock duration (from the first sub-threshold
     ///     sample) stays <= `maxDipS`; a longer dip closes the span. The span's [start, end] are the
     ///     first/last ELEVATED sample timestamps.
+    ///     A missing-sample gap > `maxSampleGapS` always ends the span.
     ///  3. Keep a span only when it lasts >= `minimumSustainedMinutes` (applied per-span, BEFORE merge).
-    ///  4. Merge two kept spans when the gap between them is strictly < `mergeGapS`.
+    ///  4. Merge two kept spans when the gap between them is strictly < `mergeGapS` and HR coverage
+    ///     remains continuous between them (no missing-sample gap > `maxSampleGapS`).
     ///  5. If a motion series is supplied, drop a window unless its mean motion intensity over the
     ///     window is >= `motionConfirmMean` (confirmation). With no motion series, HR-only — keep it.
     ///  6. Drop a window that OVERLAPS any saved span (touching endpoints count) — never re-suggest one.
@@ -154,54 +159,8 @@ public enum AutoWorkoutDetector {
         if seg.isEmpty { return [] }
 
         let floor = (restingBpm ?? defaultRestingHR) + elevatedMarginBPM
-
-        // --- 1 + 2 + 3: grow sustained spans tolerating brief dips ---
-        // A span is [spanStart, spanEnd] over ELEVATED-sample timestamps. `dipStart` marks where the
-        // current sub-threshold run began (nil = not in a dip); a dip longer than maxDipS closes the span.
-        var spans: [(start: Int, end: Int)] = []
-        var spanStart: Int? = nil
-        var spanEnd = 0
-        var dipStart: Int? = nil
-
-        func closeSpan() {
-            if let s = spanStart, Double(spanEnd - s) >= minimumSustainedMinutes * 60.0 {
-                spans.append((s, spanEnd))
-            }
-            spanStart = nil
-            dipStart = nil
-        }
-
-        for sample in seg {
-            if sample.bpm >= floor {
-                if spanStart == nil { spanStart = sample.ts }
-                spanEnd = sample.ts
-                dipStart = nil   // the dip (if any) is bridged
-            } else if spanStart != nil {
-                // In a span: tolerate the dip until it runs longer than maxDipS. `dipStart` is the
-                // first sub-threshold sample of the current dip (set once, cleared on the next elevated).
-                if dipStart == nil { dipStart = sample.ts }
-                if let d = dipStart, sample.ts - d > maxDipS { closeSpan() }
-            }
-        }
-        closeSpan()
-
-        if spans.isEmpty { return [] }
-
-        // --- 4: merge spans whose gap is strictly < mergeGapS (spans are start-ascending by build) ---
-        var merged: [(start: Int, end: Int)] = []
-        var curStart = spans[0].start
-        var curEnd = spans[0].end
-        for k in 1..<spans.count {
-            let next = spans[k]
-            if next.start - curEnd < mergeGapS {
-                curEnd = max(curEnd, next.end)
-            } else {
-                merged.append((curStart, curEnd))
-                curStart = next.start
-                curEnd = next.end
-            }
-        }
-        merged.append((curStart, curEnd))
+        let merged = mergedSpans(sortedHR: seg, floor: floor,
+                                 minimumSustainedMinutes: minimumSustainedMinutes)
 
         // --- 5 + 6 + 7 ---
         let motionSeries = (motion?.isEmpty ?? true) ? nil : motion
@@ -228,6 +187,70 @@ public enum AutoWorkoutDetector {
                                            avgBpm: avg, peakBpm: peak, durationMin: durMin))
         }
         return results
+    }
+
+    /// Shared with diagnostics so missing coverage cannot split suggestions but still be merged in logs.
+    /// Input is sorted by timestamp. Coverage groups survive span closure during observed rest.
+    static func mergedSpans(sortedHR: [(ts: Int, bpm: Int)], floor: Int,
+                            minimumSustainedMinutes: Double) -> [(start: Int, end: Int)] {
+        // --- 1 + 2 + 3: grow sustained spans tolerating brief dips ---
+        // A span is [spanStart, spanEnd] over ELEVATED-sample timestamps. `dipStart` marks where the
+        // current sub-threshold run began (nil = not in a dip); a dip longer than maxDipS closes the span.
+        var spans: [(start: Int, end: Int, coverage: Int)] = []
+        var coverage = 0
+        var previousTimestamp: Int?
+        var spanStart: Int? = nil
+        var spanEnd = 0
+        var dipStart: Int? = nil
+
+        func closeSpan() {
+            if let s = spanStart, Double(spanEnd - s) >= minimumSustainedMinutes * 60.0 {
+                spans.append((s, spanEnd, coverage))
+            }
+            spanStart = nil
+            dipStart = nil
+        }
+
+        for sample in sortedHR {
+            if let previousTimestamp, sample.ts - previousTimestamp > maxSampleGapS {
+                closeSpan()
+                coverage += 1
+            }
+            previousTimestamp = sample.ts
+            if sample.bpm >= floor {
+                if spanStart == nil { spanStart = sample.ts }
+                spanEnd = sample.ts
+                dipStart = nil   // the dip (if any) is bridged
+            } else if spanStart != nil {
+                // In a span: tolerate the dip until it runs longer than maxDipS. `dipStart` is the
+                // first sub-threshold sample of the current dip (set once, cleared on the next elevated).
+                if dipStart == nil { dipStart = sample.ts }
+                if let d = dipStart, sample.ts - d > maxDipS { closeSpan() }
+            }
+        }
+        closeSpan()
+
+        if spans.isEmpty { return [] }
+
+        // --- 4: merge spans whose gap is strictly < mergeGapS (spans are start-ascending by build) ---
+        var merged: [(start: Int, end: Int)] = []
+        var curStart = spans[0].start
+        var curEnd = spans[0].end
+        var curCoverage = spans[0].coverage
+        for k in 1..<spans.count {
+            let next = spans[k]
+            if next.coverage == curCoverage && next.start - curEnd < mergeGapS {
+                curEnd = max(curEnd, next.end)
+            } else {
+                merged.append((curStart, curEnd))
+                curStart = next.start
+                curEnd = next.end
+                curCoverage = next.coverage
+            }
+        }
+        merged.append((curStart, curEnd))
+
+        return merged
     }
 
     /// Two closed [aStart, aEnd] / [bStart, bEnd] intervals overlap (touching endpoints count).

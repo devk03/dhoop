@@ -33,6 +33,18 @@ final class AutoWorkoutDetectorTraceTests: XCTestCase {
         XCTAssertFalse(lines.contains { $0.contains("\u{2014}") })
     }
 
+    func testTraceUsesCoverageBoundariesForEachWindowVerdict() {
+        let hr = elapsedSpan(1000, 720, 120) + elapsedSpan(1900, 720, 140)
+        let saved = [SavedWorkoutSpan(startSec: 1000, endSec: 1720)]
+        let (traced, lines) = AutoWorkoutDetector.detectTrace(hr: hr, restingBpm: 60, savedSpans: saved)
+        XCTAssertEqual(traced, [DetectedWorkout(startSec: 1900, endSec: 2620, avgBpm: 140, peakBpm: 140, durationMin: 12)])
+        XCTAssertTrue(lines.contains { $0.contains("maxSampleGapS=90") })
+        XCTAssertEqual(lines.filter { $0.hasPrefix("autoDetect window ") }, [
+            "autoDetect window durMin=12 verdict=dropped why=overlapsSavedWorkout",
+            "autoDetect window durMin=12 verdict=offered",
+        ], "trace verdicts must not combine separate coverage groups")
+    }
+
     func testTraceNamesNoSustainedSpan() {
         // All rest, never above the floor → no span; the trace must say why.
         let hr = block(1_000_000, 1_800, 65)

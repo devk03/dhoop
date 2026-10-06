@@ -48,6 +48,9 @@ object AutoWorkoutDetector {
     /** A dip below the gate no longer than this does NOT break the span (a red light, a sip of water). */
     const val maxDipS: Long = 90L
 
+    /** Missing readings beyond this interval break coverage and also block nearby-window merging. */
+    const val maxSampleGapS: Long = 90L
+
     /** Two detected windows whose gap is strictly less than this are merged into one. */
     const val mergeGapS: Long = 5L * 60L // 5 min
 
@@ -112,8 +115,10 @@ object AutoWorkoutDetector {
      *  2. Grow a contiguous span across elevated samples. A run of NON-elevated samples is tolerated
      *     (does not end the span) ONLY while the dip's wall-clock duration stays <= [maxDipS]; a longer
      *     dip closes the span. The span's [start, end] are the first/last ELEVATED sample timestamps.
+     *     A missing-sample gap > [maxSampleGapS] always ends the span.
      *  3. Keep a span only when it lasts >= [minimumSustainedMinutes].
-     *  4. Merge two kept spans when the gap between them is strictly < [mergeGapS].
+     *  4. Merge two kept spans when the gap between them is strictly < [mergeGapS] and HR coverage
+     *     remains continuous between them (no missing-sample gap > [maxSampleGapS]).
      *  5. If a motion series is supplied, drop a window unless its mean motion intensity over the window
      *     is >= [motionConfirmMean] (confirmation). With no motion series, HR-only — keep it.
      *  6. Drop a window that OVERLAPS any [savedWorkouts] [start, end] span (never re-suggest a logged one).
@@ -137,55 +142,7 @@ object AutoWorkoutDetector {
         if (seg.isEmpty()) return emptyList()
 
         val floor = (restingHR ?: defaultRestingHR) + elevatedMarginBPM
-
-        // --- 1+2+3: grow sustained spans tolerating brief dips ---
-        // A span is [spanStart, spanEnd] over ELEVATED-sample timestamps. `dipStart` marks where the
-        // current sub-threshold run began (0 = not in a dip); a dip longer than maxDipS closes the span.
-        val spans = ArrayList<Pair<Long, Long>>()
-        var spanStart: Long? = null
-        var spanEnd = 0L
-        var dipStart: Long? = null
-
-        fun closeSpan() {
-            val s = spanStart
-            if (s != null && (spanEnd - s) >= minimumSustainedMinutes * 60.0) {
-                spans.add(s to spanEnd)
-            }
-            spanStart = null
-            dipStart = null
-        }
-
-        for (sample in seg) {
-            val elevated = sample.bpm >= floor
-            if (elevated) {
-                if (spanStart == null) spanStart = sample.ts
-                spanEnd = sample.ts
-                dipStart = null // the dip (if any) is bridged
-            } else if (spanStart != null) {
-                // In a span: tolerate the dip until it runs longer than maxDipS.
-                val d = dipStart ?: sample.ts.also { dipStart = it }
-                if ((sample.ts - d) > maxDipS) closeSpan()
-            }
-        }
-        closeSpan()
-
-        if (spans.isEmpty()) return emptyList()
-
-        // --- 4: merge spans whose gap is strictly < mergeGapS (spans are start-ascending by build) ---
-        val merged = ArrayList<Pair<Long, Long>>()
-        var curStart = spans[0].first
-        var curEnd = spans[0].second
-        for (k in 1 until spans.size) {
-            val next = spans[k]
-            if ((next.first - curEnd) < mergeGapS) {
-                curEnd = maxOf(curEnd, next.second)
-            } else {
-                merged.add(curStart to curEnd)
-                curStart = next.first
-                curEnd = next.second
-            }
-        }
-        merged.add(curStart to curEnd)
+        val merged = mergedSpans(seg, floor, minimumSustainedMinutes)
 
         // --- 5+6+7 ---
         val motion = if (gravity.isEmpty()) emptyMap() else motionIntensityByTs(gravity)
@@ -212,6 +169,74 @@ object AutoWorkoutDetector {
             results.add(DetectedWorkout(startSec = start, endSec = end, avgBpm = avg, peakBpm = peak, durationMin = durMin))
         }
         return results
+    }
+
+    /** Shared with diagnostics; coverage groups survive span closure during observed rest. */
+    internal fun mergedSpans(
+        sortedHR: List<HrSample>,
+        floor: Int,
+        minimumSustainedMinutes: Double,
+    ): List<Pair<Long, Long>> {
+        // --- 1+2+3: grow sustained spans tolerating brief dips ---
+        // A span is [spanStart, spanEnd] over ELEVATED-sample timestamps. `dipStart` marks where the
+        // current sub-threshold run began (null = not in a dip); a dip longer than maxDipS closes the span.
+        val spans = ArrayList<Triple<Long, Long, Int>>()
+        var coverage = 0
+        var previousTimestamp: Long? = null
+        var spanStart: Long? = null
+        var spanEnd = 0L
+        var dipStart: Long? = null
+
+        fun closeSpan() {
+            val s = spanStart
+            if (s != null && (spanEnd - s) >= minimumSustainedMinutes * 60.0) {
+                spans.add(Triple(s, spanEnd, coverage))
+            }
+            spanStart = null
+            dipStart = null
+        }
+
+        for (sample in sortedHR) {
+            val previous = previousTimestamp
+            if (previous != null && sample.ts - previous > maxSampleGapS) {
+                closeSpan()
+                coverage += 1
+            }
+            previousTimestamp = sample.ts
+            val elevated = sample.bpm >= floor
+            if (elevated) {
+                if (spanStart == null) spanStart = sample.ts
+                spanEnd = sample.ts
+                dipStart = null // the dip (if any) is bridged
+            } else if (spanStart != null) {
+                // In a span: tolerate the dip until it runs longer than maxDipS.
+                val d = dipStart ?: sample.ts.also { dipStart = it }
+                if ((sample.ts - d) > maxDipS) closeSpan()
+            }
+        }
+        closeSpan()
+
+        if (spans.isEmpty()) return emptyList()
+
+        // --- 4: merge spans whose gap is strictly < mergeGapS (spans are start-ascending by build) ---
+        val merged = ArrayList<Pair<Long, Long>>()
+        var curStart = spans[0].first
+        var curEnd = spans[0].second
+        var curCoverage = spans[0].third
+        for (k in 1 until spans.size) {
+            val next = spans[k]
+            if (next.third == curCoverage && (next.first - curEnd) < mergeGapS) {
+                curEnd = maxOf(curEnd, next.second)
+            } else {
+                merged.add(curStart to curEnd)
+                curStart = next.first
+                curEnd = next.second
+                curCoverage = next.third
+            }
+        }
+        merged.add(curStart to curEnd)
+
+        return merged
     }
 
     /** Two closed [aStart, aEnd] / [bStart, bEnd] intervals overlap (touching endpoints count). */

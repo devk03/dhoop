@@ -60,63 +60,25 @@ extension AutoWorkoutDetector {
         // Thresholds applied (the autoDetectThresholds capture). Stated once so a report carries the
         // calibration the windows were judged against.
         lines.append("autoDetect thresholds elevatedMargin=\(elevatedMarginBPM)bpm "
-            + "minSustainedMin=\(minimumSustainedMinutes) maxDipS=\(maxDipS) mergeGapS=\(mergeGapS) "
+            + "minSustainedMin=\(minimumSustainedMinutes) maxDipS=\(maxDipS) maxSampleGapS=\(maxSampleGapS) mergeGapS=\(mergeGapS) "
             + "motionConfirmMean=\(motionConfirmMean)")
 
-        // Rebuild the SAME merged windows the detector forms (sustained spans tolerating dips, then merge),
-        // so we can name why each survived or dropped WITHOUT changing the returned `results`. This mirrors
-        // detect(...)'s steps 1-4 exactly; the per-window verdict below mirrors steps 5-6.
+        // Share span formation with the detector, including missing-coverage barriers.
         let seg = hr.sorted { $0.ts < $1.ts }
         if seg.isEmpty {
             lines.append("autoDetect result windows=0 (no HR samples)")
             return (results, lines)
         }
 
-        var spans: [(start: Int, end: Int)] = []
-        var spanStart: Int? = nil
-        var spanEnd = 0
-        var dipStart: Int? = nil
-        func closeSpan() {
-            if let s = spanStart, Double(spanEnd - s) >= minimumSustainedMinutes * 60.0 {
-                spans.append((s, spanEnd))
-            }
-            spanStart = nil
-            dipStart = nil
-        }
-        for sample in seg {
-            if sample.bpm >= floor {
-                if spanStart == nil { spanStart = sample.ts }
-                spanEnd = sample.ts
-                dipStart = nil
-            } else if spanStart != nil {
-                if dipStart == nil { dipStart = sample.ts }
-                if let d = dipStart, sample.ts - d > maxDipS { closeSpan() }
-            }
-        }
-        closeSpan()
+        let merged = mergedSpans(sortedHR: seg, floor: floor,
+                                 minimumSustainedMinutes: minimumSustainedMinutes)
 
-        if spans.isEmpty {
+        if merged.isEmpty {
             lines.append("autoDetect why=noSustainedSpan "
                 + "(no contiguous run held >=\(minimumSustainedMinutes)min above \(floor)bpm)")
             lines.append("autoDetect result windows=0")
             return (results, lines)
         }
-
-        // Merge spans whose gap is strictly < mergeGapS (same as detect step 4).
-        var merged: [(start: Int, end: Int)] = []
-        var curStart = spans[0].start
-        var curEnd = spans[0].end
-        for k in 1..<spans.count {
-            let next = spans[k]
-            if next.start - curEnd < mergeGapS {
-                curEnd = max(curEnd, next.end)
-            } else {
-                merged.append((curStart, curEnd))
-                curStart = next.start
-                curEnd = next.end
-            }
-        }
-        merged.append((curStart, curEnd))
 
         // Per-window verdict (the autoDetectWhy capture), mirroring detect steps 5-6.
         let motionSeries = hasMotion ? motion : nil
@@ -150,7 +112,7 @@ extension AutoWorkoutDetector {
     /// overlap; endpoint-only contact is not evidence that the detector found the labelled workout.
     ///
     /// When `hrForObservability` is supplied, a label is observable only when its longest recorded HR run
-    /// (no sample gap above the detector's 90-second dip tolerance) spans the shorter of the label duration
+    /// (no sample gap above the detector's 90-second sample-gap tolerance) spans the shorter of the label duration
     /// and this policy's qualification duration. This retains genuinely short labelled workouts as evidence,
     /// but two isolated points cannot manufacture a policy miss. Unobservable labels are reported separately
     /// and never counted as misses. `matched` counts pairs, `unmatched` candidates left over, and `missed`
@@ -247,7 +209,7 @@ extension AutoWorkoutDetector {
             for timestamp in timestamps {
                 if timestamp < span.startSec { continue }
                 if timestamp > span.endSec { break }
-                if let previousTimestamp, timestamp - previousTimestamp > maxDipS {
+                if let previousTimestamp, timestamp - previousTimestamp > maxSampleGapS {
                     runStart = timestamp
                 } else if runStart == nil {
                     runStart = timestamp

@@ -59,39 +59,19 @@ object AutoWorkoutDetectorTrace {
         lines.add(
             "autoDetect thresholds elevatedMargin=${AutoWorkoutDetector.elevatedMarginBPM}bpm " +
                 "minSustainedMin=$minimumSustainedMinutes maxDipS=${AutoWorkoutDetector.maxDipS} " +
-                "mergeGapS=${AutoWorkoutDetector.mergeGapS} motionConfirmMean=${AutoWorkoutDetector.motionConfirmMean}",
+                "maxSampleGapS=${AutoWorkoutDetector.maxSampleGapS} mergeGapS=${AutoWorkoutDetector.mergeGapS} motionConfirmMean=${AutoWorkoutDetector.motionConfirmMean}",
         )
 
-        // Rebuild the SAME merged windows the detector forms (steps 1-4), to name each verdict (steps 5-6).
+        // Share span formation with the detector, including missing-coverage barriers.
         val seg = hr.sortedBy { it.ts }
         if (seg.isEmpty()) {
             lines.add("autoDetect result windows=0 (no HR samples)")
             return results to lines
         }
 
-        val spans = ArrayList<Pair<Long, Long>>()
-        var spanStart: Long? = null
-        var spanEnd = 0L
-        var dipStart: Long? = null
-        fun closeSpan() {
-            val s = spanStart
-            if (s != null && (spanEnd - s) >= minimumSustainedMinutes * 60.0) spans.add(s to spanEnd)
-            spanStart = null
-            dipStart = null
-        }
-        for (sample in seg) {
-            if (sample.bpm >= floor) {
-                if (spanStart == null) spanStart = sample.ts
-                spanEnd = sample.ts
-                dipStart = null
-            } else if (spanStart != null) {
-                val d = dipStart ?: sample.ts.also { dipStart = it }
-                if ((sample.ts - d) > AutoWorkoutDetector.maxDipS) closeSpan()
-            }
-        }
-        closeSpan()
+        val merged = AutoWorkoutDetector.mergedSpans(seg, floor, minimumSustainedMinutes)
 
-        if (spans.isEmpty()) {
+        if (merged.isEmpty()) {
             lines.add(
                 "autoDetect why=noSustainedSpan " +
                     "(no contiguous run held >=${minimumSustainedMinutes}min above ${floor}bpm)",
@@ -99,21 +79,6 @@ object AutoWorkoutDetectorTrace {
             lines.add("autoDetect result windows=0")
             return results to lines
         }
-
-        val merged = ArrayList<Pair<Long, Long>>()
-        var curStart = spans[0].first
-        var curEnd = spans[0].second
-        for (k in 1 until spans.size) {
-            val next = spans[k]
-            if ((next.first - curEnd) < AutoWorkoutDetector.mergeGapS) {
-                curEnd = maxOf(curEnd, next.second)
-            } else {
-                merged.add(curStart to curEnd)
-                curStart = next.first
-                curEnd = next.second
-            }
-        }
-        merged.add(curStart to curEnd)
 
         // Per-window verdict (the autoDetectWhy capture), mirroring detect steps 5-6. The motion series is
         // built the SAME way detect does (motionIntensityByTs), so the mean comparison matches exactly.
@@ -152,7 +117,7 @@ object AutoWorkoutDetectorTrace {
      * overlap; endpoint-only contact is not evidence that the detector found the labelled workout.
      *
      * When [hrForObservability] is supplied, a label is observable only when its longest recorded HR run
-     * (no sample gap above the detector's 90-second dip tolerance) spans the shorter of the label duration
+     * (no sample gap above the detector's 90-second sample-gap tolerance) spans the shorter of the label duration
      * and this policy's qualification duration. This retains genuinely short labelled workouts as evidence,
      * but two isolated points cannot manufacture a policy miss. Unobservable labels are reported separately
      * and never counted as misses.
@@ -231,7 +196,7 @@ object AutoWorkoutDetectorTrace {
                 if (timestamp > span.second) break
                 val previous = previousTimestamp
                 val currentRunStart = if (
-                    previous != null && timestamp - previous > AutoWorkoutDetector.maxDipS
+                    previous != null && timestamp - previous > AutoWorkoutDetector.maxSampleGapS
                 ) {
                     timestamp
                 } else {

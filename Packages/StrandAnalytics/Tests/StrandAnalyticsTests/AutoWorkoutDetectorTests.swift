@@ -162,4 +162,62 @@ final class AutoWorkoutDetectorTests: XCTestCase {
         XCTAssertEqual(AutoWorkoutDetector.detect(
             hr: exact, restingBpm: 60, minimumSustainedMinutes: 15.0).count, 1)
     }
+
+    func testMissingReadingsCannotEstablishOrMergeSustainedActivity() {
+        let start = 20_000_000
+        let sparse = [(ts: start, bpm: 120), (ts: start + 720, bpm: 120)]
+        XCTAssertTrue(AutoWorkoutDetector.detect(hr: sparse, restingBpm: 60).isEmpty,
+                      "two isolated readings are not a sustained workout")
+        let shortBursts = elapsedSpan(start, 360, 120) + elapsedSpan(start + 540, 360, 120)
+        XCTAssertTrue(AutoWorkoutDetector.detect(hr: shortBursts, restingBpm: 60).isEmpty,
+                      "missing readings must not turn two short bursts into a qualifying span")
+
+        let first = elapsedSpan(start, 720, 120)
+        let second = elapsedSpan(start + 900, 720, 140)
+        let separated = AutoWorkoutDetector.detect(hr: first + second, restingBpm: 60)
+        XCTAssertEqual(separated, [
+            DetectedWorkout(startSec: start, endSec: start + 720, avgBpm: 120, peakBpm: 120, durationMin: 12),
+            DetectedWorkout(startSec: start + 900, endSec: start + 1620, avgBpm: 140, peakBpm: 140, durationMin: 12),
+        ], "the merge step must not reconnect windows across missing coverage")
+        let later = elapsedSpan(start + 1000, 720, 140)
+        let interruptedRest = block(start + 721, 279, 65).filter { $0.ts < start + 830 || $0.ts >= start + 930 }
+        XCTAssertEqual(AutoWorkoutDetector.detect(hr: first + interruptedRest + later, restingBpm: 60).count, 2,
+                       "missing coverage after a span already closed must still block merging")
+        let observedRest = block(start + 721, 179, 65)
+        XCTAssertEqual(AutoWorkoutDetector.detect(hr: first + observedRest + second, restingBpm: 60).count, 1,
+                       "recorded rest remains eligible for the existing nearby-window merge")
+    }
+
+
+    func testSampleGapBoundaryMatchesStandaloneSwiftOracle() {
+        // Verbatim stdout from swiftc -O AutoWorkoutDetector.swift main.swift over these inputs.
+        // The Kotlin twin asserts the same literal; this side also prevents later Swift drift.
+        let expected = """
+        duration=360 gap=1 1000:1721:130:140:12
+        duration=360 gap=89 1000:1809:130:140:13
+        duration=360 gap=90 1000:1810:130:140:13
+        duration=360 gap=91 none
+        duration=360 gap=180 none
+        duration=360 gap=299 none
+        duration=360 gap=300 none
+        duration=720 gap=1 1000:2441:130:140:24
+        duration=720 gap=89 1000:2529:130:140:25
+        duration=720 gap=90 1000:2530:130:140:25
+        duration=720 gap=91 1000:1720:120:120:12,1811:2531:140:140:12
+        duration=720 gap=180 1000:1720:120:120:12,1900:2620:140:140:12
+        duration=720 gap=299 1000:1720:120:120:12,2019:2739:140:140:12
+        duration=720 gap=300 1000:1720:120:120:12,2020:2740:140:140:12
+        """
+        var lines: [String] = []
+        for duration in [360, 720] {
+            for gap in [1, 89, 90, 91, 180, 299, 300] {
+                let hr = elapsedSpan(1000, duration, 120) + elapsedSpan(1000 + duration + gap, duration, 140)
+                let rows = AutoWorkoutDetector.detect(hr: hr.reversed(), restingBpm: 60)
+                let output = rows.map { "\($0.startSec):\($0.endSec):\($0.avgBpm):\($0.peakBpm):\($0.durationMin)" }.joined(separator: ",")
+                lines.append("duration=\(duration) gap=\(gap) \(output.isEmpty ? "none" : output)")
+            }
+        }
+        XCTAssertEqual(lines.joined(separator: "\n"), expected)
+    }
+
 }

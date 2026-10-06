@@ -37,6 +37,18 @@ class AutoWorkoutDetectorTraceTest {
         assertFalse(lines.any { it.contains("\u2014") })
     }
 
+    @Test fun traceUsesCoverageBoundariesForEachWindowVerdict() {
+        val hr = block(1000, 721, 120) + block(1900, 721, 140)
+        val (traced, lines) = AutoWorkoutDetectorTrace.detectTrace(hr, restingHR = 60,
+            savedWorkouts = listOf(1000L to 1720L))
+        assertEquals(listOf(AutoWorkoutDetector.DetectedWorkout(1900, 2620, 140, 140, 12)), traced)
+        assertTrue(lines.any { it.contains("maxSampleGapS=90") })
+        assertEquals(listOf(
+            "autoDetect window durMin=12 verdict=dropped why=overlapsSavedWorkout",
+            "autoDetect window durMin=12 verdict=offered",
+        ), lines.filter { it.startsWith("autoDetect window ") })
+    }
+
     @Test fun traceNamesNoSustainedSpan() {
         val hr = block(1_000_000L, 1_800, 65) // all rest, never above the floor
         val (traced, lines) = AutoWorkoutDetectorTrace.detectTrace(hr, restingHR = 60)
