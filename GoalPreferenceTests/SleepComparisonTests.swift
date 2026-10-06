@@ -108,4 +108,69 @@ final class SleepComparisonTests: XCTestCase {
         let result = SleepComparisonProjection.preferred([[imported], [computed]], window: window)
         XCTAssertEqual(result.count, 1); XCTAssertEqual(result[0].total, 400); XCTAssertNil(result[0].deep)
     }
+    func testTimelineRetainsActualStagesAndMissingIntervals() {
+        let samples = [
+            sample(start: "2026-10-03T23:00:00Z", end: "2026-10-04T01:00:00Z", stage: .deep),
+            sample(start: "2026-10-04T01:20:00Z", end: "2026-10-04T01:30:00Z", stage: .awake),
+            sample(start: "2026-10-04T01:30:00Z", end: "2026-10-04T07:00:00Z", stage: .rem)
+        ]
+        let timeline = SleepComparisonProjection.healthProviders(samples, window: window, calendar: utc)[0].days[0].timelines[0]
+        XCTAssertEqual(timeline.sourceID, "eight.bundle")
+        XCTAssertEqual(timeline.day, "2026-10-04")
+        XCTAssertEqual(timeline.intervals.map(\.stage), [.deep, .awake, .rem])
+        XCTAssertEqual(timeline.intervals[1].start - timeline.intervals[0].end, 20 * 60)
+        XCTAssertEqual(timeline.asleepMinutes, 450)
+        XCTAssertEqual(timeline.start, date("2026-10-03T23:00:00Z").timeIntervalSince1970)
+        XCTAssertEqual(timeline.end, date("2026-10-04T07:00:00Z").timeIntervalSince1970)
+    }
+
+    func testTimelineConflictAndCoarseDuplicatePreserveUnknownRatherThanInventStage() {
+        let samples = [
+            sample(start: "2026-10-04T00:00:00Z", end: "2026-10-04T04:00:00Z", stage: .unspecified),
+            sample(start: "2026-10-04T00:00:00Z", end: "2026-10-04T02:00:00Z", stage: .deep),
+            sample(start: "2026-10-04T01:00:00Z", end: "2026-10-04T02:00:00Z", stage: .rem),
+            sample(start: "2026-10-04T02:00:00Z", end: "2026-10-04T03:00:00Z", stage: .awake)
+        ]
+        let intervals = SleepComparisonProjection.normalizedIntervals(samples + [samples[1]])
+        XCTAssertEqual(intervals.map(\.stage), [.deep, .unspecified, .awake, .unspecified])
+        XCTAssertEqual(intervals.map { ($0.end - $0.start) / 60 }, [60, 60, 60, 60])
+    }
+
+    func testStoredAggregateNeverGeneratesStageOrderAndEditedBoundsClipRealStages() {
+        let aggregate = SleepComparisonProjection.storedTimeline(json: "{\"light\":180,\"deep\":60,\"rem\":80}",
+            start: 100, end: 700, sourceID: "whoop", method: "Imported WHOOP record", calendar: utc)!
+        XCTAssertTrue(aggregate.intervals.isEmpty)
+        XCTAssertNil(aggregate.asleepMinutes)
+        let json = "[{\"start\":0,\"end\":200,\"stage\":\"wake\"},{\"start\":250,\"end\":800,\"stage\":\"light\"}]"
+        let staged = SleepComparisonProjection.storedTimeline(json: json, start: 100, end: 700,
+            sourceID: "whoop-noop", method: "Dhoop estimate", calendar: utc)!
+        XCTAssertEqual(staged.method, "Dhoop estimate")
+        XCTAssertEqual(staged.sourceID, "whoop-noop")
+        XCTAssertEqual(staged.intervals, [SleepStageInterval(start: 100, end: 200, stage: .awake),
+                                        SleepStageInterval(start: 250, end: 700, stage: .core)])
+    }
+
+    func testProviderEpisodesRemainSeparateAndNeverJoinTheNapToTheNight() {
+        let samples = [sample(start: "2026-10-04T00:00:00Z", end: "2026-10-04T06:00:00Z", stage: .core),
+                       sample(start: "2026-10-04T10:00:00Z", end: "2026-10-04T10:30:00Z", stage: .deep),
+                       sample("other.bundle", start: "2026-10-04T00:00:00Z", end: "2026-10-04T06:00:00Z", stage: .rem)]
+        let providers = SleepComparisonProjection.healthProviders(samples, window: window, calendar: utc)
+        let eight = providers.first { $0.id == "eight.bundle" }!.days[0]
+        XCTAssertEqual(eight.timelines.count, 2)
+        XCTAssertEqual(eight.timelines.map { $0.intervals[0].stage }, [.core, .deep])
+        XCTAssertEqual(providers.first { $0.id == "other.bundle" }!.days[0].timelines[0].intervals[0].stage, .rem)
+    }
+
+    func testNightSelectionFallsBackInsideRangeAndKeepsExplicitChoice() {
+        let now = date("2026-10-04T12:00:00Z")
+        var range = MetricRangeSelection(now: now); range.preset = .custom
+        range.customStart = date("2026-10-01T00:00:00Z"); range.customEnd = now
+        let window = range.window(now: now, calendar: utc)
+        let days = ["2026-09-30", "2026-10-01", "2026-10-03", "2026-10-05"]
+        XCTAssertEqual(SleepComparisonProjection.selectedNight("", available: days, window: window), "2026-10-03")
+        XCTAssertEqual(SleepComparisonProjection.selectedNight("2026-10-01", available: days, window: window), "2026-10-01")
+        XCTAssertEqual(SleepComparisonProjection.selectedNight("2026-10-05", available: days, window: window), "2026-10-03")
+        XCTAssertNil(SleepComparisonProjection.selectedNight("", available: ["2026-09-30"], window: window))
+    }
+
 }

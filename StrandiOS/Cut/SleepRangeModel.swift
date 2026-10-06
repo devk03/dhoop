@@ -6,6 +6,7 @@ struct SleepRangeSnapshot {
     let deviceId: String
     let window: MetricDateWindow
     let whoop: [SleepComparisonDay]
+    let whoopTimelines: [SleepComparisonTimeline]
     let apple: [SleepComparisonProvider]
     let healthMessage: String?
 }
@@ -32,8 +33,25 @@ final class SleepRangeModel: ObservableObject {
             let ids = await repo.sleepComparisonSourceIds()
             let rawIDs = Set(ids.filter { !$0.hasSuffix("-noop") })
             var groups: [[SleepComparisonDay]] = []
+            var timelines: [SleepComparisonTimeline] = []
             for source in ids {
                 if Task.isCancelled { return }
+                let sessions = try await store.sleepSessionsByWake(deviceId: source,
+                    from: Int(window.start.timeIntervalSince1970), to: Int(window.through.timeIntervalSince1970))
+                for session in sessions {
+                    let day = SleepComparisonProjection.wakeDay(Double(session.endTs))
+                    guard day >= window.fromDay, day <= window.toDay else { continue }
+                    if source.hasSuffix("-noop") {
+                        let owner = try await store.scoreInputSource(deviceId: source, day: day, key: "sleep_performance")
+                        guard SleepComparisonProjection.hasWhoopOwner(owner, rawIDs: rawIDs) else { continue }
+                    }
+                    let method = source.hasSuffix("-noop") ? "Dhoop estimate" : "Imported WHOOP record"
+                    if let timeline = SleepComparisonProjection.storedTimeline(json: session.stagesJSON,
+                        start: Double(session.effectiveStartTs), end: Double(session.endTs), sourceID: source,
+                        method: method + (session.stagingSparse == true ? " · sparse input" : "")) {
+                        timelines.append(timeline)
+                    }
+                }
                 let rows = try await stored(store: store, id: source, window: window, apple: false)
                 if source.hasSuffix("-noop") {
                     var verified: [SleepComparisonDay] = []
@@ -60,7 +78,7 @@ final class SleepRangeModel: ObservableObject {
                 }
             }
             guard current == generation, !Task.isCancelled, id == repo.deviceId else { return }
-            snapshot = SleepRangeSnapshot(deviceId: id, window: window, whoop: whoop, apple: apple, healthMessage: message)
+            snapshot = SleepRangeSnapshot(deviceId: id, window: window, whoop: whoop, whoopTimelines: timelines, apple: apple, healthMessage: message)
         } catch {
             guard current == generation, !Task.isCancelled, id == repo.deviceId else { return }
             self.error = "Sleep could not be read: \(error.localizedDescription)"

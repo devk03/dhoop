@@ -11,6 +11,9 @@ struct CutSleepView: View {
     @State private var capturedAt = Date()
     @State private var refreshToken = 0
     @State private var showHealth = false
+    @State private var nightSelection = ""
+    @State private var timelineSource = ""
+    @State private var episodeSelection = ""
     @AppStorage("dhoop.sleep.appleComparisonSource") private var providerID = ""
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
     private var window: MetricDateWindow { selection.window(now: capturedAt) }
@@ -30,7 +33,7 @@ struct CutSleepView: View {
     }
     private var apple: [SleepComparisonDay] { appleProvider?.days ?? [] }
     private var pairs: [SleepComparisonProjection.Pair] { SleepComparisonProjection.matched(whoop, apple) }
-    private var grid: DashboardGridLayout { DashboardGridLayout(columns: typeSize >= .xxxLarge ? 1 : 2) }
+    private var grid: DashboardGridLayout { DashboardGridLayout(columns: typeSize >= .xxxLarge ? 1 : 2, squareMinimum: false) }
     private var whoopMethod: String {
         let kinds = Set(whoop.map(\.method))
         return kinds.count == 1 ? kinds.first! : kinds.isEmpty ? "No sleep in range" : "Records + estimates"
@@ -47,18 +50,20 @@ struct CutSleepView: View {
             }
             MetricRangeControl(selection: $selection, now: capturedAt)
             if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
-            grid {
-                sourceCard("WHOOP", icon: "waveform.path", rows: whoop, detail: whoopMethod, tint: StrandPalette.metricPurple)
-                sourceCard(comparisonName, icon: "bed.double", rows: apple, detail: comparisonDetail, tint: StrandPalette.metricCyan)
+            timelineCard
+            NoopCard {
+                DisclosureGroup("Range averages & comparison") {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                        grid {
+                            sourceCard("WHOOP", icon: "waveform.path", rows: whoop, detail: whoopMethod, tint: StrandPalette.metricPurple)
+                            sourceCard(comparisonName, icon: "bed.double", rows: apple, detail: comparisonDetail, tint: StrandPalette.metricCyan)
+                        }
+                        comparisonSummary
+                        if window.days != 1 && Set((whoop + apple).map(\.day)).count > 1 { trendCard }
+                        stagesCard
+                    }.padding(.top, NoopMetrics.space3)
+                }.font(StrandFont.subhead)
             }
-            if let result, result.apple.count > 1 {
-                Picker("Comparison sleep source", selection: Binding(get: { appleProvider?.id ?? "" }, set: { providerID = $0 })) {
-                    ForEach(result.apple) { Text($0.displayName).tag($0.id) }
-                }.pickerStyle(.menu).font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
-            }
-            comparisonSummary
-            if window.days != 1 && Set((whoop + apple).map(\.day)).count > 1 { trendCard }
-            stagesCard
             if whoop.isEmpty && result != nil {
                 Label("No WHOOP-attributed sleep for these dates. Sync after wearing overnight; older estimates with unknown sources are excluded.", systemImage: "moon.zzz")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -81,6 +86,156 @@ struct CutSleepView: View {
         }
     }
     private func refresh() { ble.syncNow(); capturedAt = Date(); refreshToken += 1 }
+    private var availableNights: [String] {
+        Array(Set((whoop + apple).map(\.day) + (result?.whoopTimelines ?? []).map(\.day))).sorted(by: >)
+    }
+    private var selectedNight: String? {
+        SleepComparisonProjection.selectedNight(nightSelection, available: availableNights, window: window)
+    }
+    private var selectedSource: String {
+        if !timelineSource.isEmpty { return timelineSource }
+        let hasWhoopStages = (result?.whoopTimelines ?? []).contains { $0.day == selectedNight && !$0.intervals.isEmpty }
+        return hasWhoopStages || apple.isEmpty ? "whoop" : "apple"
+    }
+    private var episodes: [SleepComparisonTimeline] {
+        let rows = selectedSource == "whoop" ? result?.whoopTimelines ?? [] : apple.flatMap(\.timelines)
+        return rows.filter { $0.day == selectedNight }.sorted {
+            if $0.intervals.isEmpty != $1.intervals.isEmpty { return !$0.intervals.isEmpty }
+            if $0.end - $0.start != $1.end - $1.start { return $0.end - $0.start > $1.end - $1.start }
+            return $0.id < $1.id
+        }
+    }
+    private var selectedEpisode: SleepComparisonTimeline? {
+        episodes.first { $0.id == episodeSelection } ?? episodes.first
+    }
+    private var timelineCard: some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Sleep stages").font(StrandFont.headline)
+                    Spacer(minLength: NoopMetrics.space2)
+                    if let day = selectedNight {
+                        Picker("Wake date", selection: Binding(get: { day }, set: { nightSelection = $0; episodeSelection = "" })) {
+                            ForEach(availableNights, id: \.self) { value in
+                                Text(nightLabel(value)).tag(value)
+                            }
+                        }.pickerStyle(.menu).font(StrandFont.subhead)
+                    }
+                }
+                Picker("Timeline source", selection: Binding(get: { selectedSource }, set: { timelineSource = $0; episodeSelection = "" })) {
+                    Text("WHOOP").tag("whoop")
+                    Text(comparisonName).tag("apple")
+                }.pickerStyle(.segmented)
+                if selectedSource == "apple", let result, result.apple.count > 1 {
+                    Picker("Apple Health provider", selection: Binding(get: { appleProvider?.id ?? "" }, set: { providerID = $0; episodeSelection = "" })) {
+                        ForEach(result.apple) { Text($0.displayName).tag($0.id) }
+                    }.pickerStyle(.menu).font(StrandFont.subhead)
+                }
+                if let episode = selectedEpisode {
+                    if episodes.count > 1 {
+                        Picker("Sleep period", selection: Binding(get: { episode.id }, set: { episodeSelection = $0 })) {
+                            ForEach(episodes) { row in
+                                Text("\(clockRange(row.start, row.end)) · \(row.method)").tag(row.id)
+                            }
+                        }.pickerStyle(.menu).font(StrandFont.caption)
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
+                        if let minutes = episode.asleepMinutes {
+                            Text(sleepHM(minutes)).font(StrandFont.title2).monospacedDigit()
+                        }
+                        Text(clockRange(episode.start, episode.end)).font(StrandFont.caption)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }.accessibilityElement(children: .combine)
+                    Text(episode.method).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    if episode.intervals.isEmpty {
+                        unavailableTimeline("This record has sleep totals and boundaries, but no timestamped stages.")
+                    } else {
+                        stageTimeline(episode)
+                        Text("Blank spaces are missing data. Unclassified intervals have no reliable stage.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                    }
+                } else if result == nil && history.error == nil {
+                    Text("Reading sleep timelines…").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                } else {
+                    let rows = selectedSource == "whoop" ? whoop : apple
+                    unavailableTimeline(rows.contains { $0.day == selectedNight }
+                        ? "Only daily totals are available for this source. A stage timeline needs timestamped intervals."
+                        : "No sleep period from this source on the selected wake date.")
+                }
+            }
+        }
+    }
+    private func unavailableTimeline(_ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            Label("Timeline unavailable", systemImage: "moon.zzz").font(StrandFont.subhead)
+            Text(detail).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, NoopMetrics.space3)
+    }
+    private func nightLabel(_ day: String) -> String {
+        HeartDashboardProjection.date(day)?.formatted(.dateTime.month(.abbreviated).day()) ?? day
+    }
+    private func clockRange(_ start: Double, _ end: Double) -> String {
+        let first = Date(timeIntervalSince1970: start), last = Date(timeIntervalSince1970: end)
+        return "\(first.formatted(date: .omitted, time: .shortened))–\(last.formatted(date: .omitted, time: .shortened))"
+    }
+    private func stageTimeline(_ episode: SleepComparisonTimeline) -> some View {
+        let unknown = episode.intervals.contains { $0.stage == .unspecified }
+        return Chart {
+            ForEach(episode.intervals) { interval in
+                RectangleMark(xStart: .value("Start", Date(timeIntervalSince1970: interval.start)),
+                    xEnd: .value("End", Date(timeIntervalSince1970: interval.end)),
+                    yStart: .value("Stage lower", stageLevel(interval.stage) - 0.32),
+                    yEnd: .value("Stage upper", stageLevel(interval.stage) + 0.32))
+                    .foregroundStyle(stageColor(interval.stage))
+            }
+        }
+        .chartXScale(domain: Date(timeIntervalSince1970: episode.start)...Date(timeIntervalSince1970: episode.end))
+        .chartYScale(domain: (unknown ? -0.5 : 0.5)...4.5)
+        .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { _ in
+            AxisValueLabel(format: .dateTime.hour().minute()).font(StrandFont.caption)
+        } }
+        .chartYAxis { AxisMarks(position: .leading, values: unknown ? [0, 1, 2, 3, 4] : [1, 2, 3, 4]) { value in
+            AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(StrandChartStyle.gridOpacity))
+            AxisValueLabel {
+                if let level = value.as(Int.self) {
+                    Text(["Unclassified", "Deep", "Light", "REM", "Awake"][level])
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }
+            }
+        } }
+        .chartLegend(.hidden)
+        .frame(height: typeSize.isAccessibilitySize ? NoopMetrics.dashboardTraceHeight * 2 : NoopMetrics.dashboardTraceHeight)
+        .chartInspection(stageInspection(episode), label: "\(selectedSource == "whoop" ? "WHOOP" : comparisonName) sleep stages, \(episode.method), wake date \(episode.day)",
+            tint: StrandPalette.metricPurple, readoutBelow: true)
+    }
+    private func stageLevel(_ stage: SleepComparisonSample.Stage) -> Double {
+        switch stage { case .awake: return 4; case .rem: return 3; case .core: return 2; case .deep: return 1; case .unspecified: return 0 }
+    }
+    private func stageName(_ stage: SleepComparisonSample.Stage) -> String {
+        switch stage { case .awake: return "Awake"; case .rem: return "REM"; case .core: return "Light"; case .deep: return "Deep"; case .unspecified: return "Unclassified" }
+    }
+    private func stageColor(_ stage: SleepComparisonSample.Stage) -> Color {
+        switch stage {
+        case .awake: return StrandPalette.sleepAwake
+        case .rem: return StrandPalette.sleepREM
+        case .core: return StrandPalette.sleepLight
+        case .deep: return StrandPalette.sleepDeep
+        case .unspecified: return StrandPalette.textTertiary
+        }
+    }
+    private func stageInspection(_ episode: SleepComparisonTimeline) -> [ChartScrubDatum] {
+        var result: [ChartScrubDatum] = [], segment = 0, previousEnd: Double?
+        for interval in episode.intervals {
+            if let previousEnd, interval.start > previousEnd { segment += 1 }
+            previousEnd = interval.end
+            for (index, time) in [interval.start, interval.end.nextDown].enumerated() {
+                result.append(ChartScrubDatum(id: "\(episode.id)|\(interval.id)|\(index)", x: time, y: stageLevel(interval.stage),
+                    value: "\(stageName(interval.stage)) · \(sleepHM((interval.end - interval.start) / 60))",
+                    context: "\(clockRange(interval.start, interval.end)) · \(episode.method)", series: episode.sourceID, segment: String(segment)))
+            }
+        }
+        return result
+    }
     private func sourceCard(_ title: String, icon: String, rows: [SleepComparisonDay], detail: String, tint: Color) -> some View {
         NoopCard(tint: tint, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
@@ -246,6 +401,9 @@ struct CutSleepView: View {
                     Text("Apple providers are kept separate and overlapping samples from one provider count once. Nearby stage fragments form a sleep period; totals include recorded sleep periods ending on that date, including naps. Awake gaps are not filled. Unknown or conflicting stages stay unclassified.")
                     Text("Dates can match while devices disagree on sleep boundaries. Differences show agreement, not which device is physiologically correct. Older saved Apple totals may combine providers and use segment-end dates.")
                     if let provider = appleProvider { Text("HealthKit source: \(provider.name)\n\(provider.detail)").textSelection(.enabled) }
+                    if let episode = selectedEpisode {
+                        Text("Timeline source: \(episode.sourceName) · \(episode.sourceID)\n\(episode.method)").textSelection(.enabled)
+                    }
                     Text("WHOOP sources: \(Set(whoop.map(\.sourceID)).sorted().joined(separator: ", "))")
                 }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).padding(.top, NoopMetrics.space2)
             }.font(StrandFont.subhead)
