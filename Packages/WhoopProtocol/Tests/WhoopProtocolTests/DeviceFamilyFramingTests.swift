@@ -2,6 +2,13 @@ import XCTest
 @testable import WhoopProtocol
 
 final class DeviceFamilyFramingTests: XCTestCase {
+    func testReadOnlyAlarmSlotsAreBounded() {
+        XCTAssertNil(AlarmPayload.getAlarmRev4(alarmId: 0))
+        XCTAssertNil(AlarmPayload.getAlarmRev4(alarmId: 7))
+        XCTAssertEqual((1...6).compactMap { AlarmPayload.getAlarmRev4(alarmId: UInt8($0)) },
+                       [[4,1], [4,2], [4,3], [4,4], [4,5], [4,6]])
+    }
+
 
     static func hex(_ s: String) -> [UInt8] {
         var out = [UInt8](); out.reserveCapacity(s.count / 2)

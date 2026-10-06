@@ -44,6 +44,12 @@ public enum MaverickHaptics {
 }
 
 public enum AlarmPayload {
+    /// Read-only candidate from docs/PROTOCOL_ALARMS.md. Responses remain unvalidated on hardware.
+    public static func getAlarmRev4(alarmId: UInt8) -> [UInt8]? {
+        guard (1...6).contains(alarmId) else { return nil }
+        return [4, alarmId]
+    }
+
     /// SET_ALARM_TIME (cmd 66) REVISION_4 body — 20 bytes; the strap arms its own RTC and fires the
     /// wake haptic itself (a strap-driven wake event) even with the Mac asleep. Wire layout,
     /// confirmed against captured frames:

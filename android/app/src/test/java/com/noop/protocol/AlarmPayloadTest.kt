@@ -17,6 +17,13 @@ import java.time.ZonedDateTime
  * the Experimental opt-in. Adopted from PR #85.)
  */
 class AlarmPayloadTest {
+    @Test fun readOnlyAlarmSlotsMatchSwiftOracle() {
+        val expected = listOf(listOf(4,1), listOf(4,2), listOf(4,3), listOf(4,4), listOf(4,5), listOf(4,6))
+        assertEquals(expected, (1..6).map { id -> AlarmPayload.getAlarmRev4(id)!!.map { it.toInt() } })
+        assertEquals(null, AlarmPayload.getAlarmRev4(0))
+        assertEquals(null, AlarmPayload.getAlarmRev4(7))
+    }
+
 
     private val utc: ZoneId = ZoneId.of("UTC")
 

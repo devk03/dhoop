@@ -18,6 +18,10 @@ import java.time.ZoneId
  * might silently not fire. All multi-byte fields are little-endian.
  */
 object AlarmPayload {
+    /** Read-only candidate; physical readback semantics remain unvalidated. */
+    fun getAlarmRev4(alarmId: Int): ByteArray? =
+        if (alarmId in 1..6) byteArrayOf(4, alarmId.toByte()) else null
+
     private const val OVERALL_LOOP: Byte = 7        // overallWaveformLoopControl (alarm pattern)
     private const val DURATION_SECONDS: Byte = 30   // alarmDurationInSeconds
 
