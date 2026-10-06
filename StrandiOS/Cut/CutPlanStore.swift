@@ -101,7 +101,7 @@ final class CutPlanStore: ObservableObject {
         guard kcal > 0 else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         food[day, default: []].append(FoodEntry(name: trimmed.isEmpty ? "Food" : trimmed, kcal: kcal, at: Date(),
-                                                protein: protein.flatMap { $0 > 0 ? $0 : nil }))
+                                                protein: protein.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }))
     }
 
     /// Protein logged for the day, grams (as typed; the calorie buffer does not apply).

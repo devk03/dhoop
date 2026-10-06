@@ -68,6 +68,12 @@ struct SleepWebhookDelivery: Codable, Sendable {
     var lastAcceptedAt: Date?
     var lastOutcome: String?
     var lastAcceptedEvent: SleepWebhookEvent?
+    // Optional fields preserve v1 checkpoint decoding, including exact in-flight sleep bytes.
+    var proteinPending: ProteinPending?
+    var proteinAcknowledged: [String: ProteinWebhookSummary]?
+    var lastAcceptedProtein: ProteinWebhookEvent?
+    var proteinAcceptedAt: Date?
+    var proteinOutcome: String?
 
     static func endpointURL(_ value: String) -> URL? {
         guard value == value.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -85,6 +91,7 @@ struct SleepWebhookDelivery: Codable, Sendable {
             // Revisions belong to the installation, not a destination. Returning to an old endpoint
             // must never send a lower revision than it has already seen.
             acknowledged = [:]; pending = nil; lastAcceptedAt = nil; lastOutcome = nil; lastAcceptedEvent = nil
+            proteinPending = nil; proteinAcknowledged = nil; lastAcceptedProtein = nil; proteinAcceptedAt = nil; proteinOutcome = nil
         }
     }
 
@@ -131,11 +138,24 @@ extension SleepWebhookDelivery {
               acknowledged.count <= 31, acknowledged.allSatisfy({ $0.key == $0.value.wakeDate && $0.value.isValid }) else {
             throw SleepWebhookFailure.invalidState
         }
+        guard (proteinAcknowledged?.count ?? 0) <= 366,
+              (proteinAcknowledged ?? [:]).allSatisfy({ $0.key == $0.value.day && $0.value.isValid }) else { throw SleepWebhookFailure.invalidState }
+        if let pending, let proteinPending {
+            guard pending.event.eventId != proteinPending.event.eventId, pending.event.revision != proteinPending.event.revision else { throw SleepWebhookFailure.invalidState }
+        }
+        if let p = proteinPending {
+            guard p.bytes.count <= 16_384, let decoded = try? JSONDecoder().decode(ProteinWebhookEvent.self, from: p.bytes),
+                  decoded == p.event, decoded.installationId == installationId, decoded.revision <= revision,
+                  decoded.revision > 0, decoded.schemaVersion == 2, decoded.kind == "protein", decoded.source == "dhoop",
+                  decoded.coverage == "logged_entries", decoded.summary.isValid,
+                  UUID(uuidString: decoded.eventId)?.uuidString.lowercased() == decoded.eventId,
+                  decoded.generationDate.hasSuffix("Z"), ISO8601DateFormatter().date(from: decoded.generationDate) != nil else { throw SleepWebhookFailure.invalidState }
+        }
         if let pending {
             guard pending.bytes.count <= 16_384,
                   let decoded = try? JSONDecoder().decode(SleepWebhookEvent.self, from: pending.bytes),
                   decoded == pending.event, decoded.installationId == installationId,
-                  decoded.revision == revision, decoded.revision > 0,
+                  decoded.revision <= revision, decoded.revision > 0,
                   decoded.schemaVersion == 1, decoded.source == "whoop", decoded.summary.isValid,
                   UUID(uuidString: decoded.eventId)?.uuidString.lowercased() == decoded.eventId,
                   decoded.generationDate.hasSuffix("Z"), ISO8601DateFormatter().date(from: decoded.generationDate) != nil else {
@@ -149,12 +169,19 @@ struct SleepWebhookCheckpoint: Codable {
     var version = 1
     var delivery = SleepWebhookDelivery()
     var enabled = false
+    var proteinEnabled: Bool?
+    var proteinFailures: Int?
+    var proteinNextAttempt: Date?
+    var proteinMessage: String?
+    var sleepBacklog: Bool?
+    var proteinBacklog: Bool?
+    var anyEnabled: Bool { enabled || proteinEnabled == true }
     var failures = 0
     var nextAttempt: Date?
     var message = "Not connected"
 
     func validate() throws {
-        guard version == 1, failures >= 0 else { throw SleepWebhookFailure.invalidState }
+        guard (version == 1 || version == 2), failures >= 0, (proteinFailures ?? 0) >= 0 else { throw SleepWebhookFailure.invalidState }
         try delivery.validate()
     }
 }

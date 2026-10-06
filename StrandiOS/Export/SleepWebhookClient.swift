@@ -11,6 +11,8 @@ final class SleepWebhookClient: ObservableObject {
     @Published private(set) var storageUnavailable = false
     private var worker: Task<Void, Never>?
     private var generation = 0
+    private var runAgain = false
+    private var forceAgain = false
     private let store: SleepWebhookFileStore
     private let documents: URL
 
@@ -23,6 +25,7 @@ final class SleepWebhookClient: ObservableObject {
         try? retireConsumedSetup()
     }
     var hasCredentials: Bool { (try? credentials()) != nil }
+    var hasProteinCredentials: Bool { (try? credentials().hasProteinBearer) == true }
     private func credentials() throws -> SleepWebhookCredentials {
         guard let bytes = try SleepWebhookKeychain.read("credentials") else { throw SleepWebhookFailure.credentials }
         let value = try JSONDecoder().decode(SleepWebhookCredentials.self, from: bytes)
@@ -39,7 +42,7 @@ final class SleepWebhookClient: ObservableObject {
         guard value.isValid, !isSending else { throw SleepWebhookFailure.invalidConfiguration }
         var next = checkpoint
         try next.delivery.configure(endpoint: value.endpoint)
-        next.enabled = false; next.failures = 0; next.nextAttempt = nil; next.message = "Connection saved · automatic delivery is off"
+        next.enabled = false; next.proteinEnabled = false; next.failures = 0; next.nextAttempt = nil; next.message = "Connection saved · automatic delivery is off"
         // Persist the disabled destination BEFORE changing its credentials; a crash cannot accidentally
         // send an old pending event with credentials meant for a different endpoint.
         try commit(next)
@@ -47,92 +50,136 @@ final class SleepWebhookClient: ObservableObject {
     }
     func setEnabled(_ enabled: Bool) throws {
         if enabled { _ = try credentials() }
-        var next = checkpoint
-        next.enabled = enabled; next.nextAttempt = nil
-        next.message = enabled ? "Ready to send verified WHOOP sleep" : "Automatic delivery is off"
-        try commit(next)
-        generation += 1; worker?.cancel()
-        SleepWebhookScheduler.update(enabled: enabled)
+        var next = checkpoint; next.enabled = enabled; next.nextAttempt = nil
+        next.message = enabled ? "Sleep sends after the day ends" : "Sleep delivery is off"
+        try commit(next); generation += 1; worker?.cancel()
+        SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled)
+    }
+    func setProteinEnabled(_ enabled: Bool) throws {
+        if enabled { guard try credentials().hasProteinBearer else { throw SleepWebhookFailure.credentials } }
+        var next = checkpoint; next.version = 2; next.proteinEnabled = enabled; next.proteinNextAttempt = nil
+        next.proteinMessage = enabled ? "Protein sends after the day ends" : "Protein delivery is off"
+        try commit(next); generation += 1; worker?.cancel()
+        SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled)
     }
     func enqueue(model: AppModel, force: Bool = false) {
-        guard checkpoint.enabled, worker == nil else { return }
+        guard checkpoint.anyEnabled else { return }
+        if worker != nil { runAgain = true; forceAgain = forceAgain || force; return }
         worker = Task(priority: .utility) { [weak self, weak model] in
             guard let self, let model else { return }
             _ = await self.deliver(model: model, force: force)
             self.worker = nil
+            if self.runAgain {
+                let forceNext = self.forceAgain
+                self.runAgain = false; self.forceAgain = false
+                self.enqueue(model: model, force: forceNext)
+            }
         }
     }
     func deliver(model: AppModel, force: Bool = false) async -> Bool {
-        guard !isSending, !storageUnavailable, checkpoint.enabled else { return true }
+        guard !isSending, !storageUnavailable, checkpoint.anyEnabled else { return true }
         guard TimeZone.current.identifier == "America/Los_Angeles" else {
             setMessage("Paused outside America/Los_Angeles. No dates are converted.")
             return false
         }
-        guard force || SleepWebhookPolicy.canSend(enabled: checkpoint.enabled, timeZone: .current,
-                                                  nextAttempt: checkpoint.nextAttempt, now: Date()) else { return true }
-        // A partial/failed rescore must settle before exporting its mutable results.
-        guard checkpoint.delivery.pending != nil || (!model.intelligence.computing && !RescoreBackgroundScheduler.isRescoreOwed) else {
-            setMessage("Waiting for sleep processing to finish")
-            SleepWebhookScheduler.update(enabled: true)
-            return false
-        }
         isSending = true
         let ticket = generation
-        defer { isSending = false; SleepWebhookScheduler.update(enabled: checkpoint.enabled) }
-        do {
-            let secret = try credentials()
-            var candidates: [SleepWebhookSummary] = []
-            if checkpoint.delivery.pending == nil {
-                guard let healthStore = await model.repo.storeHandle() else { throw SleepWebhookFailure.storage }
-                var selection = MetricRangeSelection(); selection.preset = .week
-                let window = selection.window(now: Date())
-                let ids = await model.repo.sleepComparisonSourceIds().filter { !$0.hasSuffix("-noop") }
-                let rows = try await healthStore.verifiedWhoopSleepTotals(rawSourceIds: ids, from: window.fromDay, to: window.toDay)
-                candidates = rows.reversed().map { row in
-                    SleepWebhookSummary(wakeDate: row.day, sleepMinutes: row.minutes,
-                        method: row.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles")
-                }
-            }
-            // At most two small requests per invocation. Further history catches up on later triggers.
-            for _ in 0..<2 {
+        defer { isSending = false; SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled) }
+        var success = true
+        // Newest first, then oldest outstanding: four bounded requests at most. The second slot
+        // prevents old corrections starving when one new completed day arrives every day.
+        for (protein, oldestFirst) in [(false, false), (true, false), (false, true), (true, true)] {
+            let enabled = protein ? checkpoint.proteinEnabled == true : checkpoint.enabled
+            let deadline = protein ? checkpoint.proteinNextAttempt : checkpoint.nextAttempt
+            guard enabled, force || SleepWebhookPolicy.canSend(enabled: enabled, timeZone: .current, nextAttempt: deadline, now: Date()) else { continue }
+            do {
                 try Task.checkCancellation()
-                guard ticket == generation, checkpoint.enabled else { return false }
-                guard TimeZone.current.identifier == "America/Los_Angeles" else { throw SleepWebhookFailure.travelPause }
+                guard ticket == generation else { return false }
+                let secret = try credentials()
+                if protein, !secret.hasProteinBearer { throw SleepWebhookFailure.credentials }
                 var next = checkpoint
-                if next.delivery.pending == nil {
-                    guard let summary = candidates.first(where: { next.delivery.acknowledged[$0.wakeDate] != $0 }) else {
-                        if next.delivery.lastAcceptedAt == nil { setMessage("No verified WHOOP sleep available in the last 7 days") }
-                        return true
+                let completed = SleepWebhookPolicy.completedDays(now: Date())
+                if protein {
+                    if next.delivery.proteinPending == nil {
+                        let all = try ProteinWebhookProjection.savedEntries()
+                        let summaries = try ProteinWebhookProjection.summaries(entries: all,
+                            acknowledged: next.delivery.proteinAcknowledged ?? [:], from: completed.from, to: completed.through)
+                        let differences = summaries.filter { $0.day <= completed.through && next.delivery.proteinAcknowledged?[$0.day] != $0 }
+                        next.proteinBacklog = differences.count > 1
+                        guard let candidate = oldestFirst ? differences.last : differences.first else {
+                            if next.delivery.lastAcceptedProtein == nil {
+                                next.proteinMessage = "No protein logged for a completed day. Manual entry on Life is available."
+                            }
+                            try commit(next); continue
+                        }
+                        next.version = 2; _ = try next.delivery.prepareProtein(candidate)
+                        next.proteinMessage = "Sending completed-day protein"
+                        try commit(next)
                     }
-                    _ = try next.delivery.prepare(summary)
-                    next.message = "Sending verified sleep"
-                    try commit(next) // immutable bytes and revision durable before the network starts
+                    guard let pending = checkpoint.delivery.proteinPending, pending.event.day <= completed.through else { continue }
+                    guard TimeZone.current.identifier == "America/Los_Angeles" else { throw SleepWebhookFailure.travelPause }
+                    let response = try await SleepWebhookTransport().send(pending.bytes, credentials: secret, protein: true)
+                    try Task.checkCancellation(); guard ticket == generation else { return false }
+                    next = checkpoint; try next.delivery.acceptProtein(response)
+                    next.proteinFailures = 0; next.proteinNextAttempt = nil
+                    next.proteinMessage = next.delivery.proteinOutcome == "manual_preserved"
+                        ? "Received by Life · manual protein preserved" : "Protein received by Life"
+                } else {
+                    if next.delivery.pending == nil {
+                        guard !model.intelligence.computing, !RescoreBackgroundScheduler.isRescoreOwed else {
+                            next.sleepBacklog = true; next.message = "Waiting for completed-day sleep processing"
+                            try commit(next); continue
+                        }
+                        guard let healthStore = await model.repo.storeHandle() else { throw SleepWebhookFailure.storage }
+                        let ids = await model.repo.sleepComparisonSourceIds().filter { !$0.hasSuffix("-noop") }
+                        let rows = try await healthStore.verifiedWhoopSleepTotals(rawSourceIds: ids, from: completed.from, to: completed.through)
+                        try Task.checkCancellation()
+                        guard ticket == generation, checkpoint.enabled else { return false }
+                        next = checkpoint
+                        guard !model.intelligence.computing, !RescoreBackgroundScheduler.isRescoreOwed else {
+                            next.sleepBacklog = true; next.message = "Waiting for completed-day sleep processing"
+                            try commit(next); continue
+                        }
+                        let candidates = rows.reversed().map { SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
+                            method: $0.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles") }
+                        let differences = candidates.filter { next.delivery.acknowledged[$0.wakeDate] != $0 }
+                        next.sleepBacklog = differences.count > 1
+                        guard let candidate = oldestFirst ? differences.last : differences.first else {
+                            if next.delivery.lastAcceptedAt == nil { next.message = "No verified sleep available for a completed day" }
+                            try commit(next); continue
+                        }
+                        _ = try next.delivery.prepare(candidate); next.message = "Sending completed-day sleep"
+                        try commit(next)
+                    }
+                    guard let pending = checkpoint.delivery.pending, pending.event.wakeDate <= completed.through else { continue }
+                    guard TimeZone.current.identifier == "America/Los_Angeles" else { throw SleepWebhookFailure.travelPause }
+                    let response = try await SleepWebhookTransport().send(pending.bytes, credentials: secret)
+                    try Task.checkCancellation(); guard ticket == generation else { return false }
+                    next = checkpoint; try next.delivery.accept(response)
+                    next.failures = 0; next.nextAttempt = nil
+                    next.message = next.delivery.lastOutcome == "manual_preserved"
+                        ? "Received by Life · manual sleep preserved" : "Sleep received by Life"
                 }
-                guard let pending = checkpoint.delivery.pending else { throw SleepWebhookFailure.invalidState }
-                let response = try await SleepWebhookTransport().send(pending.bytes, credentials: secret)
-                try Task.checkCancellation()
-                guard ticket == generation, checkpoint.enabled else { return false }
-                next = checkpoint
-                try next.delivery.accept(response)
-                next.failures = 0; next.nextAttempt = nil
-                next.message = next.delivery.lastOutcome == "manual_preserved"
-                    ? "Received by website · your manual entry was preserved"
-                    : "Received by website"
-                try commit(next) // a failed checkpoint retains the immutable pending event for retry
-            }
-            return true
-        } catch is CancellationError { return false }
-        catch {
-            if ticket == generation {
+                try commit(next)
+            } catch is CancellationError { return false }
+            catch {
+                success = false
+                guard ticket == generation else { return false }
                 var next = checkpoint
-                next.failures = min(next.failures + 1, 100)
-                next.nextAttempt = Date().addingTimeInterval(SleepWebhookPolicy.retryDelay(failures: next.failures))
-                next.message = Self.safeMessage(error)
+                if protein {
+                    next.proteinFailures = min((next.proteinFailures ?? 0) + 1, 100)
+                    next.proteinNextAttempt = Date().addingTimeInterval(SleepWebhookPolicy.retryDelay(failures: next.proteinFailures!))
+                    next.proteinMessage = Self.safeMessage(error)
+                } else {
+                    next.failures = min(next.failures + 1, 100)
+                    next.nextAttempt = Date().addingTimeInterval(SleepWebhookPolicy.retryDelay(failures: next.failures))
+                    next.message = Self.safeMessage(error)
+                }
                 do { try commit(next) }
-                catch { checkpoint.message = "Delivery state could not be saved. Export is paused."; storageUnavailable = true }
+                catch { checkpoint.message = "Delivery state could not be saved. Export is paused."; storageUnavailable = true; return false }
             }
-            return false
         }
+        return success
     }
     private func setMessage(_ message: String) {
         guard checkpoint.message != message else { return }
@@ -144,6 +191,7 @@ final class SleepWebhookClient: ObservableObject {
         guard let failure = error as? SleepWebhookFailure else { return "Connection interrupted. Pending sleep is saved for retry." }
         switch failure {
         case .http(let code): return "Website returned HTTP \(code). Pending sleep is saved."
+        case .invalidSummary: return "A local record is invalid. Check the logged values; nothing was acknowledged."
         case .credentials: return "Credentials unavailable. Unlock the phone or update the connection."
         case .travelPause: return "Paused outside America/Los_Angeles. No dates are converted."
         case .invalidAcknowledgement, .responseTooLarge: return "Website acknowledgement was invalid. Pending sleep is saved."
@@ -206,6 +254,7 @@ final class SleepWebhookClient: ObservableObject {
             if args.contains("--prepare-sleep-webhook") { try prepareSecureSetup() }
             if args.contains("--import-sleep-webhook") { try importSecureSetup() }
             if args.contains("--enable-sleep-webhook") { try setEnabled(true); enqueue(model: model, force: true) }
+            if args.contains("--enable-protein-webhook") { try setProteinEnabled(true); enqueue(model: model, force: true) }
             if args.contains("--send-sleep-webhook") { enqueue(model: model, force: true) }
             if args.contains("--sleep-webhook-status") { writeStatus() }
         } catch { setMessage(Self.safeMessage(error)) }
@@ -215,11 +264,16 @@ final class SleepWebhookClient: ObservableObject {
         #if DEBUG
         struct Status: Encodable {
             let enabled: Bool; let message: String; let installationId: String
+            let proteinEnabled: Bool; let proteinMessage: String?; let proteinPending: Bool
+            let proteinEventId: String?; let proteinDay: String?; let proteinRevision: Int?; let proteinOutcome: String?
             let revision: Int; let pending: Bool; let lastAcceptedAt: Date?
             let eventId: String?; let wakeDate: String?; let acceptedRevision: Int?; let outcome: String?
         }
         let d = checkpoint.delivery
         let safe = Status(enabled: checkpoint.enabled, message: checkpoint.message, installationId: d.installationId,
+            proteinEnabled: checkpoint.proteinEnabled == true, proteinMessage: checkpoint.proteinMessage, proteinPending: d.proteinPending != nil,
+            proteinEventId: d.lastAcceptedProtein?.eventId, proteinDay: d.lastAcceptedProtein?.day,
+            proteinRevision: d.lastAcceptedProtein?.revision, proteinOutcome: d.proteinOutcome,
             revision: d.revision, pending: d.pending != nil, lastAcceptedAt: d.lastAcceptedAt,
             eventId: d.lastAcceptedEvent?.eventId, wakeDate: d.lastAcceptedEvent?.wakeDate,
             acceptedRevision: d.lastAcceptedEvent?.revision, outcome: d.lastOutcome)

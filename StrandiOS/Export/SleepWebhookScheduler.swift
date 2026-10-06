@@ -9,7 +9,7 @@ enum SleepWebhookScheduler {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil) { task in
             let completion = Completion(task)
             let worker = Task { @MainActor in
-                update(enabled: SleepWebhookClient.shared.checkpoint.enabled)
+                update(enabled: SleepWebhookClient.shared.checkpoint.anyEnabled)
                 let success = await perform()
                 guard !Task.isCancelled else { return }
                 completion.finish(success)
@@ -23,7 +23,7 @@ enum SleepWebhookScheduler {
         let task = BGProcessingTaskRequest(identifier: identifier)
         task.requiresNetworkConnectivity = true
         task.requiresExternalPower = false
-        task.earliestBeginDate = Date().addingTimeInterval(3600)
+        task.earliestBeginDate = SleepWebhookPolicy.nextOpportunity(state: SleepWebhookClient.shared.checkpoint, now: Date())
         try? BGTaskScheduler.shared.submit(task)
     }
     private final class Completion: @unchecked Sendable {

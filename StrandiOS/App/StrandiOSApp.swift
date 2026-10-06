@@ -342,7 +342,7 @@ struct StrandiOSApp: App {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 model.drainPendingIntents(router: router)
-                SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.enabled)
+                SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.anyEnabled)
                 SleepWebhookClient.shared.enqueue(model: model)
                 // iOS starts a Lift Log banner only for an app on screen, so a banner lost while NOOP was in
                 // the background comes back now, whether or not the strap is sending anything.
@@ -387,7 +387,7 @@ struct StrandiOSApp: App {
                     await watch.pushLatest(from: model)
                 }
             } else if phase == .background {
-                SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.enabled)
+                SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.anyEnabled)
                 // Re-submit on every transition because iOS may discard an old best-effort request.
                 HealthWritebackBackgroundScheduler.updateSchedule(
                     isAuthorized: health.auth == .authorized)

@@ -7,8 +7,9 @@ final class SleepWebhookTransport: NSObject, URLSessionTaskDelegate, @unchecked 
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 
-    func send(_ bytes: Data, credentials: SleepWebhookCredentials,
+    func send(_ bytes: Data, credentials: SleepWebhookCredentials, protein: Bool = false,
               configuration: URLSessionConfiguration = .ephemeral) async throws -> Data {
+        try Task.checkCancellation()
         guard credentials.isValid, let url = SleepWebhookDelivery.endpointURL(credentials.endpoint), bytes.count <= 16_384 else {
             throw SleepWebhookFailure.invalidConfiguration
         }
@@ -25,7 +26,8 @@ final class SleepWebhookTransport: NSObject, URLSessionTaskDelegate, @unchecked 
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("Dhoop/1.0", forHTTPHeaderField: "User-Agent")
-        request.setValue("Bearer " + credentials.bearer, forHTTPHeaderField: "Authorization")
+        guard !protein || credentials.hasProteinBearer else { throw SleepWebhookFailure.credentials }
+        request.setValue("Bearer " + (protein ? credentials.proteinBearer! : credentials.bearer), forHTTPHeaderField: "Authorization")
         request.setValue(credentials.clientId, forHTTPHeaderField: "CF-Access-Client-Id")
         request.setValue(credentials.clientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
         let (stream, response) = try await session.bytes(for: request)

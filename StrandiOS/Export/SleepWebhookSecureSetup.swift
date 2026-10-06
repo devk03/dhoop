@@ -6,10 +6,15 @@ struct SleepWebhookCredentials: Codable {
     let bearer: String
     let clientId: String
     let clientSecret: String
+    let proteinBearer: String?
+    init(endpoint: String, bearer: String, clientId: String, clientSecret: String, proteinBearer: String? = nil) {
+        self.endpoint = endpoint; self.bearer = bearer; self.clientId = clientId; self.clientSecret = clientSecret; self.proteinBearer = proteinBearer
+    }
+    var hasProteinBearer: Bool { proteinBearer.map { $0.count >= 32 && $0.count <= 1024 && $0.unicodeScalars.allSatisfy { $0.value >= 33 && $0.value <= 126 } } ?? false }
 
     var isValid: Bool {
         let destinations = ["https://track.kunjadia.dev/api/webhooks/sleep", "https://tracker.kunjadia.dev/api/webhooks/sleep"]
-        return destinations.contains(endpoint) && bearer.count >= 32 && bearer.count <= 1024
+        return (proteinBearer == nil || hasProteinBearer) && destinations.contains(endpoint) && bearer.count >= 32 && bearer.count <= 1024
             && !clientId.isEmpty && clientId.count <= 1024 && !clientSecret.isEmpty && clientSecret.count <= 2048
             && [bearer, clientId, clientSecret].allSatisfy { text in
                 text.unicodeScalars.allSatisfy { $0.value >= 33 && $0.value <= 126 }

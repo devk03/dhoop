@@ -157,6 +157,15 @@ final class SleepWebhookTransportTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
         XCTAssertEqual(request.url?.absoluteString, credentials.endpoint)
     }
+    func testProteinRequiresItsOwnBearerAndNeverFallsBackToSleepToken() async throws {
+        do { _ = try await SleepWebhookTransport().send(Data("{}".utf8), credentials: credentials, protein: true, configuration: config); XCTFail("Missing protein bearer was accepted") }
+        catch SleepWebhookFailure.credentials {} catch { XCTFail("Unexpected failure type") }
+        XCTAssertNil(SleepWebhookMockProtocol.observed)
+        let separate = SleepWebhookCredentials(endpoint: credentials.endpoint, bearer: credentials.bearer,
+            clientId: credentials.clientId, clientSecret: credentials.clientSecret, proteinBearer: String(repeating: "p", count: 43))
+        _ = try await SleepWebhookTransport().send(Data("{}".utf8), credentials: separate, protein: true, configuration: config)
+        XCTAssertEqual(SleepWebhookMockProtocol.observed?.value(forHTTPHeaderField: "Authorization"), "Bearer " + separate.proteinBearer!)
+    }
     func testNon200AndHTMLAreNotAcknowledgements() async throws {
         for (status, mime) in [(204, "application/json"), (302, "text/html"), (403, "text/html"), (500, "application/json"), (200, "text/html")] {
             SleepWebhookMockProtocol.status = status; SleepWebhookMockProtocol.mime = mime
