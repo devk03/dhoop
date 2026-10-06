@@ -25,7 +25,7 @@ public enum NoopMetrics {
     public static let dashboardTileChartHeight: CGFloat = 48
     public static let dashboardTileMinimumWidth: CGFloat = 160
     public static let dashboardHeroNumber: CGFloat = 64
-    public static let dashboardMetricNumber: CGFloat = 40
+    public static let dashboardMetricNumber: CGFloat = 36
     public static let minimumTouchTarget: CGFloat = 44
     /// Minimum macOS detail-sheet footprint for a scrollable editor/history surface.
     public static let detailSheetMinWidth: CGFloat = 520

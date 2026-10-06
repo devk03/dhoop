@@ -25,7 +25,7 @@ struct CutSleepView: View {
     }
     private var apple: [SleepComparisonDay] { appleProvider?.days ?? [] }
     private var pairs: [SleepComparisonProjection.Pair] { SleepComparisonProjection.matched(whoop, apple) }
-    private var grid: DashboardGridLayout { DashboardGridLayout(columns: typeSize.isAccessibilitySize ? 1 : 2) }
+    private var grid: DashboardGridLayout { DashboardGridLayout(columns: typeSize >= .xxxLarge ? 1 : 2) }
     private var whoopMethod: String {
         let kinds = Set(whoop.map(\.method))
         return kinds.count == 1 ? kinds.first! : kinds.isEmpty ? "No sleep in range" : "Records + estimates"
@@ -142,7 +142,7 @@ struct CutSleepView: View {
                 Spacer(minLength: NoopMetrics.space1)
                 if !pairs.isEmpty { Text("\(comparable.count) matched").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary) }
             }
-            DashboardGridLayout(columns: typeSize.isAccessibilitySize ? 1 : 2, squareMinimum: false) {
+            DashboardGridLayout(columns: typeSize >= .xxxLarge ? 1 : 2, squareMinimum: false) {
                 stageValue("WHOOP", values: left, maximum: maximum, tint: StrandPalette.metricPurple)
                 stageValue("Apple", values: right, maximum: maximum, tint: StrandPalette.metricCyan)
             }
@@ -165,19 +165,41 @@ struct CutSleepView: View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 Text("Recorded sleep duration").font(StrandFont.headline)
+                let whoopPoints = chartPoints(whoop, prefix: "whoop")
+                let applePoints = chartPoints(apple, prefix: "apple")
+                let singletons = Set(Dictionary(grouping: whoopPoints + applePoints, by: \.segment).filter { $0.value.count == 1 }.keys)
                 Chart {
-                    ForEach(chartPoints(whoop, prefix: "whoop")) { p in
+                    ForEach(whoopPoints) { p in
+                        AreaMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment), stacking: .unstacked)
+                            .foregroundStyle(StrandChartStyle.area(StrandPalette.metricPurple)).interpolationMethod(.linear)
+                            .alignsMarkStylesWithPlotArea()
                         LineMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment))
                             .foregroundStyle(StrandPalette.metricPurple).interpolationMethod(.linear)
-                        PointMark(x: .value("Date", p.date), y: .value("Hours", p.value)).foregroundStyle(StrandPalette.metricPurple)
+                            .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round))
+                        if whoopPoints.count <= StrandChartStyle.sparsePointLimit || singletons.contains(p.segment) {
+                            PointMark(x: .value("Date", p.date), y: .value("Hours", p.value))
+                                .foregroundStyle(StrandPalette.metricPurple).symbolSize(StrandChartStyle.pointArea)
+                        }
                     }
-                    ForEach(chartPoints(apple, prefix: "apple")) { p in
+                    ForEach(applePoints) { p in
+                        AreaMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment), stacking: .unstacked)
+                            .foregroundStyle(StrandChartStyle.area(StrandPalette.metricCyan)).interpolationMethod(.linear)
+                            .alignsMarkStylesWithPlotArea()
                         LineMark(x: .value("Date", p.date), y: .value("Hours", p.value), series: .value("Segment", p.segment))
                             .foregroundStyle(StrandPalette.metricCyan).interpolationMethod(.linear)
-                        PointMark(x: .value("Date", p.date), y: .value("Hours", p.value)).foregroundStyle(StrandPalette.metricCyan)
+                            .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round))
+                        if applePoints.count <= StrandChartStyle.sparsePointLimit || singletons.contains(p.segment) {
+                            PointMark(x: .value("Date", p.date), y: .value("Hours", p.value))
+                                .foregroundStyle(StrandPalette.metricCyan).symbolSize(StrandChartStyle.pointArea)
+                        }
                     }
                 }
                 .chartLegend(.hidden).chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { _ in AxisValueLabel(format: .dateTime.month(.abbreviated).day()) } }
+                .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                    AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(StrandChartStyle.gridOpacity))
+                    AxisValueLabel().font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                } }
+                .chartPlotStyle { $0.clipped() }
                 .frame(height: NoopMetrics.dashboardTraceHeight)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Sleep duration by date. WHOOP \(whoop.count) records, Apple \(apple.count) records. Missing dates remain gaps.")

@@ -85,8 +85,8 @@ public extension Color {
 
 public enum StrandPalette {
 
-    // MARK: Surfaces — deep navy canvas, tinted frosted cards
-    // Background is a near-black navy (NOT pure black); cards float just above it.
+    // MARK: Surfaces — neutral charcoal canvas and quiet raised cards
+    // Background is near-black charcoal; cards separate through a slightly lighter fill.
     public static let surfaceBase    = NoopVisualStyle.canvas
     public static let surfaceRaised  = NoopVisualStyle.surface
     public static let surfaceOverlay = NoopVisualStyle.surfaceTop
@@ -94,7 +94,7 @@ public enum StrandPalette {
     public static let hairline       = NoopVisualStyle.border
     public static let hairlineStrong = NoopVisualStyle.borderHighlight
 
-    // MARK: Text — deep navy-ink on paper / cool off-white on navy
+    // MARK: Text — dark ink on paper / cool off-white on charcoal
     public static let textPrimary    = NoopVisualStyle.primaryText
     public static let textSecondary  = NoopVisualStyle.secondaryText
     public static let textTertiary   = NoopVisualStyle.tertiaryText

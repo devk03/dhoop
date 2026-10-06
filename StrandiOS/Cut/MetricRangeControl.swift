@@ -6,8 +6,7 @@ struct MetricRangeControl: View {
     @Binding var selection: MetricRangeSelection
     let now: Date
     var body: some View {
-        NoopCard(padding: NoopMetrics.space3) {
-            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: NoopMetrics.space1) {
@@ -16,8 +15,8 @@ struct MetricRangeControl: View {
                                     Text(preset.shortTitle).font(StrandFont.subhead).fixedSize()
                                         .padding(.horizontal, NoopMetrics.space3)
                                         .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                                        .foregroundStyle(selection.preset == preset ? StrandPalette.textPrimary : StrandPalette.textSecondary)
-                                        .background(selection.preset == preset ? StrandPalette.surfaceRaised : .clear, in: Capsule())
+                                        .foregroundStyle(selection.preset == preset ? NoopVisualStyle.selectedControlInk : StrandPalette.textSecondary)
+                                        .background(selection.preset == preset ? NoopVisualStyle.selectedControlFill : .clear, in: Capsule())
                                 }
                                 .buttonStyle(.plain).id(preset)
                                 .accessibilityLabel(preset.title)
@@ -25,6 +24,9 @@ struct MetricRangeControl: View {
                             }
                         }
                     }
+                    .padding(NoopMetrics.space1)
+                    .background(StrandPalette.surfaceInset, in: Capsule())
+                    .overlay(Capsule().strokeBorder(StrandPalette.hairline, lineWidth: NoopMetrics.hairlineWidth))
                     .onAppear { proxy.scrollTo(selection.preset, anchor: .center) }
                     .onChange(of: selection.preset) { _, value in proxy.scrollTo(value, anchor: .center) }
                 }
@@ -34,7 +36,6 @@ struct MetricRangeControl: View {
                 }
                 Text(selection.window(now: now).label).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-            }
         }
     }
 }

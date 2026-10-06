@@ -121,6 +121,7 @@ public struct TrendChart: View {
     /// Mean of all point values, computed once in `init` so the area fill's gradient
     /// stop doesn't run an O(n) reduce for every mark on every render.
     private let averageValue: Double
+    private let singletonSegments: Set<String>
 
     /// One-line VoiceOver summary (count + mean + range), built once in `init`.
     private let a11ySummary: String
@@ -145,6 +146,7 @@ public struct TrendChart: View {
     ) {
         let sorted = points.sorted { $0.date < $1.date }
         self.points = sorted
+        self.singletonSegments = Set(Dictionary(grouping: sorted, by: \.segment).filter { $0.value.count == 1 }.keys)
         self.gradient = gradient
         self.valueRange = valueRange
         self.showsArea = showsArea
@@ -292,19 +294,13 @@ public struct TrendChart: View {
                     ForEach(displayPoints) { p in
                         AreaMark(
                             x: .value("Date", p.date),
-                            y: .value("Value", p.value),
+                            yStart: .value("Baseline", plotYDomain.lowerBound),
+                            yEnd: .value("Value", p.value),
                             series: .value("Segment", p.segment)
                         )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [
-                                    StrandPalette.sample(stops: gradient.toStops(), at: unit(averageValue)).opacity(0.28),
-                                    Color.clear
-                                ],
-                                startPoint: .top, endPoint: .bottom
-                            )
-                        )
+                        .interpolationMethod(.linear)
+                        .foregroundStyle(StrandChartStyle.area(StrandPalette.sample(stops: gradient.toStops(), at: unit(averageValue))))
+                        .alignsMarkStylesWithPlotArea()
                     }
                 }
                 ForEach(displayPoints) { p in
@@ -313,22 +309,18 @@ public struct TrendChart: View {
                         y: .value("Value", p.value),
                         series: .value("Segment", p.segment)
                     )
-                    .interpolationMethod(.catmullRom)
-                    .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                    .interpolationMethod(.linear)
+                    .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round, lineJoin: .round))
                     .foregroundStyle(valueGradient)
                 }
-                // 18pt dots are invisible on dense series (e.g. a 365-day year) but still cost the
-                // GPU a mark each — hide them past a threshold; the line carries the data there. The gate
-                // stays on the full `points.count` (≤60 is never downsampled, so displayPoints == points).
-                if points.count <= 60 {
-                    ForEach(displayPoints) { p in
+                // Dense lines stay clear; isolated observations remain visible across gaps.
+                ForEach(displayPoints.filter { points.count <= StrandChartStyle.sparsePointLimit || singletonSegments.contains($0.segment) }) { p in
                         PointMark(
                             x: .value("Date", p.date),
                             y: .value("Value", p.value)
                         )
-                        .symbolSize(18)
+                        .symbolSize(StrandChartStyle.pointArea)
                         .foregroundStyle(StrandPalette.sample(stops: gradient.toStops(), at: unit(p.value)))
-                    }
                 }
             }
         }

@@ -5,6 +5,7 @@ import StrandDesign
 struct InlineHeartRateCapture: View {
     let expectedDeviceId: String
     let enabled: Bool
+    var savedSummary: String? = nil
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveState
     @EnvironmentObject private var repo: Repository
@@ -19,13 +20,20 @@ struct InlineHeartRateCapture: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
             if session.isActive {
+                if let savedSummary { Text(savedSummary).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                 TimelineView(.periodic(from: .now, by: 1)) { context in capture(now: context.date) }
             } else {
-                Button { start() } label: { Label("Live HR · 60s", systemImage: "waveform.path.ecg") }
-                    .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.liquidHeart)
-                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                    .disabled(!enabled || !status(Date()).connected)
-                    .accessibilityHint("Collects live heart rate here for sixty seconds")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NoopMetrics.space2) {
+                        if let savedSummary { Text(savedSummary).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).fixedSize() }
+                        Spacer(minLength: 0)
+                        startButton.fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                        if let savedSummary { Text(savedSummary).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+                        startButton
+                    }
+                }
                 if let endedAt {
                     Text("Session ended · \(lastBPM.map { "\($0) bpm" } ?? "no readable sample") · \(endedAt.formatted(.dateTime.hour().minute()))")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -57,6 +65,15 @@ struct InlineHeartRateCapture: View {
                 try? await Task.sleep(nanoseconds: 5 * 1_000_000_000)
             } while session.isActive && !Task.isCancelled
         }
+    }
+
+    private var startButton: some View {
+        Button { start() } label: { Label("Live · 60s", systemImage: "waveform.path.ecg") }
+            .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.liquidHeart)
+            .frame(minHeight: NoopMetrics.minimumTouchTarget)
+            .disabled(!enabled || !status(Date()).connected)
+            .accessibilityLabel("Live heart rate for sixty seconds")
+            .accessibilityHint("Collects live heart rate inside this card")
     }
 
     private func status(_ now: Date) -> LiveHeartRateStatus {

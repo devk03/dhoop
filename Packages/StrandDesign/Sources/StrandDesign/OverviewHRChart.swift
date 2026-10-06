@@ -104,6 +104,7 @@ public struct OverviewHRChart: View {
     ) {
         let sorted = points.sorted { $0.date < $1.date }
         self.points = sorted
+        self.singletonSegments = Set(Dictionary(grouping: sorted, by: \.segment).filter { $0.value.count == 1 }.keys)
         self.sleep = sleep
         self.workouts = workouts
         self.recovery = recovery
@@ -154,6 +155,7 @@ public struct OverviewHRChart: View {
     /// the static Today chart is pixel-identical. Computed ONCE in `init` (not per body/hover eval) so
     /// it's memoized on `points`; hover / markers / accessibility stay on the full `points`.
     private let displayPoints: [TrendPoint]
+    private let singletonSegments: Set<String>
 
     /// Smallest zoom window we allow (1 minute) — past this the line is just two points and pinch jitters.
     public static let minZoomSpan: TimeInterval = 60
@@ -289,23 +291,20 @@ public struct OverviewHRChart: View {
         }
 
         ForEach(displayPoints) { p in
-            AreaMark(x: .value("Time", p.date), y: .value("BPM", p.value))
-                .interpolationMethod(.catmullRom)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [
-                            StrandPalette.sample(stops: gradient.toStops(), at: unit(averageValue)).opacity(0.28),
-                            Color.clear
-                        ],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
+            AreaMark(x: .value("Time", p.date), y: .value("BPM", p.value), series: .value("Recorded run", p.segment), stacking: .unstacked)
+                .interpolationMethod(.linear)
+                .foregroundStyle(StrandChartStyle.area(StrandPalette.sample(stops: gradient.toStops(), at: unit(averageValue))))
+                .alignsMarkStylesWithPlotArea()
         }
         ForEach(displayPoints) { p in
-            LineMark(x: .value("Time", p.date), y: .value("BPM", p.value))
-                .interpolationMethod(.catmullRom)
-                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+            LineMark(x: .value("Time", p.date), y: .value("BPM", p.value), series: .value("Recorded run", p.segment))
+                .interpolationMethod(.linear)
+                .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(valueGradient)
+            if singletonSegments.contains(p.segment) {
+                PointMark(x: .value("Time", p.date), y: .value("BPM", p.value))
+                    .foregroundStyle(valueGradient).symbolSize(StrandChartStyle.pointArea)
+            }
         }
 
         // Wake divider — the sleep→day boundary. Always shown with a sleep band so the band reads

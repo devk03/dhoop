@@ -32,19 +32,14 @@ private struct RunningContent: View, Equatable {
         ScreenScaffold(title: nil, onRefresh: { capturedAt = Date(); await repo.refresh() }) {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 Text("Cardio").font(StrandFont.title1)
-                Picker("Cardio section", selection: $section) {
-                    Text("Train").tag("Train")
-                    Text("History").tag("History")
-                }.pickerStyle(.segmented).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                NoopSegmentedControl("Cardio section", options: ["Train", "History", "Review"], selection: $section)
                 if section == "History" {
                     CardioHistoryView(model: history, range: $historyRange, now: capturedAt, controller: controller)
+                } else if section == "Review" {
+                    CardioDetectionView(localSpans: history.localSpans, sessionActive: controller.hasSession || history.loading)
                 } else {
                     if controller.session == nil && !hiit.hasSession {
-                        Picker("Workout type", selection: $workoutMode) {
-                            Text("Zone run").tag("Zone run")
-                            Text("HIIT").tag("HIIT")
-                            Text("Intervals").tag("Intervals")
-                        }.pickerStyle(.segmented).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        NoopSegmentedControl("Workout type", options: ["Zone run", "HIIT", "Intervals"], selection: $workoutMode)
                     }
                     if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
                         HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
@@ -57,7 +52,10 @@ private struct RunningContent: View, Equatable {
                             Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                         }
                     }
-                    CardioDetectionView(localSpans: history.localSpans, sessionActive: controller.hasSession || history.loading)
+                    Button { section = "Review" } label: {
+                        Label("Review detected activity", systemImage: "checkmark.bubble")
+                            .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
+                    }.buttonStyle(.bordered).font(StrandFont.subhead)
                     Button { section = "History" } label: {
                         Label("View all cardio history", systemImage: "clock.arrow.circlepath")
                             .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)

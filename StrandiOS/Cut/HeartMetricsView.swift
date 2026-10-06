@@ -28,7 +28,7 @@ struct HeartMetricsView: View, Equatable {
         VStack(spacing: NoopMetrics.sectionGap) {
             statusRow
             heartTile
-            DashboardGridLayout(columns: dynamicTypeSize.isAccessibilitySize ? 1 : 2,
+            DashboardGridLayout(columns: dynamicTypeSize >= .xxxLarge ? 1 : 2,
                                 squareMinimum: !dynamicTypeSize.isAccessibilitySize) {
                 hrvTile
                 stepsTile
@@ -69,7 +69,7 @@ struct HeartMetricsView: View, Equatable {
                     Circle().fill(observation?.connected == true ? StrandPalette.statusPositive : StrandPalette.textTertiary)
                         .frame(width: NoopMetrics.space3, height: NoopMetrics.space3).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                        Text("\(observation?.deviceName ?? "WHOOP") · \(observation?.connected == true ? "Connected at check" : "Connection not confirmed")")
+                        Text("\(observation?.deviceName ?? "WHOOP") · \(observation?.connected == true ? "Connected" : "Not connected")")
                             .font(StrandFont.subhead)
                         Text(observationDetail)
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -91,11 +91,13 @@ struct HeartMetricsView: View, Equatable {
 
     private var observationDetail: String {
         guard let observation else { return "Collection has not been checked yet" }
-        let checked = Date(timeIntervalSince1970: observation.capturedAt).formatted(date: .abbreviated, time: .shortened)
+        let checkDate = Date(timeIntervalSince1970: observation.capturedAt)
+        let checked = checkDate.formatted(date: .omitted, time: .shortened)
         guard let received = observation.lastLiveHRAt, received <= observation.capturedAt else {
             if let stored = observation.latestStoredHR, Double(stored) <= observation.capturedAt {
-                let saved = Date(timeIntervalSince1970: Double(stored)).formatted(date: .abbreviated, time: .shortened)
-                return "Checked \(checked) · Saved HR through \(saved)"
+                let storedDate = Date(timeIntervalSince1970: Double(stored))
+                let saved = storedDate.formatted(date: Calendar.current.isDate(storedDate, inSameDayAs: checkDate) ? .omitted : .abbreviated, time: .shortened)
+                return "HR saved \(saved) · checked \(checked)"
             }
             return "Checked \(checked) · No live HR sample at this check"
         }
@@ -112,9 +114,11 @@ struct HeartMetricsView: View, Equatable {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 Button { expandedAt = Date(); expandedMetric = .heartRate } label: {
                     HStack {
-                        Label("Heart rate", systemImage: "heart.fill").font(StrandFont.headline).foregroundStyle(StrandPalette.liquidHeart)
+                        Label { Text("Heart rate").foregroundStyle(StrandPalette.textPrimary) } icon: {
+                            Image(systemName: "heart.fill").foregroundStyle(StrandPalette.liquidHeart)
+                        }.font(StrandFont.headline)
                         Spacer()
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
                     .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }
@@ -137,11 +141,9 @@ struct HeartMetricsView: View, Equatable {
                  empty: snapshot == nil ? "Loading history…" : snapshot?.hrReadError != nil ? "Heart-rate history unavailable" : "No saved readings today")
             if let error = snapshot?.hrReadError {
                 Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
-            } else {
-                Text(snapshot?.hrSampleCount.map { "\($0.formatted()) saved readings today" } ?? "Reading stored history…")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
-            InlineHeartRateCapture(expectedDeviceId: deviceId, enabled: expandedMetric == nil)
+            InlineHeartRateCapture(expectedDeviceId: deviceId, enabled: expandedMetric == nil,
+                savedSummary: snapshot?.hrSampleCount.flatMap { $0 > 0 ? "\($0.formatted()) saved readings" : nil })
             }
         }
     }
@@ -190,9 +192,11 @@ struct HeartMetricsView: View, Equatable {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                 Button { expandedAt = Date(); expandedMetric = metric } label: {
                     HStack(alignment: .top, spacing: NoopMetrics.space1) {
-                        Label(metric.title, systemImage: icon).font(StrandFont.subhead).foregroundStyle(tint)
+                        Label { Text(metric.title).foregroundStyle(StrandPalette.textPrimary) } icon: {
+                            Image(systemName: icon).foregroundStyle(tint)
+                        }.font(StrandFont.subhead)
                         Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        Image(systemName: "chevron.right")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).accessibilityHidden(true)
                     }.frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }

@@ -8,34 +8,37 @@ import SwiftUI
 
 public enum NoopVisualStyle {
     // Neutral, low-chroma surfaces sampled from the supplied dark-mode reference.
-    public static let canvas = Color(light: "#F3F4F6", dark: "#1D1E23")
-    public static let surface = Color(light: "#FFFFFF", dark: "#2A2C34")
-    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#30323B")
-    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#282A31")
-    public static let inset = Color(light: "#E8E9ED", dark: "#23252C")
+    public static let canvas = Color(light: "#F3F4F6", dark: "#111214")
+    public static let surface = Color(light: "#FFFFFF", dark: "#1C1E21")
+    public static let surfaceTop = Color(light: "#FFFFFF", dark: "#202226")
+    public static let surfaceBottom = Color(light: "#F4F5F7", dark: "#1C1E21")
+    public static let inset = Color(light: "#E8E9ED", dark: "#17191C")
 
-    public static let border = Color(light: "#D8DAE0", dark: "#373A44")
-    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#4B4E59")
-    public static let divider = Color(light: "#E4E5E9", dark: "#383A43")
+    public static let border = Color(light: "#D8DAE0", dark: "#33363B")
+    public static let borderHighlight = Color(light: "#FFFFFF", dark: "#41454B")
+    public static let divider = Color(light: "#E4E5E9", dark: "#2E3237")
 
     public static let primaryText = Color(light: "#17181C", dark: "#F7F7FA")
-    public static let secondaryText = Color(light: "#555861", dark: "#C3C4CA")
-    public static let tertiaryText = Color(light: "#7D808A", dark: "#7D7F88")
+    public static let secondaryText = Color(light: "#555861", dark: "#B9BEC5")
+    public static let tertiaryText = Color(light: "#7D808A", dark: "#8F969F")
+
+    public static let selectedControlFill = Color(light: "#C7E9D8", dark: "#A9DDBB")
+    public static let selectedControlInk = Color(hex: "#14251C")
 
     public static let mint = Color(light: "#149A78", dark: "#69DDB8")
     public static let mintDeep = Color(light: "#0D765C", dark: "#13A982")
     public static let mintGlow = Color(light: "#38C99E", dark: "#54E6BD")
 
-    public static let cardRadius: CGFloat = 22
+    public static let cardRadius: CGFloat = 18
     public static let compactRadius: CGFloat = 16
     public static let pillRadius: CGFloat = 999
     public static let pagePadding: CGFloat = 16
     public static let cardPadding: CGFloat = 16
     public static let itemGap: CGFloat = 12
-    public static let sectionGap: CGFloat = 26
+    public static let sectionGap: CGFloat = 16
 }
 
-/// Shared card/panel treatment: a quiet vertical gradient, a top-lit rim, and deep soft elevation.
+/// Shared card/panel treatment: charcoal surfaces, a quiet rim, and elevation reserved for overlays.
 /// `tint` is intentionally faint so metric identity never turns the whole card into a coloured tile.
 public struct NoopPanelSurface: View {
     public var tint: Color?
@@ -70,7 +73,7 @@ public struct NoopPanelSurface: View {
                 if let tint {
                     shape.fill(
                         LinearGradient(
-                            colors: [tint.opacity(0.055), tint.opacity(0.012), .clear],
+                            colors: [tint.opacity(0.018), tint.opacity(0.004), .clear],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -80,7 +83,7 @@ public struct NoopPanelSurface: View {
             .overlay(
                 shape.strokeBorder(
                     LinearGradient(
-                        colors: [NoopVisualStyle.borderHighlight.opacity(0.72), NoopVisualStyle.border.opacity(0.52)],
+                        colors: [NoopVisualStyle.border.opacity(0.8), NoopVisualStyle.border.opacity(0.6)],
                         startPoint: .top,
                         endPoint: .bottom
                     ),
@@ -88,7 +91,7 @@ public struct NoopPanelSurface: View {
                 )
             )
             .shadow(
-                color: scheme == .dark ? .black.opacity(elevated ? 0.34 : 0.18) : .black.opacity(0.10),
+                color: scheme == .dark ? .black.opacity(elevated ? 0.24 : 0) : .black.opacity(elevated ? 0.10 : 0.025),
                 radius: elevated ? 18 : 9,
                 x: 0,
                 y: elevated ? 10 : 5

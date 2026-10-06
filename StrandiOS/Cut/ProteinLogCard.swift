@@ -13,42 +13,68 @@ struct ProteinLogCard: View {
     @StateObject private var protein = ProteinLogStore()
     @ObservedObject private var food = CutPlanStore.shared
     @State private var showEditor = false
+    @State private var showLog = false
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
+
+    private var weekReadings: [DashboardDailyReading] {
+        guard let today = HeartDashboardProjection.date(day),
+              let start = Calendar.current.date(byAdding: .day, value: -6, to: today) else { return [] }
+        return HeartDashboardProjection.bounded(MetricRangeProjection.loggedProtein(
+            standalone: protein.entries.map { ($0.day, $0.grams) },
+            food: food.food.flatMap { day, entries in entries.map { (day, $0.protein) } }),
+            from: Repository.localDayKey(start), through: day)
+    }
 
     var body: some View {
         let grams = protein.total(day: logDay, foodProtein: food.protein(day: logDay))
         let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
-        Button { openedAt = Date(); logDay = Repository.localDayKey(openedAt); showEditor = true } label: {
-            NoopCard(tint: StrandPalette.statusPositive, fillHeight: true) {
-                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+        NoopCard(tint: StrandPalette.statusPositive, fillHeight: true) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                Button { openedAt = Date(); logDay = Repository.localDayKey(openedAt); showEditor = true } label: {
                     HStack(alignment: .top, spacing: NoopMetrics.space1) {
-                        Label("Protein", systemImage: "fork.knife").font(StrandFont.subhead)
-                            .foregroundStyle(StrandPalette.statusPositive)
+                        Label { Text("Protein").foregroundStyle(StrandPalette.textPrimary) } icon: {
+                            Image(systemName: "fork.knife").foregroundStyle(StrandPalette.statusPositive)
+                        }.font(StrandFont.subhead)
                         Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        Image(systemName: "chevron.right")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).accessibilityHidden(true)
-                    }
-                    Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
-                        .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
-                    Text(protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let target = protein.targetGrams {
-                        ProgressView(value: min(grams, target), total: target).tint(StrandPalette.statusPositive)
-                    }
-                    Label("Averages & log", systemImage: "plus").font(StrandFont.caption)
-                        .foregroundStyle(StrandPalette.statusPositive)
-                        .frame(minHeight: NoopMetrics.minimumTouchTarget, alignment: .leading)
+                    }.frame(minHeight: NoopMetrics.minimumTouchTarget)
+                }.buttonStyle(.plain).accessibilityLabel("Expand protein history")
+                Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
+                    .font(StrandFont.number(numberSize, weight: .bold)).foregroundStyle(StrandPalette.textPrimary)
+                Text(protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let target = protein.targetGrams {
+                    ProgressView(value: min(grams, target), total: target).tint(StrandPalette.statusPositive)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
+                if let today = HeartDashboardProjection.date(day), let start = Calendar.current.date(byAdding: .day, value: -6, to: today) {
+                    let rows = weekReadings
+                    if rows.isEmpty {
+                        Text("No protein logged this week").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                            .frame(minHeight: NoopMetrics.dashboardTileChartHeight, alignment: .leading)
+                    } else {
+                        DashboardChart(points: rows.compactMap { row in
+                            HeartDashboardProjection.date(row.day).map { TrendPoint(date: $0, value: row.value) }
+                        }, domain: start...today.addingTimeInterval(86_400), range: 0...max(1, (rows.map(\.value).max() ?? 0) * 1.1),
+                            tint: StrandPalette.statusPositive, style: .bars, height: NoopMetrics.dashboardTileChartHeight,
+                            label: "Protein logged over seven days; unlogged days have no bars", compact: true,
+                            valueFormat: { "\($0.formatted()) g logged" })
+                    }
+                }
+                Button { showLog = true } label: {
+                    Label("Log protein", systemImage: "plus").font(StrandFont.caption)
+                        .foregroundStyle(StrandPalette.statusPositive)
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                }.buttonStyle(.plain)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Opens protein range averages, optional target and logging")
+        .accessibilityElement(children: .contain)
         .onChange(of: day) { _, value in logDay = value }
         .sheet(isPresented: $showEditor, onDismiss: { logDay = Repository.localDayKey(Date()) }) { ProteinHistoryView(store: protein, selection: $selection, now: openedAt) }
+        .sheet(isPresented: $showLog, onDismiss: { logDay = Repository.localDayKey(Date()) }) { ProteinEntrySheet(store: protein) }
     }
 }
 

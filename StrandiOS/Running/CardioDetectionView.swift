@@ -26,12 +26,12 @@ struct CardioDetectionView: View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 Toggle("Auto-detection", isOn: $enabled)
-                    .font(StrandFont.headline).tint(StrandPalette.metricCyan)
+                    .font(StrandFont.headline).tint(StrandPalette.accent)
                 Text(enabled ? "On · suggests sustained activity after sync. Review before saving." : "Off · start a workout manually or enable suggestions.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 if loading { ProgressView("Checking activity…").font(StrandFont.caption) }
                 if sessionActive {
-                    Text("Finish your active session before reviewing suggestions.")
+                    Text("Review is available after session and history checks finish.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
                 if !pending.isEmpty {
@@ -50,14 +50,15 @@ struct CardioDetectionView: View {
                     } label: {
                         Text("Reviewed · \(reviewed.count)").font(StrandFont.headline)
                     }
-                    .tint(StrandPalette.metricCyan)
+                    .tint(StrandPalette.accent)
                 }
-                Text("Suggestions from the last 48 hours are kept here once found. You can change either label later, even with auto-detection off.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                Text("Short intervals may not meet the detector's 12-minute threshold. Start HIIT or Intervals to record those sessions.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                Text("Older dismissed suggestions are available only when their original activity can be detected again.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                DisclosureGroup("How detection works") {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                        Text("Synced activity from the last 48 hours is checked and kept here once found. Change either label later, even with auto-detection off.")
+                        Text("Short intervals may not meet the 12-minute threshold. Start HIIT or Intervals to record those sessions.")
+                        Text("Older dismissals are available only when their original activity can be detected again. Review labels stay on this device and are not included in app backups.")
+                    }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }.font(StrandFont.subhead).tint(StrandPalette.accent)
                 if let message {
                     Text(message).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         .accessibilityIdentifier("workoutReviewMessage")
@@ -73,13 +74,15 @@ struct CardioDetectionView: View {
                 .font(StrandFont.subhead)
             Text("\(review.durationMin) min · avg \(review.avgBpm) bpm")
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            Text(review.recordingRemoved ? "Workout · recording removed from history" : label(review.decision)).font(StrandFont.caption)
-                .foregroundStyle(StrandPalette.textSecondary)
+            Text(review.recordingRemoved ? "Workout · recording removed from history" : label(review.decision))
+                .font(StrandFont.caption).foregroundStyle(review.decision == .workout ? StrandPalette.statusPositive : StrandPalette.textSecondary)
+                .padding(.horizontal, NoopMetrics.space2).padding(.vertical, NoopMetrics.space1)
+                .background(StrandPalette.surfaceInset, in: Capsule())
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: NoopMetrics.space3) { actions(review) }
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) { actions(review) }
             }
-            .disabled(saving || sessionActive)
+            .font(StrandFont.subhead).disabled(saving || sessionActive)
         }
         .padding(.vertical, NoopMetrics.space2)
         .accessibilityElement(children: .contain)
@@ -90,7 +93,7 @@ struct CardioDetectionView: View {
             Button(review.recordingRemoved ? "Save workout again" : (review.decision == .pending ? "Is a workout" : "Change to workout")) {
                 decide(review, .workout)
             }
-            .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan)
+            .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
             .frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
         if review.decision != .notWorkout {

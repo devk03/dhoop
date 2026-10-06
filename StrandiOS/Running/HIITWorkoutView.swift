@@ -224,6 +224,7 @@ struct HIITReviewView: View {
     }
     private var effortChart: some View {
         let points = DashboardTraceSampling.reduce(run.points.map { TrendPoint(date: Date(timeIntervalSince1970: $0.elapsed), value: Double($0.bpm), segment: String($0.segment)) })
+        let singletons = Set(Dictionary(grouping: points, by: \.segment).filter { $0.value.count == 1 }.keys)
         let lower = Double((run.points.map(\.bpm).min() ?? 30) - 5)
         let upper = Double((run.points.map(\.bpm).max() ?? 220) + 5)
         return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
@@ -234,15 +235,27 @@ struct HIITReviewView: View {
                         .foregroundStyle((phase.kind == .work ? StrandPalette.metricAmber : StrandPalette.metricCyan).opacity(0.12))
                 }
                 ForEach(points) { point in
+                    AreaMark(x: .value("Active seconds", point.date.timeIntervalSince1970), yStart: .value("Baseline", lower),
+                             yEnd: .value("BPM", point.value), series: .value("Observed segment", point.segment))
+                        .interpolationMethod(.linear).foregroundStyle(StrandChartStyle.area(StrandPalette.metricRose))
+                        .alignsMarkStylesWithPlotArea()
                     LineMark(x: .value("Active seconds", point.date.timeIntervalSince1970), y: .value("BPM", point.value), series: .value("Observed segment", point.segment))
                         .interpolationMethod(.linear).foregroundStyle(StrandPalette.metricRose)
-                    PointMark(x: .value("Active seconds", point.date.timeIntervalSince1970), y: .value("BPM", point.value))
-                        .foregroundStyle(StrandPalette.metricRose).symbolSize(NoopMetrics.space1)
+                        .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round))
+                    if singletons.contains(point.segment) {
+                        PointMark(x: .value("Active seconds", point.date.timeIntervalSince1970), y: .value("BPM", point.value))
+                            .foregroundStyle(StrandPalette.metricRose).symbolSize(StrandChartStyle.pointArea)
+                    }
                 }
             }
             .chartXScale(domain: 0...max(1, run.elapsed)).chartYScale(domain: lower...upper).chartLegend(.hidden)
             .chartXAxis { AxisMarks(values: .automatic(desiredCount: 3)) { value in
                 AxisValueLabel { if let seconds = value.as(Double.self) { Text(clock(seconds)).font(StrandFont.caption) } }
+            } }
+            .chartPlotStyle { $0.clipped() }
+            .chartYAxis { AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(StrandChartStyle.gridOpacity))
+                AxisValueLabel().font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             } }
             .frame(height: NoopMetrics.chartHeight)
             .accessibilityElement(children: .ignore)

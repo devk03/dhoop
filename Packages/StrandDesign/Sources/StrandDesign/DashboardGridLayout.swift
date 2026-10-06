@@ -52,7 +52,7 @@ public struct DashboardGridLayout: Layout {
             let content = (start..<min(start + columns, subviews.count)).map {
                 subviews[$0].sizeThatFits(ProposedViewSize(width: column, height: nil)).height
             }.max() ?? 0
-            return max(squareMinimum ? column : 0, content)
+            return max(squareMinimum && columns > 1 ? column : 0, content)
         }
     }
 }

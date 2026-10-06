@@ -43,15 +43,20 @@ public struct DashboardChart: View {
             ForEach(points) { point in
                 if style == .bars {
                     BarMark(x: .value("Date", point.date, unit: .day), y: .value("Value", point.value))
-                        .foregroundStyle(tint.opacity(Calendar.current.isDateInToday(point.date) ? 1 : 0.45))
+                        .foregroundStyle(StrandChartStyle.bar(tint))
                         .cornerRadius(NoopMetrics.space1)
                 } else {
+                    AreaMark(x: .value("Time", point.date), yStart: .value("Baseline", range.lowerBound),
+                             yEnd: .value("Value", point.value), series: .value("Recorded run", point.segment))
+                        .interpolationMethod(.linear).foregroundStyle(StrandChartStyle.area(tint))
+                        .alignsMarkStylesWithPlotArea()
                     LineMark(x: .value("Time", point.date), y: .value("Value", point.value),
                              series: .value("Recorded run", point.segment))
                         .interpolationMethod(.linear).foregroundStyle(tint)
-                    if points.count < 40 || singletonSegments.contains(point.segment) {
+                        .lineStyle(StrokeStyle(lineWidth: StrandChartStyle.lineWidth, lineCap: .round, lineJoin: .round))
+                    if points.count <= StrandChartStyle.sparsePointLimit || singletonSegments.contains(point.segment) {
                         PointMark(x: .value("Time", point.date), y: .value("Value", point.value))
-                            .foregroundStyle(tint)
+                            .foregroundStyle(tint).symbolSize(StrandChartStyle.pointArea)
                     }
                 }
             }
@@ -59,6 +64,7 @@ public struct DashboardChart: View {
         .chartXScale(domain: domain)
         .chartYScale(domain: range)
         .chartLegend(.hidden)
+        .chartPlotStyle { $0.clipped() }
         .chartXAxis {
             if !compact {
                 if dailyLabels {
@@ -82,7 +88,7 @@ public struct DashboardChart: View {
         .chartYAxis {
             if !compact && style == .line {
                 AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
-                    AxisGridLine().foregroundStyle(StrandPalette.hairline)
+                    AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(StrandChartStyle.gridOpacity))
                     AxisValueLabel().foregroundStyle(StrandPalette.textSecondary).font(StrandFont.caption)
                 }
             }
