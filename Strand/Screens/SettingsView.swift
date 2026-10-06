@@ -263,7 +263,7 @@ struct SettingsView: View {
                 NavigationLink { SleepWebhookSettingsView() } label: {
                     StrandCard {
                         HStack(spacing: NoopMetrics.space3) {
-                            Label("Sleep webhook", systemImage: "paperplane").font(StrandFont.headline)
+                            Label("Life sync", systemImage: "paperplane").font(StrandFont.headline)
                             Spacer()
                             Text("Experimental").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             Image(systemName: "chevron.right").accessibilityHidden(true)

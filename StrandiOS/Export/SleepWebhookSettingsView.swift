@@ -9,46 +9,62 @@ struct SleepWebhookSettingsView: View {
     @State private var bearer = ""
     @State private var clientId = ""
     @State private var clientSecret = ""
+    @State private var proteinBearer = ""
     @State private var error: String?
 
     var body: some View {
-        ScreenScaffold(title: "Sleep webhook", subtitle: "Experimental · your sleep, on your website") {
+        ScreenScaffold(title: "Life sync", subtitle: "Sleep and protein, on your website") {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 StrandCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Toggle("Automatic delivery", isOn: Binding(get: { client.checkpoint.enabled }, set: { enabled in
+                        Toggle("Sleep", isOn: Binding(get: { client.checkpoint.enabled }, set: { enabled in
                             perform { try client.setEnabled(enabled) }
                             if enabled { client.enqueue(model: model, force: true) }
                         }))
                         .font(StrandFont.headline).tint(StrandPalette.accent)
                         .disabled(client.storageUnavailable || (!client.checkpoint.enabled && !client.hasCredentials))
-                        Text("Send WHOOP sleep totals to the connected website. Your manual website entries stay yours.")
-                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                        Label("WHOOP · Dhoop estimate or imported record", systemImage: "moon.zzz")
+                        Text("WHOOP sleep totals and their source. Manual sleep on Life takes priority.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        Text("Only duration, wake date, source and delivery identifiers are sent. No heart-rate trace or sleep stages.")
+                        Divider()
+                        Toggle("Protein", isOn: Binding(get: { client.checkpoint.proteinEnabled == true }, set: { enabled in
+                            perform { try client.setProteinEnabled(enabled) }
+                            if enabled { client.enqueue(model: model, force: true) }
+                        }))
+                        .font(StrandFont.headline).tint(StrandPalette.accent)
+                        .disabled(client.storageUnavailable || (client.checkpoint.proteinEnabled != true && !client.hasProteinCredentials))
+                        Text("Grams logged in Dhoop. Manual totals on Life take priority. An unlogged day stays blank.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        Text("Sends after the day ends, when iOS allows. Protein needs no calorie log, weight or target.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     }
                 }
                 StrandCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Label("Delivery", systemImage: "paperplane").font(StrandFont.headline)
-                        Text(client.checkpoint.message).font(StrandFont.subhead)
+                        Text("Sleep · \(client.checkpoint.message)").font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textSecondary).accessibilityIdentifier("sleepWebhookStatus")
                         if let event = client.checkpoint.delivery.lastAcceptedEvent,
                            let date = client.checkpoint.delivery.lastAcceptedAt {
                             Text("Wake date \(event.wakeDate) · received \(date.formatted(date: .abbreviated, time: .shortened))")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
-                        if client.checkpoint.delivery.pending != nil {
+                        Divider()
+                        Text("Protein · \(client.checkpoint.proteinMessage ?? "Not enabled")")
+                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        if let event = client.checkpoint.delivery.lastAcceptedProtein,
+                           let date = client.checkpoint.delivery.proteinAcceptedAt {
+                            Text("Logged date \(event.day) · received \(date.formatted(date: .abbreviated, time: .shortened))")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                        if client.checkpoint.delivery.hasPending {
                             Label("Pending event saved on this phone", systemImage: "tray.full")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
                         Button { client.enqueue(model: model, force: true) } label: {
-                            Label(client.isSending ? "Sending…" : "Send now", systemImage: "arrow.up.circle")
+                            Label(client.isSending ? "Sending…" : "Send completed days", systemImage: "arrow.up.circle")
                                 .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
                         }.buttonStyle(.borderedProminent).tint(StrandPalette.accent)
-                            .disabled(!client.checkpoint.enabled || client.isSending || client.storageUnavailable)
+                            .disabled(!client.checkpoint.anyEnabled || client.isSending || client.storageUnavailable)
                     }
                 }
                 StrandCard {
@@ -61,6 +77,7 @@ struct SleepWebhookSettingsView: View {
                                 TextField("HTTPS endpoint", text: $endpoint)
                                     .keyboardType(.URL).textContentType(.URL)
                                 SecureField("Sleep access token", text: $bearer)
+                                SecureField("Protein access token (optional)", text: $proteinBearer)
                                 SecureField("Cloudflare Access client ID", text: $clientId)
                                 SecureField("Cloudflare Access client secret", text: $clientSecret)
                                 Button("Save connection") {
@@ -68,8 +85,9 @@ struct SleepWebhookSettingsView: View {
                                         try client.configure(SleepWebhookCredentials(endpoint: endpoint.trimmingCharacters(in: .whitespacesAndNewlines),
                                             bearer: bearer.trimmingCharacters(in: .whitespacesAndNewlines),
                                             clientId: clientId.trimmingCharacters(in: .whitespacesAndNewlines),
-                                            clientSecret: clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)))
-                                        bearer = ""; clientId = ""; clientSecret = ""
+                                            clientSecret: clientSecret.trimmingCharacters(in: .whitespacesAndNewlines),
+                                            proteinBearer: proteinBearer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : proteinBearer.trimmingCharacters(in: .whitespacesAndNewlines)))
+                                        bearer = ""; clientId = ""; clientSecret = ""; proteinBearer = ""
                                     }
                                 }.frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(client.isSending)
                                 Text("Saving pauses delivery. Turn it on when the destination is ready.")
@@ -90,7 +108,7 @@ struct SleepWebhookSettingsView: View {
                     }
                 }
                 if let error { Text(error).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical) }
-                Text("Sends recent sleep after processing and when iOS allows background time. Opening Dhoop retries pending updates. Export pauses outside America/Los_Angeles. Sleep estimates can change as more data arrives.")
+                Text("Only completed days are sent automatically. Opening Dhoop retries pending updates; iOS controls background timing. Export pauses outside America/Los_Angeles. No meal names, calories, weight or raw sensor traces are sent.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }.foregroundStyle(StrandPalette.textPrimary)

@@ -1,6 +1,6 @@
 # Dhoop → Life sleep summary contract, version 1
 
-Status: Life receiver deployed; Dhoop sender implemented in build 438. Activation requires on-device credentials and explicit enablement.
+Status: Life receiver deployed; Dhoop sender introduced in build 438; build 439 adds completed-day scheduling and optional protein. Activation requires on-device credentials and explicit enablement.
 This is the personal fork's narrow,
 default-off Experimental sleep export, separate from the upstream raw-stream `PUSH_PROTOCOL.md`.
 The receiver belongs in `/Users/devkunjadia/Developer/life`, not in Dhoop.
@@ -182,7 +182,7 @@ claiming end-to-end delivery. Deployment status must be reported separately from
 
 ## iPhone implementation and operation
 
-Settings → Sleep webhook provides the default-off toggle, connection setup, pending/accepted status,
+Settings → Life sync provides the default-off toggle, connection setup, pending/accepted status,
 and Send now. The one-week source scan uses `verifiedWhoopSleepTotals`, which resolves each stored
 sleep total and computed input provenance in one database snapshot. Imported WHOOP records take
 priority; computed estimates must have WHOOP input provenance. Apple Health is never a fallback.
@@ -195,9 +195,11 @@ of inventing a new identity. Credential rotation retains the pending event; chan
 the destination receipt ledger while keeping the installation revision counter. Already pending events
 can retry without waiting for a fresh health-store read or rescore. New events wait for rescore completion.
 
-Each invocation sends at most two events, newest dates first. Automatic retries back off from one minute
-to six hours. Post-processing and foreground hooks enqueue independent work; the BGProcessingTask has
-an earliest start of one hour and requires network access. iOS controls actual execution. Force-quitting
+Build 439 sends completed local days only. Each invocation sends at most two events per enabled metric,
+newest then oldest outstanding, with a durable backlog marker for bounded catch-up. Automatic retries
+back off from one minute to six hours independently per metric. Post-processing and foreground hooks
+enqueue independent work; BGProcessingTask requests the next local day at 00:05, or an earlier pending
+retry/backlog opportunity, and requires network access. iOS controls actual execution. Force-quitting
 the app, unavailable data, network failure and system background limits can delay updates. Opening
 Dhoop or choosing Send now provides a retry opportunity; this is not a guaranteed hourly service.
 
@@ -213,9 +215,10 @@ the backup-excluded checkpoint directory. Credentials use AfterFirstUnlockThisDe
 an explicitly enabled background send can run while the phone is locked after first unlock.
 
 Compile the helper with `swiftc StrandiOS/Export/SleepWebhookDelivery.swift
+StrandiOS/Export/ProteinWebhookDelivery.swift StrandiOS/Cut/ProteinLogStore.swift
 StrandiOS/Export/SleepWebhookSecureSetup.swift Tools/SleepWebhookSetup/main.swift -o <helper-path>`.
 Run it with four paths: public invitation, private sleep bearer file, private Access JSON (clientId and
-clientSecret keys), and sealed output. Credential contents never appear in argv or helper output.
+clientSecret keys), and sealed output; an optional fifth path supplies the separately scoped protein bearer. Credential contents never appear in argv or helper output.
 The endpoint is fixed to the Life sleep receiver; credential fields cannot authorize another route.
 
 For development device setup, explicit DEBUG launch flags mirror the user-facing actions:
@@ -228,3 +231,10 @@ Validation: targeted delivery/transport/setup tests run in DhoopGoalTests; provi
 import-precedence tests run in WhoopStore. App wiring requires both iOS and macOS builds. The UI follows
 the generated settings reference using StrandDesign fonts, spacing and colors, standard accessible
 controls and scrolling content. No generated image or demo sleep data is part of the shipped UI.
+
+
+The v2 protein extension is specified in [DHOOP_PROTEIN_WEBHOOK.md](DHOOP_PROTEIN_WEBHOOK.md).
+Sleep continues using its dedicated bearer and exact v1 JSON. Protein has a separate default-off toggle
+and bearer; the installation ID/revision allocator remain shared, while pending events and retries are
+independent. The checkpoint version becomes 2 when protein is enabled; old builds must fail closed on
+that version rather than silently discard protein progress. No health database migration is involved.
