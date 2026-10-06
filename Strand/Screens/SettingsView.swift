@@ -259,6 +259,18 @@ struct SettingsView: View {
                        topBackground: liquidScaffoldSky()) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
                 // Everyday sections stay expanded (S3): the ones a first-run user actually needs.
+                #if os(iOS)
+                NavigationLink { SleepWebhookSettingsView() } label: {
+                    StrandCard {
+                        HStack(spacing: NoopMetrics.space3) {
+                            Label("Sleep webhook", systemImage: "paperplane").font(StrandFont.headline)
+                            Spacer()
+                            Text("Experimental").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            Image(systemName: "chevron.right").accessibilityHidden(true)
+                        }.frame(minHeight: NoopMetrics.minimumTouchTarget).foregroundStyle(StrandPalette.textPrimary)
+                    }
+                }.buttonStyle(.plain)
+                #endif
                 profileCard.staggeredAppear(index: 0)
                 unitsCard.staggeredAppear(index: 1)
                 appearanceCard.staggeredAppear(index: 2)
