@@ -191,6 +191,7 @@ final class AppModel: ObservableObject {
 
     private var lastDoubleTapAt: Date = .distantPast
     private var lastCoachZone: Int = -1
+    private var lastCoachBuzzAt = Date.distantPast
     // L3 stress-onset detector state: a rolling R-R buffer + the replay-safe detector state (persisted
     // via BiofeedbackPrefs so a relaunch can't re-fire), carried verbatim between evaluations.
     private var rrBuf: [Int] = []
@@ -1444,7 +1445,15 @@ final class AppModel: ObservableObject {
     /// Requires a bonded connection , no-op otherwise (the command characteristic is gated on bond).
     /// For a user-facing "buzz the strap now" action use `buzzStrapOnce()` instead (#921).
     func buzz(loops: UInt8 = 2) {
-        ble.send(.runHapticsPattern, payload: [2, loops, 0, 0, 0])
+        ble.buzzDelivery.schedule(owner: "ambient", deviceId: repo.deviceId, loops: loops)
+    }
+
+    @discardableResult
+    func requestBuzz(owner: String, id: String = UUID().uuidString, loops: UInt8 = 1,
+                     due: Date = Date(), grace: TimeInterval = 2, gate: String? = nil,
+                     sampleAt: Date? = nil) -> String {
+        ble.buzzDelivery.schedule(owner: owner, id: id, deviceId: repo.deviceId, due: due,
+            grace: grace, loops: loops, gate: gate, sampleAt: sampleAt)
     }
 
     /// #haptics (#1115): an IN-SESSION cue buzz, GATED by its per-event `HapticPrefs` toggle (default-off /
@@ -1453,7 +1462,7 @@ final class AppModel: ObservableObject {
     /// remain for ambient cues (which carry their own gates) and explicit user buzzes. Twin of Android
     /// `AppViewModel.buzz(loops, gate)`.
     func buzz(loops: UInt8 = 2, gate: String) {
-        if HapticPrefs.enabled(gate) { buzz(loops: loops) }
+        ble.buzzDelivery.schedule(owner: "ambient", deviceId: repo.deviceId, loops: loops, gate: gate)
     }
 
     /// One-shot user buzz (#921): the on-device-confirmed pattern (patternId=2, 3 loops) followed by
@@ -1876,15 +1885,25 @@ final class AppModel: ObservableObject {
 
     /// HR-zone haptic coaching: buzz when crossing into the top zone (ease off) or back to recovery.
     private func coachZone(_ hr: Int?) {
-        guard behavior.zoneCoaching, live.bonded, live.worn, let hr, hr >= 30 else { return }
+        guard behavior.zoneCoaching, ble.buzzDelivery.exclusiveOwner == nil,
+              live.bonded, live.worn, let hr, hr >= 30,
+              let sample = live.heartRateEvidence.samples.last,
+              live.heartRateEvidence.sourceDeviceId == repo.deviceId,
+              Date().timeIntervalSince1970 >= sample.receivedAt,
+              Date().timeIntervalSince1970 - sample.receivedAt <= 2 else { return }
         guard profile.hrMax > 0 else { return }
         // #531: route the haptic coach through the profile's effective zone set (personalized when set,
         // conventional %HRmax otherwise) instead of hardcoded percentage bands.
         let zone = profile.hrZoneSet.zoneNumber(forBPM: Double(hr))
         defer { lastCoachZone = zone }
-        guard lastCoachZone != -1, zone != lastCoachZone else { return }
-        if zone == 5, lastCoachZone < 5 { buzz(loops: 3) }          // entered max , ease off
-        else if zone <= 1, lastCoachZone > 1 { buzz(loops: 1) }     // recovered
+        guard lastCoachZone != -1, zone != lastCoachZone,
+              Date().timeIntervalSince(lastCoachBuzzAt) >= 30 else { return }
+        let loops: UInt8? = zone == 5 && lastCoachZone < 5 ? 3 : zone <= 1 && lastCoachZone > 1 ? 1 : nil
+        if let loops {
+            lastCoachBuzzAt = Date()
+            requestBuzz(owner: "ambient-zone", id: "ambient-zone|\(sample.receivedAt)", loops: loops,
+                sampleAt: Date(timeIntervalSince1970: sample.receivedAt))
+        }
     }
 
     /// Illness/strain early-warning (v5): the confounder-suppressed `IllnessSignalEngine`. For the last

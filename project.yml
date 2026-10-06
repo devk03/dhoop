@@ -96,6 +96,8 @@ targets:
       - StrandiOS/Cut/SleepRangeProjection.swift
       - StrandiOS/Cut/SleepComparisonProjection.swift
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
+      - Strand/BLE/BuzzDeliveryCoordinator.swift
+      - Strand/Data/HapticPrefs.swift
       - StrandiOS/Meditation/MeditationSession.swift
       - StrandiOS/Running/RunningZoneSession.swift
       - StrandiOS/Running/RunningSessionStorage.swift

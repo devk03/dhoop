@@ -15,6 +15,9 @@ public final class FrameRouter {
     /// the manager decides whether it is confirmed enough to adopt.
     var onStrapSerial: ((String) -> Void)?
 
+    var onAlarmReadResponse: ((Int, String) -> Void)?
+    var onBuzzResponse: ((Int, Int, String, [UInt8]) -> Void)?
+
     var onSyncTrigger: (() -> Void)?
     /// #1706: which strap this connection is talking to, so an alarm readback can be attributed to a
     /// device. Set per connection by BLEManager immediately AFTER `family`, whose didSet clears this —
@@ -131,6 +134,15 @@ public final class FrameRouter {
             }
 
         case "COMMAND_RESPONSE":
+            if let sequence = parsed.parsed["resp_seq"]?.intValue,
+               let result = parsed.parsed["result"]?.stringValue,
+               let name = parsed.cmdName, let suffix = name.split(separator: "(").last,
+               let opcode = Int(suffix.trimmingCharacters(in: CharacterSet(charactersIn: ")"))) {
+                onBuzzResponse?(sequence, opcode, result, Self.commandResponsePayload(in: frame, family: family) ?? [])
+                if opcode == Int(WhoopCommand.getAlarmTime.rawValue) {
+                    onAlarmReadResponse?(sequence, "\(result) · \(Self.commandResponsePayloadHex(in: frame, family: family) ?? "no payload")")
+                }
+            }
             if let pct = parsed.parsed["battery_pct"]?.doubleValue {
                 state.setBattery(pct, deviceId: deviceId)
             }

@@ -1074,6 +1074,31 @@ public final class BLEManager: NSObject, ObservableObject {
     /// until the link is encrypted (issue #17).
     private var whoop5NotifyCharacteristics: [CBCharacteristic] = []
     private var reassembler = Reassembler()
+    private var buzzConnectionID = UUID()
+    private var alarmReadRequests: [Int: (slot: Int, connection: UUID, at: Date)] = [:]
+    private var submittingCoordinatedBuzz = false
+    lazy var buzzDelivery: BuzzDeliveryCoordinator = {
+        let coordinator = BuzzDeliveryCoordinator()
+        coordinator.link = { [weak self] in
+            guard let self else { return .init(deviceId: "", connection: UUID(), ready: false) }
+            return .init(deviceId: self.deviceId, connection: self.buzzConnectionID,
+                         ready: self.commandChannelReady && self.state.encryptedBond && self.state.activeIsWhoop)
+        }
+        coordinator.transmit = { [weak self] cue in
+            guard let self, self.commandChannelReady, self.state.encryptedBond else { return nil }
+            self.submittingCoordinatedBuzz = true
+            defer { self.submittingCoordinatedBuzz = false }
+            self.send(.runHapticsPattern, payload: [2, cue.loops, 0, 0, 0], writeType: .withResponse)
+            let sentSequence = self.seq
+            if cue.owner == "manual-test", self.selectedModel.deviceFamily == .whoop4 {
+                self.send(.runAlarm, payload: [1], writeType: .withResponse)
+            }
+            return .init(sequence: Int(sentSequence), opcode: self.selectedModel.deviceFamily == .whoop5 ? 19 : Int(WhoopCommand.runHapticsPattern.rawValue))
+        }
+        coordinator.log = { [weak self] message in self?.log("Buzz: " + message) }
+        return coordinator
+    }()
+
     private var seq: UInt8 = 0
     private var didBond = false
     /// #1635: one explicit Connect grants one fresh CLIENT_HELLO even when the suppression latch is set.
@@ -1374,6 +1399,16 @@ public final class BLEManager: NSObject, ObservableObject {
         central = CBCentralManager(delegate: self, queue: .main)
         #endif
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
+        router.onAlarmReadResponse = { [weak self] sequence, body in
+            guard let self, let request = self.alarmReadRequests.removeValue(forKey: sequence),
+                  request.connection == self.buzzConnectionID, Date().timeIntervalSince(request.at) <= 10 else { return }
+            self.buzzDelivery.alarmReadback.append("Slot \(request.slot): \(body)")
+        }
+        router.onBuzzResponse = { [weak self] sequence, opcode, result, payload in
+            guard let self else { return }
+            self.buzzDelivery.acknowledge(sequence: sequence, opcode: opcode, result: result, payload: payload,
+                deviceId: self.deviceId, connection: self.buzzConnectionID)
+        }
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
         router.onStrapSerial = { [weak self] serial in self?.noteHarvardSerial(serial) }   // #1193
         // #78 hole-4: a paused-for-bond-loop strap gets one bounded salvage attempt per app-foreground.
@@ -1577,6 +1612,16 @@ public final class BLEManager: NSObject, ObservableObject {
         central = CBCentralManager(delegate: self, queue: .main)
         #endif
         // Strap-as-clock: an incoming EVENT packet kicks a rate-limited catch-up sync.
+        router.onAlarmReadResponse = { [weak self] sequence, body in
+            guard let self, let request = self.alarmReadRequests.removeValue(forKey: sequence),
+                  request.connection == self.buzzConnectionID, Date().timeIntervalSince(request.at) <= 10 else { return }
+            self.buzzDelivery.alarmReadback.append("Slot \(request.slot): \(body)")
+        }
+        router.onBuzzResponse = { [weak self] sequence, opcode, result, payload in
+            guard let self else { return }
+            self.buzzDelivery.acknowledge(sequence: sequence, opcode: opcode, result: result, payload: payload,
+                deviceId: self.deviceId, connection: self.buzzConnectionID)
+        }
         router.onSyncTrigger = { [weak self] in self?.requestSync(.strap) }
         router.onStrapSerial = { [weak self] serial in self?.noteHarvardSerial(serial) }   // #1193
         // #78 hole-4: a paused-for-bond-loop strap gets one bounded salvage attempt per app-foreground.
@@ -2250,6 +2295,10 @@ public final class BLEManager: NSObject, ObservableObject {
     ///     sites are unaffected. Pass `.withResponse` for acked commands (e.g. historicalDataResult).
     public func send(_ command: WhoopCommand, payload: [UInt8] = [0x00],
                      writeType: CBCharacteristicWriteType = .withoutResponse) {
+        if command == .runHapticsPattern && !submittingCoordinatedBuzz {
+            buzzDelivery.schedule(owner: "ambient", deviceId: deviceId, loops: payload.count > 1 ? payload[1] : 1)
+            return
+        }
         // #314 parity: CoreBluetooth already covers both Android defects here — this `p.state == .connected`
         // guard makes a write a no-op once the radio powers off (no DeadObjectException to crash on), and
         // centralManagerDidUpdateState publishes state.connected = false on .poweredOff, so the iOS/macOS UI
@@ -2397,6 +2446,7 @@ public final class BLEManager: NSObject, ObservableObject {
             let puffinPayload: [UInt8] = isHaptics
                 ? MaverickHaptics.notificationBuzz(loops: buzzLoops) : payload
             seq = seq &+ 1
+            buzzDelivery.willUseSequence(Int(seq), connection: buzzConnectionID)
             let frame = puffinCommandFrame(cmd: puffinCmd, seq: seq, payload: puffinPayload)
             p.writeValue(Data(frame), for: ch, type: writeType)
             let cmdNote = isHaptics ? " cmd=0x13" : ""
@@ -2411,6 +2461,7 @@ public final class BLEManager: NSObject, ObservableObject {
             return
         }
         seq = seq &+ 1
+        buzzDelivery.willUseSequence(Int(seq), connection: buzzConnectionID)
         let frame = command.frame(seq: seq, payload: payload)
         p.writeValue(Data(frame), for: ch, type: writeType)
         log("→ \(command.label) payload=\(hex(payload))")
@@ -5271,8 +5322,8 @@ public final class BLEManager: NSObject, ObservableObject {
     /// rev-1 SET_ALARM_TIME. WHOOP 5/MG sends the REVISION_4 body alone — the strap maintains
     /// its RTC (set during the connect handshake / history sync) and the official app's alarm
     /// path doesn't re-set it (wire observation; mirrors Android WhoopBleClient.armStrapAlarm).
-    /// Either way the strap will buzz at `date` even if the app is backgrounded or force-quit
-    /// (event STRAP_DRIVEN_ALARM_EXECUTED=57). This is the only alarm path: the strap fires at
+    /// A verified firmware alarm can execute independently of the app. That behavior is NOT yet
+    /// confirmed for this WHOOP 5/MG implementation. This wake-alarm path requests
     /// the fixed time — NOOP has no light-sleep early-wake layer.
     ///
     /// EXPERIMENTAL / UNCONFIRMED on 5/MG (same posture as the Android client): the byte-identical
@@ -5303,7 +5354,7 @@ public final class BLEManager: NSObject, ObservableObject {
             // #34: don't claim "armed" when the strap isn't connected (the send was dropped) — the arm
             // re-fires on the next connect.
             log(commandChannelReady   // #613: reflect whether send() actually reached the strap, not just a non-nil uuid
-                ? "Alarm: armed 5/MG rev4 for \(localFmt.string(from: date)) — your local wake time"
+                ? "Alarm: requested 5/MG rev4 for \(localFmt.string(from: date)) — your local wake time"
                 : "Alarm: queued 5/MG rev4 for \(localFmt.string(from: date)) — strap not connected; will send on next connect")
             return
         }
@@ -5315,7 +5366,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // #34: only claim "armed" when the strap is connected (the send actually went out); otherwise it's
         // queued and re-sent on the next connect.
         if commandChannelReady {   // #613: reflect whether send() actually reached the strap, not just a non-nil uuid
-            log("Alarm: armed for \(localFmt.string(from: date)) — your local wake time (sent as UTC epoch \(epochSec))")
+            log("Alarm: requested for \(localFmt.string(from: date)) — your local wake time (sent as UTC epoch \(epochSec))")
         } else {
             log("Alarm: queued for \(localFmt.string(from: date)) — strap not connected; will send on next connect")
         }
@@ -5363,7 +5414,7 @@ public final class BLEManager: NSObject, ObservableObject {
         // #730: report the OUTCOME, not the intent — using the SAME `commandChannelReady` gate the arm
         // path already uses (it reports "queued" rather than a false "armed"). The disarm never adopted
         // it: `send` drops the write when the link isn't up and logs "ignored — not connected", then this
-        // logged "Alarm: disarmed" anyway, telling the user the firmware alarm was cleared when the
+        // logged "Alarm: disarm requested" anyway, telling the user the firmware alarm was cleared when the
         // command never reached the strap — so a strap that IS armed would still buzz. (`applySmartAlarm`
         // now re-runs on connectSettled, so a deferred disarm is re-issued once the link is really up.)
         let willReach = commandChannelReady
@@ -5373,13 +5424,28 @@ public final class BLEManager: NSObject, ObservableObject {
         if selectedModel.deviceFamily == .whoop5 {
             // 5/MG DISABLE_ALARM is REVISION_2 [0x02, 0xFF]; the rev-1 [0x01] form below is WHOOP4.
             send(.disableAlarm, payload: AlarmPayload.disableRev2())
-            log(willReach ? "Alarm: disarmed (5/MG rev2)"
+            log(willReach ? "Alarm: disarm requested (5/MG rev2)"
                           : "Alarm: disarm NOT sent — not connected; will retry on connect (strap may still be armed)")
             return
         }
         send(.disableAlarm, payload: [0x01])
-        log(willReach ? "Alarm: disarmed"
+        log(willReach ? "Alarm: disarm requested"
                       : "Alarm: disarm NOT sent — not connected; will retry on connect (strap may still be armed)")
+    }
+
+    /// Reads all documented WHOOP 5 alarm IDs without SET, DISABLE or RUN. Raw responses are diagnostic only.
+    func readWhoop5AlarmSlots() {
+        guard selectedModel.deviceFamily == .whoop5, commandChannelReady, state.encryptedBond else {
+            buzzDelivery.alarmReadback = ["Connect the paired WHOOP 5 before reading alarm slots."]
+            return
+        }
+        buzzDelivery.alarmReadback = ["Read requested for slots 1–6. No alarm changed. Missing replies and zero records do not prove an empty slot."]
+        alarmReadRequests = [:]
+        for slot: UInt8 in 1...6 {
+            guard let payload = AlarmPayload.getAlarmRev4(alarmId: slot) else { continue }
+            send(.getAlarmTime, payload: payload, writeType: .withResponse)
+            alarmReadRequests[Int(seq)] = (Int(slot), buzzConnectionID, Date())
+        }
     }
 
     /// Request the currently-armed alarm time from the strap (response arrives on cmd-notify char).
@@ -5398,10 +5464,12 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Siri-shortcut path (#921), so every user-facing one-shot buzz (the Live "Buzz strap" button,
     /// the Buzz Strap App Intent) routes through here instead of composing its own write.
     ///
-    /// Both writes are ACKNOWLEDGED (.withResponse): a backgrounded shortcut on a busy link can
+    /// WHOOP 4 retains both writes. WHOOP 5 uses only the notification-waveform command because
+    /// RUN_ALARM can consume a stored alarm. Writes request GATT responses (.withResponse); a
+    /// GATT completion is not a command acceptance or motor confirmation. A busy link can
     /// silently drop an unacknowledged write, which is how #921 logged "Run Haptics" with no
     /// vibration. On a 5/MG, send() remaps cmd 79 to the maverick 0x13 notify buzz and RUN_ALARM
-    /// carries the REVISION_2 body; both are already on the 5/MG command allowlist.
+    /// is deliberately not used for the manual WHOOP 5 cue.
     ///
     /// Alternative waveform form (12-byte):
     ///   [wfe1=47, wfe2=152, 0,0,0,0,0,0, loop u16=0, overall_loop=7, dur=30]
@@ -5409,14 +5477,9 @@ public final class BLEManager: NSObject, ObservableObject {
     ///
     /// Haptic firing cannot be verified in the simulator (no strap motor). Test on-device only.
     func buzzStrapOnce() {
-        send(.runHapticsPattern, payload: [2, 3, 0, 0, 0], writeType: .withResponse)  // patternId=2, 3 loops (5/MG: send() remaps to the maverick notify buzz)
-        if selectedModel.deviceFamily == .whoop5 {
-            send(.runAlarm, payload: AlarmPayload.runAlarmRev2(), writeType: .withResponse)   // REVISION_2 [0x02, alarmId]
-            log("Buzz: one-shot fired (5/MG maverick buzz + runAlarm rev2, acked)")
-            return
-        }
-        send(.runAlarm, payload: [0x01], writeType: .withResponse)
-        log("Buzz: one-shot fired (patternId=2 loops=3 + runAlarm, acked)")
+        buzzDelivery.schedule(owner: "manual-test", deviceId: deviceId, loops: 3)
+        // WHOOP 5 uses only the notification waveform. WHOOP 4 retains its verified legacy sequence.
+        log("Buzz: one-shot requested; command response and physical vibration require separate evidence")
     }
 
     /// Haptic Clock (#460): buzz the current wall-clock time out on the strap so the user can read it
@@ -5445,14 +5508,12 @@ public final class BLEManager: NSObject, ObservableObject {
         log("Haptic Clock: buzzing \(pulses.count) pulses for the current time (\(is24h ? "24h" : "12h")).")
         // Walk the encoder's pulse list, converting each (durationMs,gapMs) into a scheduled buzz.
         // A long pulse is felt as a heavier buzz (2 stacked loops); a short pulse as a light one (1).
+        buzzDelivery.cancel(owner: "haptic-clock")
         var offsetMs = 0
         for pulse in pulses {
-            let loops = pulse.isLong ? 2 : 1
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(offsetMs)) { [weak self] in
-                // patternId/loops payload — send() remaps this to the 5/MG maverick notify buzz; on a
-                // WHOOP 4.0 it's the native runHapticsPattern. Same call the inactivity nudge uses.
-                self?.send(.runHapticsPattern, payload: [2, UInt8(clamping: loops), 0, 0, 0])
-            }
+            buzzDelivery.schedule(owner: "haptic-clock", deviceId: deviceId,
+                due: date.addingTimeInterval(Double(offsetMs) / 1000), grace: 0.5,
+                loops: pulse.isLong ? 2 : 1)
             offsetMs += pulse.durationMs + pulse.gapMs
         }
     }
@@ -5932,6 +5993,8 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
     public func centralManager(_ central: CBCentralManager,
                                didDisconnectPeripheral peripheral: CBPeripheral,
                                error: Error?) {
+        buzzConnectionID = UUID()
+        buzzDelivery.connectionLost()
         Task { @MainActor in await collector?.flush() }
         // Reboot trail: if a user reboot is in flight, this drop is the strap acting on it. Log how long
         // the link stayed up (a real reboot drops within ~1-2 s) and cancel the no-disconnect watchdog. The
@@ -7081,6 +7144,7 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral,
                            didUpdateValueFor characteristic: CBCharacteristic,
                            error: Error?) {
+        defer { buzzDelivery.service() }
         if let error {
             // A DIS refusal is a FINDING, not noise — report it specifically and latch it, or a capture
             // cannot tell a refusal from a read that was never issued (#490, #1635).
