@@ -217,7 +217,7 @@ private struct CutTodayDashboard: View, Equatable {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, NoopMetrics.space2)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(NoopButtonStyle(.primary))
                 .buttonBorderShape(.capsule)
                 .tint(StrandPalette.accent)
             }

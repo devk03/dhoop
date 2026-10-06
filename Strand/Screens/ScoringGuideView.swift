@@ -157,7 +157,7 @@ struct ScoringGuideView: View {
             Button(action: onClose) {
                 Text("Got it").frame(minWidth: 120).padding(.vertical, 4)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(NoopButtonStyle(.primary))
             .tint(StrandPalette.accent)
             .keyboardShortcut(.defaultAction)
         }

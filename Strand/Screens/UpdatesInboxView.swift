@@ -151,7 +151,7 @@ struct UpdatesInboxView: View {
             } label: {
                 Text("Mark all read").frame(minWidth: 120).padding(.vertical, 4)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(NoopButtonStyle(.primary))
             .tint(StrandPalette.accent)
             .disabled(updateStore.unreadCount == 0)
         }

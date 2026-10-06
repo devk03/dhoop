@@ -69,8 +69,8 @@ struct HIITWorkoutView: View {
             }
             Button { controller.start(zones: zones, otherSessionActive: !canStart) } label: {
                 Label("Start \(controller.selectedKind.title)", systemImage: "play.fill").font(StrandFont.headline)
-                    .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
-            }.buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan).disabled(!canStart || !controller.plan.isValid)
+                    .frame(maxWidth: .infinity)
+            }.buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan).disabled(!canStart || !controller.plan.isValid)
             if !canStart { Text("Connect and pair your WHOOP to start.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
             if !controller.plan.isValid { Text("Choose a workout of three hours or less.").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
         }
@@ -110,11 +110,11 @@ struct HIITWorkoutView: View {
                 statTile("Elapsed", value: clock(run.elapsed), detail: "of \(clock(Double(run.plan.totalSeconds)))", symbol: "stopwatch", tint: StrandPalette.metricCyan)
             }
             if run.state == .running {
-                Button { controller.pause() } label: { Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
-                    .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan)
+                Button { controller.pause() } label: { Label("Pause", systemImage: "pause.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan)
             } else if run.state == .paused {
-                Button { controller.resume() } label: { Label("Resume \(controller.selectedKind.title)", systemImage: "play.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
-                    .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan).disabled(!canStart)
+                Button { controller.resume() } label: { Label("Resume \(controller.selectedKind.title)", systemImage: "play.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan).disabled(!canStart)
             }
             Button { controller.save() } label: { Label("End and save", systemImage: "stop.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
                 .buttonStyle(.bordered)

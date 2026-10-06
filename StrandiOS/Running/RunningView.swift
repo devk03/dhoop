@@ -131,8 +131,8 @@ private struct RunningContent: View, Equatable {
                 Text(alertReadiness).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 Button { controller.start() } label: {
                     Label("Start \(controller.chosenTarget?.name ?? "run")", systemImage: "play.fill")
-                        .font(StrandFont.headline).frame(maxWidth: .infinity, minHeight: NoopMetrics.controlHeight)
-                }.buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+                        .font(StrandFont.headline).frame(maxWidth: .infinity)
+                }.buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent)
                     .disabled(!controller.canStart)
                 if let reason = controller.startBlockedReason {
                     Text(reason).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -258,11 +258,11 @@ private struct RunningContent: View, Equatable {
                 .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
         } else if run.phase == .paused {
             Button("Resume") { controller.resume() }
-                .buttonStyle(.borderedProminent).tint(StrandPalette.metricCyan)
+                .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan)
                 .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!controller.isConnected)
         }
         Button(run.phase == .completed ? "Save run" : "Finish & save") { controller.endAndSave() }
-            .buttonStyle(.borderedProminent).tint(StrandPalette.accent).frame(minHeight: NoopMetrics.minimumTouchTarget)
+            .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent).frame(minHeight: NoopMetrics.minimumTouchTarget)
     }
 
     private var alertsCard: some View {

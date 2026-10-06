@@ -459,7 +459,7 @@ struct AddDeviceWizard: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(NoopButtonStyle(.primary))
                 .tint(StrandPalette.accent)
                 .accessibilityLabel("Scan for \(typeTitle(type))")
             }
@@ -617,7 +617,7 @@ struct AddDeviceWizard: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(NoopButtonStyle(.primary))
         .tint(StrandPalette.accent)
         .disabled(!ouraConsented)
         .accessibilityHint("Continue to get your ring ready")
@@ -698,7 +698,7 @@ struct AddDeviceWizard: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(NoopButtonStyle(.primary))
         .tint(StrandPalette.accent)
         .accessibilityLabel("Scan for your Oura ring")
     }
@@ -756,7 +756,7 @@ struct AddDeviceWizard: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(NoopButtonStyle(.primary))
         .tint(StrandPalette.accent)
         .disabled(ouraKeyBytes == nil)
         .accessibilityLabel("Scan for your Oura ring")
@@ -855,7 +855,7 @@ struct AddDeviceWizard: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(NoopButtonStyle(.primary))
                 .tint(StrandPalette.accent)
                 .accessibilityLabel("Connect to this ring")
                 Text("Both Dhoop and the Oura app can use a ring you own by key, but only one can hold the Bluetooth link at a time.")
@@ -929,7 +929,7 @@ struct AddDeviceWizard: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(NoopButtonStyle(.primary))
                 .tint(StrandPalette.accent)
                 .accessibilityLabel("Try again")
 
@@ -1138,7 +1138,7 @@ struct AddDeviceWizard: View {
                 .accessibilityLabel("Device name")
 
             Button("Add") { askMakeActive = true }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(NoopButtonStyle(.primary))
                 .tint(StrandPalette.accent)
                 .frame(maxWidth: .infinity)
                 .disabled(nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -1626,7 +1626,7 @@ private struct OuraPickList: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Button("Use file import") { onUseImport() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(NoopButtonStyle(.primary))
                         .tint(StrandPalette.accent)
                         .accessibilityLabel("Use file import for Oura")
                 }

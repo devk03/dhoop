@@ -93,7 +93,7 @@ struct CardioDetectionView: View {
             Button(review.recordingRemoved ? "Save workout again" : (review.decision == .pending ? "Is a workout" : "Change to workout")) {
                 decide(review, .workout)
             }
-            .buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+            .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent)
             .frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
         if review.decision != .notWorkout {

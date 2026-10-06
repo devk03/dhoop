@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - NoopButton — the unified button system (Design Reset, 2026-06-22)
 //
-// One button, four kinds, no glow. Beauty comes from a crisp filled accent, honest
+// One button, four kinds, no glow. Beauty comes from a high-contrast primary action, honest
 // surface fills, restrained spacing and a subtle press — never neon, bloom or a halo.
 // Every colour is a token from `StrandPalette`; every dimension reads off `NoopMetrics`.
 //
@@ -11,13 +11,13 @@ import SwiftUI
 //   • `Button("Save") { … }.buttonStyle(NoopButtonStyle(.primary))`  — adopt on an
 //     existing Button (e.g. a Menu/role button) without rewriting it.
 //
-// Labels are sentence-case (never ALL CAPS), single line, optical-centred with the
+// Labels are sentence-case, wrap when needed, and stay optically centered with the
 // optional leading icon as one unit, and degrade gracefully under Reduce Motion (the
 // press scale drops; only the dim remains).
 
 /// The four button roles. Colour + emphasis differ; geometry is identical across all four.
 public enum NoopButtonKind: Sendable {
-    /// Filled accent (blue), white label — the one primary action on a screen.
+    /// Paired neutral fill and ink — the primary action on a screen.
     case primary
     /// Raised-surface fill, primary-text label, hairline edge — secondary actions.
     case secondary
@@ -44,8 +44,8 @@ public enum NoopButtonMetrics {
     public static let tracking: CGFloat = 0.2
     /// Apple's minimum touch target. The button never reports a hit area below this.
     public static let minHitTarget: CGFloat = 44
-    /// Pressed scale (spec: subtle 0.97). Reduce-Motion collapses this to 1 (dim only).
-    public static let pressedScale: CGFloat = 0.97
+    /// Pressed scale (subtle 0.96). Reduce-Motion collapses this to 1 (dim only).
+    public static let pressedScale: CGFloat = 0.96
     /// Pressed dim — a slight opacity drop, applied in BOTH motion modes.
     public static let pressedOpacity: Double = 0.82
     /// Disabled dim, shared so call sites don't invent their own.
@@ -63,8 +63,8 @@ struct NoopButtonAppearance {
     init(_ kind: NoopButtonKind) {
         switch kind {
         case .primary:
-            fill = StrandPalette.accent
-            label = StrandPalette.goldDeepText   // designated crisp white for text on accent fills
+            fill = NoopVisualStyle.selectedControlFill
+            label = NoopVisualStyle.selectedControlInk
             border = nil
             usesPanelSurface = false
         case .secondary:
@@ -117,32 +117,40 @@ private struct NoopButtonBackground: View {
 public struct NoopButtonStyle: ButtonStyle {
     private let kind: NoopButtonKind
     private let fullWidth: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.isEnabled) private var isEnabled
-
     public init(_ kind: NoopButtonKind = .primary, fullWidth: Bool = false) {
         self.kind = kind
         self.fullWidth = fullWidth
     }
 
     public func makeBody(configuration: Configuration) -> some View {
+        configuration.label.modifier(NoopButtonChrome(kind: configuration.role == .destructive ? .destructive : kind,
+            fullWidth: fullWidth, pressed: configuration.isPressed))
+    }
+}
+
+/// Both public button APIs share contrast, geometry, enabled state and motion behavior.
+struct NoopButtonChrome: ViewModifier {
+    let kind: NoopButtonKind
+    let fullWidth: Bool
+    let pressed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
         let appearance = NoopButtonAppearance(kind)
-        let pressed = configuration.isPressed
-        // Reduce Motion: no scale, dim only. Otherwise subtle scale + dim.
         let scale: CGFloat = (pressed && !reduceMotion) ? NoopButtonMetrics.pressedScale : 1
         let opacity: Double = pressed ? NoopButtonMetrics.pressedOpacity : 1
-
-        configuration.label
+        content
             .labelStyle(.titleAndIcon)
             .font(StrandFont.headline.weight(.semibold))
             .tracking(NoopButtonMetrics.tracking)
-            .lineLimit(1)
-            .minimumScaleFactor(0.9)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
             .foregroundStyle(appearance.label)
             .frame(maxWidth: fullWidth ? .infinity : nil)
             .padding(.horizontal, NoopButtonMetrics.hPadding)
-            .frame(height: NoopButtonMetrics.height)
-            .frame(minHeight: NoopButtonMetrics.minHitTarget)
+            .padding(.vertical, NoopMetrics.space3)
+            .frame(minHeight: NoopButtonMetrics.height)
             .contentShape(Rectangle())
             .background(NoopButtonBackground(appearance: appearance))
             .clipShape(RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius, style: .continuous))

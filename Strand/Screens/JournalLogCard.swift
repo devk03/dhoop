@@ -306,7 +306,7 @@ struct JournalLogCard: View {
                     catalog.rename(item.canonical, to: renameDraft)
                     renaming = nil
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(NoopButtonStyle(.primary))
             }
         }
         .padding(NoopMetrics.space4)

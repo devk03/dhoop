@@ -63,7 +63,7 @@ struct SleepWebhookSettingsView: View {
                         Button { client.enqueue(model: model, force: true) } label: {
                             Label(client.isSending ? "Sending…" : "Send completed days", systemImage: "arrow.up.circle")
                                 .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
-                        }.buttonStyle(.borderedProminent).tint(StrandPalette.accent)
+                        }.buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent)
                             .disabled(!client.checkpoint.anyEnabled || client.isSending || client.storageUnavailable)
                     }
                 }

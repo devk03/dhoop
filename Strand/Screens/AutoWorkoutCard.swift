@@ -75,7 +75,7 @@ struct AutoWorkoutCard: View {
                     } label: {
                         Label("Save it", systemImage: "checkmark")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(NoopButtonStyle(.primary))
                     .tint(StrandPalette.accent)
                     .disabled(saving)
 

@@ -82,7 +82,7 @@ struct MeditationCard: View {
 
     private func action(_ title: LocalizedStringKey, icon: String, perform: @escaping () -> Void) -> some View {
         Button(action: perform) { Label(title, systemImage: icon) }
-            .font(StrandFont.subhead).buttonStyle(.borderedProminent).tint(StrandPalette.metricHRV)
+            .font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricHRV)
             .frame(minHeight: NoopMetrics.minimumTouchTarget)
     }
 
