@@ -10,6 +10,7 @@ final class RunningSessionController: ObservableObject {
     @Published private(set) var elapsedSeconds: TimeInterval = 0
     @Published private(set) var currentBPM: Int?
     @Published private(set) var zones: [RunningZoneTarget] = []
+    @Published private(set) var isLoadingBaseline = true
     @Published private(set) var baselineDescription = "Reading dated resting heart rate…"
     @Published private(set) var statusMessage: String?
     @Published private(set) var buzzTestMessage: String?
@@ -90,6 +91,15 @@ final class RunningSessionController: ObservableObject {
         }
         return zones.first { $0.name == "Zone \(selectedZone)" }
     }
+    var startBlockedReason: String? {
+        if hasSession || app?.activeWorkout != nil { return "Finish the active workout before starting another." }
+        if !isConnected { return "Connect and pair your WHOOP to start." }
+        if isLoadingBaseline && !useManualTarget { return "Reading your target heart-rate range…" }
+        if chosenTarget == nil { return "Choose a valid target heart-rate range." }
+        return nil
+    }
+    var canStart: Bool { startBlockedReason == nil }
+
     var workoutHapticsEnabled: Bool { HapticPrefs.enabled(HapticPrefs.workout) }
 
     /// Calling this from an appearance only attaches once; hidden tabs retain the same controller.
@@ -123,6 +133,8 @@ final class RunningSessionController: ObservableObject {
         guard let app else { return }
         baselineGeneration += 1
         let generation = baselineGeneration
+        isLoadingBaseline = true
+        defer { if generation == baselineGeneration { isLoadingBaseline = false } }
         let id = app.repo.deviceId
         let custom = app.profile.customHRZoneLowerBounds
         let maximum = app.profile.effortHRmax
@@ -162,9 +174,9 @@ final class RunningSessionController: ObservableObject {
     }
 
     func start() {
-        if app?.activeWorkout != nil { statusMessage = "End the other active workout before starting a zone run."; return }
         updateConnection()
-        guard !hasSession, isConnected, let app, let target = chosenTarget,
+        if let reason = startBlockedReason { statusMessage = reason; return }
+        guard let app, let target = chosenTarget,
               let run = RunningZoneSession(deviceId: app.repo.deviceId, target: target, goalSeconds: Double(targetMinutes * 60)) else { return }
         saveConfiguration()
         workingSession = run; session = run
@@ -311,7 +323,7 @@ final class RunningSessionController: ObservableObject {
         if run.phase == .completed {
             updateElapsed(); elapsedBeforeResume = elapsedSeconds; runningSinceUptime = nil
             releaseStream(); session = run
-            currentBPM = nil; statusMessage = "In-zone goal complete. End and save your run."
+            currentBPM = nil; statusMessage = "Goal reached. Save your run."
             persistDraft()
         }
     }
