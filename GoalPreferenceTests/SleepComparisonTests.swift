@@ -173,4 +173,12 @@ final class SleepComparisonTests: XCTestCase {
         XCTAssertNil(SleepComparisonProjection.selectedNight("", available: ["2026-09-30"], window: window))
     }
 
+    func testUnknownStoredStageCannotAssertAsleepDuration() {
+        let timeline = SleepComparisonProjection.storedTimeline(
+            json: "[{\"start\":100,\"end\":700,\"stage\":\"unknown\"}]",
+            start: 100, end: 700, sourceID: "whoop-noop", method: "Dhoop estimate", calendar: utc)!
+        XCTAssertEqual(timeline.intervals.first?.stage, .unspecified)
+        XCTAssertNil(timeline.asleepMinutes)
+    }
+
 }

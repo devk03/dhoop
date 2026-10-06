@@ -2,6 +2,10 @@ import SwiftUI
 
 /// Quiet chart ink shared by metric history, sleep comparison and recorded workouts.
 public enum StrandChartStyle {
+    public static let stageAwake = Color(light: "#C84466", dark: "#EF8EA7")
+    public static let stageREM = Color(light: "#7850BB", dark: "#AD8AED")
+    public static let stageLight = Color(light: "#2F82BF", dark: "#75B8ED")
+    public static let stageDeep = Color(light: "#3B4F9D", dark: "#556DD1")
     public static let lineWidth: CGFloat = 2
     public static let pointArea: CGFloat = 14
     public static let sparsePointLimit = 8

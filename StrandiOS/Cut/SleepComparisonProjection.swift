@@ -48,7 +48,7 @@ struct SleepComparisonTimeline: Identifiable, Sendable {
     let intervals: [SleepStageInterval]
     var id: String { "\(sourceID)|\(start)|\(end)" }
     var asleepMinutes: Double? {
-        guard !intervals.isEmpty else { return nil }
+        guard !intervals.isEmpty, !intervals.contains(where: { $0.stage == .unspecified }) else { return nil }
         return intervals.filter { $0.stage != .awake }.reduce(0) { $0 + ($1.end - $1.start) / 60 }
     }
 }

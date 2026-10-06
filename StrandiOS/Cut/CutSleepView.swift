@@ -15,7 +15,7 @@ struct CutSleepView: View {
     @State private var timelineSource = ""
     @State private var episodeSelection = ""
     @AppStorage("dhoop.sleep.appleComparisonSource") private var providerID = ""
-    @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
+    @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardTileNumber
     private var window: MetricDateWindow { selection.window(now: capturedAt) }
     private var result: SleepRangeSnapshot? {
         guard let value = history.snapshot, value.deviceId == repo.deviceId, window.canDisplaySnapshot(value.window) else { return nil }
@@ -50,6 +50,10 @@ struct CutSleepView: View {
             }
             MetricRangeControl(selection: $selection, now: capturedAt)
             if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
+            grid {
+                selectedDayCard("WHOOP", rows: whoop, tint: StrandPalette.metricPurple)
+                selectedDayCard(comparisonName, rows: apple, tint: StrandPalette.metricCyan)
+            }
             timelineCard
             NoopCard {
                 DisclosureGroup("Range averages & comparison") {
@@ -108,6 +112,21 @@ struct CutSleepView: View {
     private var selectedEpisode: SleepComparisonTimeline? {
         episodes.first { $0.id == episodeSelection } ?? episodes.first
     }
+    private func selectedDayCard(_ title: String, rows: [SleepComparisonDay], tint: Color) -> some View {
+        let reading = rows.first { $0.day == selectedNight }
+        return NoopCard(padding: NoopMetrics.space3, tint: tint, fillHeight: true) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                Text(title).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                Text(reading.map { sleepHM($0.total) } ?? "—").font(StrandFont.number(numberSize, weight: .semibold))
+                    .foregroundStyle(StrandPalette.textPrimary)
+                Text(selectedNight.map { "\(nightLabel($0)) · total sleep" } ?? "No sleep in range")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Text(reading.map { title == "WHOOP" ? $0.method : "Via Apple Health" } ?? "No record for this date")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityElement(children: .combine)
+    }
+
     private var timelineCard: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -122,10 +141,10 @@ struct CutSleepView: View {
                         }.pickerStyle(.menu).font(StrandFont.subhead)
                     }
                 }
-                Picker("Timeline source", selection: Binding(get: { selectedSource }, set: { timelineSource = $0; episodeSelection = "" })) {
-                    Text("WHOOP").tag("whoop")
-                    Text(comparisonName).tag("apple")
-                }.pickerStyle(.segmented)
+                NoopSegmentedControl("Timeline source", options: ["WHOOP", comparisonName],
+                    selection: Binding(get: { selectedSource == "whoop" ? "WHOOP" : comparisonName }, set: {
+                        timelineSource = $0 == "WHOOP" ? "whoop" : "apple"; episodeSelection = ""
+                    }))
                 if selectedSource == "apple", let result, result.apple.count > 1 {
                     Picker("Apple Health provider", selection: Binding(get: { appleProvider?.id ?? "" }, set: { providerID = $0; episodeSelection = "" })) {
                         ForEach(result.apple) { Text($0.displayName).tag($0.id) }
@@ -141,7 +160,7 @@ struct CutSleepView: View {
                     }
                     HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
                         if let minutes = episode.asleepMinutes {
-                            Text(sleepHM(minutes)).font(StrandFont.title2).monospacedDigit()
+                            Text("\(sleepHM(minutes)) asleep").font(StrandFont.subhead).monospacedDigit()
                         }
                         Text(clockRange(episode.start, episode.end)).font(StrandFont.caption)
                             .foregroundStyle(StrandPalette.textSecondary)
@@ -151,7 +170,7 @@ struct CutSleepView: View {
                         unavailableTimeline("This record has sleep totals and boundaries, but no timestamped stages.")
                     } else {
                         stageTimeline(episode)
-                        Text("Blank spaces are missing data. Unclassified intervals have no reliable stage.")
+                        Text("Gaps have no readings. Unclassified means unknown stage.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     }
                 } else if result == nil && history.error == nil {
@@ -181,12 +200,20 @@ struct CutSleepView: View {
     private func stageTimeline(_ episode: SleepComparisonTimeline) -> some View {
         let unknown = episode.intervals.contains { $0.stage == .unspecified }
         return Chart {
-            ForEach(episode.intervals) { interval in
+            ForEach(Array(episode.intervals.enumerated()), id: \.element.id) { index, interval in
+                if index > 0, episode.intervals[index - 1].end == interval.start,
+                   episode.intervals[index - 1].stage != interval.stage {
+                    RuleMark(x: .value("Transition", Date(timeIntervalSince1970: interval.start)),
+                             yStart: .value("Previous stage", stageLevel(episode.intervals[index - 1].stage)),
+                             yEnd: .value("Next stage", stageLevel(interval.stage)))
+                        .foregroundStyle(stageColor(interval.stage).opacity(0.5))
+                        .lineStyle(StrokeStyle(lineWidth: NoopMetrics.hairlineWidth))
+                }
                 RectangleMark(xStart: .value("Start", Date(timeIntervalSince1970: interval.start)),
                     xEnd: .value("End", Date(timeIntervalSince1970: interval.end)),
                     yStart: .value("Stage lower", stageLevel(interval.stage) - 0.32),
                     yEnd: .value("Stage upper", stageLevel(interval.stage) + 0.32))
-                    .foregroundStyle(stageColor(interval.stage))
+                    .foregroundStyle(stageColor(interval.stage)).cornerRadius(NoopMetrics.spaceHalf)
             }
         }
         .chartXScale(domain: Date(timeIntervalSince1970: episode.start)...Date(timeIntervalSince1970: episode.end))
@@ -216,10 +243,10 @@ struct CutSleepView: View {
     }
     private func stageColor(_ stage: SleepComparisonSample.Stage) -> Color {
         switch stage {
-        case .awake: return StrandPalette.sleepAwake
-        case .rem: return StrandPalette.sleepREM
-        case .core: return StrandPalette.sleepLight
-        case .deep: return StrandPalette.sleepDeep
+        case .awake: return StrandChartStyle.stageAwake
+        case .rem: return StrandChartStyle.stageREM
+        case .core: return StrandChartStyle.stageLight
+        case .deep: return StrandChartStyle.stageDeep
         case .unspecified: return StrandPalette.textTertiary
         }
     }
