@@ -1,8 +1,8 @@
 import Foundation
 
 struct RemoteBuzzReceipt: Codable, Equatable, Identifiable {
-    let version = 2
-    let op = "receipt"
+    let version: Int
+    let op: String
     let receiptId: String
     let enrollmentId: String
     let generation: Int
@@ -13,6 +13,13 @@ struct RemoteBuzzReceipt: Codable, Equatable, Identifiable {
     let stage: String
     let outcome: String
     var id: String { receiptId }
+    init(receiptId: String, enrollmentId: String, generation: Int, installationId: String,
+         eventId: String, sequence: Int, observedAt: Int, stage: String, outcome: String) {
+        version = 2; op = "receipt"
+        self.receiptId = receiptId; self.enrollmentId = enrollmentId; self.generation = generation
+        self.installationId = installationId; self.eventId = eventId; self.sequence = sequence
+        self.observedAt = observedAt; self.stage = stage; self.outcome = outcome
+    }
     static let outcomes: [String: Set<String>] = [
         "phone_received": ["received", "duplicate", "disabled", "expired", "disconnected", "suppressed"],
         "strap_requested": ["requested", "unavailable"],
