@@ -59,10 +59,33 @@ It performs no SET, DISABLE, or RUN. No experimental workout alarm is armed. The
 buzz no longer issues RUN_ALARM, which can clear a stored alarm. WHOOP 4 retains its previously
 verified manual-buzz sequence; that behavior has not been revalidated during this change.
 
-## Physical verification: pending
+## Physical verification
 
-The user deferred hardware testing. Compilation, unit tests, and command responses cannot close
-this checklist. On the actual WHOOP 5 and iPhone, record firmware, time, feature/session, app state,
+### Confirmed on October 8, 2026
+
+Build 450 was installed and launched on the physical iPhone 15 Pro Max. The wearer reported
+feeling both the immediate WHOOP buzz and the thirty-second delayed buzz after locking the phone
+and waiting forty seconds before unlocking.
+
+The read-only device ledger records:
+
+- Immediate request: 09:54:48 PDT, with a correlated `SUCCESS(1)` command response.
+- Locked-phone test deadline: 09:55:20.648894 PDT; command request at 09:55:20.649130 PDT
+  (approximately 0.24 ms after the deadline), with a correlated `SUCCESS(1)` response.
+- Neither response included the final waveform detail, so the ledger correctly retains
+  `responseReceived` rather than successful final acknowledgment. Physical vibration is confirmed
+  by the wearer independently of that protocol classification.
+
+This confirms immediate and briefly locked-phone delivery for this device/session. The ledger does
+not record iOS execution state or explain which execution opportunity serviced the deadline. This
+short test does not prove long-term suspension, force-quit delivery, push-triggered waking,
+meditation completion, consecutive workout transitions, or reconnect behavior. No firmware alarm
+was armed for this test. Device-ledger files remain outside Git.
+
+### Remaining checks
+
+The remaining hardware checks are pending. Compilation, unit tests, and command responses cannot
+close this checklist. On the actual WHOOP 5 and iPhone, record firmware, time, feature/session, app state,
 request/response result, and the wearer's yes/no vibration confirmation for each case:
 
 1. Read the six alarm slots without changing them; retain raw responses and existing wake settings.
