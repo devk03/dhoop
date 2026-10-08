@@ -7,6 +7,7 @@ final class HIITController: ObservableObject {
     @Published var plan = HIITPlan()
     @Published private(set) var selectedKind: HIITWorkoutKind = .hiit
     @Published private(set) var historyRevision = 0
+    @Published private(set) var isSaving = false
     @Published var cuesEnabled = true {
         didSet { if !cuesEnabled { app?.ble.buzzDelivery.cancel(owner: buzzOwner) } }
     }
@@ -88,7 +89,7 @@ final class HIITController: ObservableObject {
         acquire(); cue(run.interval); persist()
     }
     func resume() {
-        guard ready, app?.activeWorkout == nil, var run = working, run.state == .paused, run.deviceId == app?.repo.deviceId else { return }
+        guard !isSaving, ready, app?.activeWorkout == nil, var run = working, run.state == .paused, run.deviceId == app?.repo.deviceId else { return }
         guard app?.ble.buzzDelivery.claim(buzzOwner) == true else { message = "Another WHOOP cue session is active."; return }
         run.resume(); working = run; session = run; lastReceipt = Date().timeIntervalSince1970
         acquire(); cue(run.interval); persist()
@@ -99,17 +100,27 @@ final class HIITController: ObservableObject {
         release(); message = reason; persist()
     }
     func save() {
-        guard var run = working else { return }
+        guard !isSaving, var run = working else { return }
         run.pause(); working = run; session = run; currentBPM = nil
-        release(); persist()
+        release()
+        let paused = run
         run.finish()
-        do {
-            let cleanupError = try HIITWorkoutFiles(directory: directory).save(run)
-            historyRevision += 1
-            working = nil; session = nil; currentBPM = nil
-            message = cleanupError.map { "\(selectedKind.title) saved. Draft cleanup could not finish: \($0)" }
-                ?? "\(selectedKind.title) saved on this phone."
-        } catch { message = "Could not save workout: \(error.localizedDescription). Your session remains open." }
+        let completed = run, location = directory, title = selectedKind.title
+        isSaving = true; message = "Saving workout…"
+        Task { @MainActor in
+            defer { isSaving = false }
+            do {
+                let cleanupError = try await Task.detached(priority: .userInitiated) {
+                    try JSONEncoder().encode(paused).write(to: location.appendingPathComponent("active.json"), options: .atomic)
+                    return try HIITWorkoutFiles(directory: location).save(completed)
+                }.value
+                guard working?.id == completed.id else { return }
+                historyRevision += 1
+                working = nil; session = nil; currentBPM = nil
+                message = cleanupError.map { "\(title) saved. Draft cleanup could not finish: \($0)" }
+                    ?? "\(title) saved on this phone."
+            } catch { message = "Could not save workout: \(error.localizedDescription). Your session remains open." }
+        }
     }
 
     func deleteWorkout(at url: URL, id: UUID) throws {
@@ -119,7 +130,7 @@ final class HIITController: ObservableObject {
     }
 
     func discard(id: UUID) {
-        guard working?.id == id else { return }
+        guard !isSaving, working?.id == id else { return }
         pause()
         do {
             try HIITWorkoutFiles(directory: directory).discardDraft(id: id)

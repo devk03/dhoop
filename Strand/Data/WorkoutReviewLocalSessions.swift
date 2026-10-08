@@ -8,11 +8,9 @@ enum WorkoutReviewLocalSessions {
     static func spans(defaults: UserDefaults = .standard, directory: URL, now: Date) throws -> [SavedWorkoutSpan] {
         let decoder = JSONDecoder()
         var spans: [SavedWorkoutSpan] = []
-        if let data = defaults.data(forKey: RunningSessionStorage.summariesKey) {
-            let runs = try decoder.decode([RunningSessionSummary].self, from: data)
-            spans += runs.map { SavedWorkoutSpan(startSec: Int($0.startedAt.timeIntervalSince1970),
-                                                endSec: Int($0.endedAt.timeIntervalSince1970)) }
-        }
+        let runs = try RunningSessionStorage(defaults: defaults).loadSummaries()
+        spans += runs.map { SavedWorkoutSpan(startSec: Int($0.startedAt.timeIntervalSince1970),
+                                            endSec: Int($0.endedAt.timeIntervalSince1970)) }
         if let data = defaults.data(forKey: RunningSessionStorage.draftKey) {
             let draft = try decoder.decode(RunningSessionStorage.Draft.self, from: data)
             spans.append(SavedWorkoutSpan(startSec: Int(draft.session.startedAt.timeIntervalSince1970),

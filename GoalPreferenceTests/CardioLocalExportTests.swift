@@ -11,12 +11,18 @@ final class CardioLocalExportTests: XCTestCase {
         let originals = ["workout-one.json": Data("raw interval record".utf8), "workout-damaged.json": Data([0xff, 0x00]), "active.json": Data("paused HIIT".utf8)]
         for (name, data) in originals { try data.write(to: directory.appendingPathComponent(name)) }
         try Data("unrelated".utf8).write(to: directory.appendingPathComponent("other.txt"))
-        let archive = try CardioLocalExport.capture(defaults: defaults, directory: directory)
+        let zones = directory.appendingPathComponent("Zones", isDirectory: true)
+        try FileManager.default.createDirectory(at: zones, withIntermediateDirectories: true)
+        let zoneOriginals = ["workout-zone.json": Data("durable zone record".utf8), "retired-zone.json": Data("retirement marker".utf8)]
+        for (name, data) in zoneOriginals { try data.write(to: zones.appendingPathComponent(name)) }
+        let archive = try CardioLocalExport.capture(defaults: defaults, directory: directory, zoneDirectory: zones)
         let restored = try JSONDecoder().decode(CardioLocalExport.self, from: JSONEncoder().encode(archive))
-        XCTAssertEqual(restored.formatVersion, 1)
+        XCTAssertEqual(restored.formatVersion, 2)
         XCTAssertEqual(restored.runningSummaries, summary)
         XCTAssertEqual(restored.runningDraft, draft)
         XCTAssertEqual(restored.intervalFiles, originals)
+        XCTAssertEqual(restored.zoneFiles, zoneOriginals)
         for (name, data) in originals { XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(name)), data) }
+        for (name, data) in zoneOriginals { XCTAssertEqual(try Data(contentsOf: zones.appendingPathComponent(name)), data) }
     }
 }

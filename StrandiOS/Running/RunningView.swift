@@ -265,10 +265,11 @@ private struct RunningContent: View, Equatable {
         } else if run.phase == .paused {
             Button("Resume") { controller.resume() }
                 .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan)
-                .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!controller.isConnected)
+                .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!controller.isConnected || controller.isSaving)
         }
-        Button(run.phase == .completed ? "Save run" : "Finish & save") { controller.endAndSave() }
+        Button(controller.isSaving ? "Saving…" : run.phase == .completed ? "Save run" : "Finish & save") { controller.endAndSave() }
             .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent).frame(minHeight: NoopMetrics.minimumTouchTarget)
+            .disabled(controller.isSaving)
     }
 
     private var alertsCard: some View {

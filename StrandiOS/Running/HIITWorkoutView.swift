@@ -116,12 +116,12 @@ struct HIITWorkoutView: View {
                 Button { controller.resume() } label: { Label("Resume \(controller.selectedKind.title)", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan).disabled(!canStart)
             }
-            Button { controller.save() } label: { Label("End and save", systemImage: "stop.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
-                .buttonStyle(.bordered)
+            Button { controller.save() } label: { Label(controller.isSaving ? "Saving…" : "End and save", systemImage: "stop.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
+                .buttonStyle(.bordered).disabled(controller.isSaving)
             Button(role: .destructive) { discardID = run.id } label: {
                 Label("Discard workout", systemImage: "trash").font(StrandFont.subhead)
                     .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
-            }.buttonStyle(.bordered).tint(StrandPalette.statusCritical)
+            }.buttonStyle(.bordered).tint(StrandPalette.statusCritical).disabled(controller.isSaving)
         }
     }
     private func statTile(_ title: String, value: String, detail: String, symbol: String, tint: Color) -> some View {

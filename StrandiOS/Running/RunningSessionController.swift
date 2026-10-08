@@ -15,6 +15,7 @@ final class RunningSessionController: ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var buzzTestMessage: String?
     @Published private(set) var summaries: [RunningSessionSummary] = []
+    @Published private(set) var isSaving = false
     @Published private(set) var isConnected = false
     @Published private(set) var strapAlertsReady = false
     @Published var selectedZone: Int = 2
@@ -50,6 +51,7 @@ final class RunningSessionController: ObservableObject {
     private var baselineGeneration = 0
     private var configuredDeviceId: String?
     private var workingSession: RunningZoneSession?
+    private var recoveringSummaries = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -62,7 +64,8 @@ final class RunningSessionController: ObservableObject {
         if let data = defaults.data(forKey: Keys.summaries),
            let saved = try? JSONDecoder().decode([RunningSessionSummary].self, from: data) { summaries = saved }
         if let data = defaults.data(forKey: Keys.draft),
-           var draft = try? JSONDecoder().decode(Draft.self, from: data) {
+           var draft = try? JSONDecoder().decode(Draft.self, from: data),
+           !summaries.contains(where: { $0.id == draft.session.id }) {
             // A process relaunch proves no intervening observations. It never resumes streaming.
             draft.session.pause()
             workingSession = draft.session; session = draft.session
@@ -108,6 +111,7 @@ final class RunningSessionController: ObservableObject {
         if self.app !== app {
             pause(reason: "Session paused because the app source changed.")
             self.app = app
+            recoverSummaries()
             subscriptions.removeAll()
             app.live.objectWillChange.sink { [weak self] _ in
                 // Published properties send before assignment; coalesce and read after the mutation.
@@ -126,6 +130,27 @@ final class RunningSessionController: ObservableObject {
         if configuredDeviceId != app.repo.deviceId {
             configuredDeviceId = app.repo.deviceId
             Task { [weak self] in await self?.refreshBaseline() }
+        }
+    }
+
+    private func recoverSummaries() {
+        guard !recoveringSummaries, !isSaving else { return }
+        recoveringSummaries = true
+        let preferences = defaults
+        Task { @MainActor in
+            defer { recoveringSummaries = false }
+            do {
+                let rows = try await Task.detached(priority: .utility) {
+                    try RunningSessionStorage(defaults: preferences).loadSummaries()
+                }.value
+                guard !isSaving else { return }
+                summaries = rows
+                if let id = workingSession?.id, rows.contains(where: { $0.id == id }) {
+                    workingSession = nil; session = nil; currentBPM = nil
+                    elapsedBeforeResume = 0; elapsedSeconds = 0; runningSinceUptime = nil
+                    statusMessage = "Saved workout recovered. Its old draft was not resumed."
+                }
+            } catch { statusMessage = "Workout history could not be read. Existing records were preserved." }
         }
     }
 
@@ -189,6 +214,7 @@ final class RunningSessionController: ObservableObject {
     }
 
     func resume() {
+        guard !isSaving else { return }
         updateConnection()
         guard isConnected, let app, app.activeWorkout == nil, !hiit.hasSession, var run = workingSession, run.phase == .paused,
               run.deviceId == app.repo.deviceId else {
@@ -212,29 +238,43 @@ final class RunningSessionController: ObservableObject {
     }
 
     func endAndSave() {
-        guard var run = workingSession else { return }
+        guard !isSaving, var run = workingSession else { return }
         updateElapsed(); releaseStream()
+        run.pause(); workingSession = run; session = run; currentBPM = nil
+        elapsedBeforeResume = elapsedSeconds; runningSinceUptime = nil
         run.end()
         let summary = RunningSessionSummary(id: run.id, deviceId: run.deviceId, target: run.target,
             startedAt: run.startedAt, endedAt: Date(), elapsedSeconds: elapsedSeconds,
             inZoneSeconds: run.inZoneSeconds, goalSeconds: run.goalSeconds, observedSeconds: run.observedSeconds,
             readableSamples: run.readableSamples, averageBPM: run.averageBPM, maximumBPM: run.maximumBPM, goalMet: run.inZoneSeconds >= run.goalSeconds)
-        summaries.insert(summary, at: 0)
-        if let data = try? JSONEncoder().encode(summaries) { defaults.set(data, forKey: Keys.summaries) }
-        // This clears only this feature's preferences draft, never a database or collected readings.
-        defaults.removeObject(forKey: Keys.draft)
-        workingSession = nil; session = nil; currentBPM = nil; runningSinceUptime = nil
-        elapsedBeforeResume = 0; elapsedSeconds = 0
-        statusMessage = summary.goalMet ? "Goal complete. Run saved on this phone." : "Run saved on this phone."
+        persistDraft()
+        isSaving = true; statusMessage = "Saving workout…"
+        let preferences = defaults
+        Task { @MainActor in
+            defer { isSaving = false }
+            do {
+                let saved = try await Task.detached(priority: .userInitiated) {
+                    try RunningSessionStorage(defaults: preferences).saveSummary(summary)
+                }.value
+                guard workingSession?.id == summary.id else { return }
+                summaries = saved
+                let cleanupWarning: String?
+                do { try RunningSessionStorage(defaults: preferences).discardDraft(id: summary.id); cleanupWarning = nil }
+                catch { cleanupWarning = "Run saved. Draft cleanup was not confirmed; the archived run will not resume." }
+                workingSession = nil; session = nil; currentBPM = nil; runningSinceUptime = nil
+                elapsedBeforeResume = 0; elapsedSeconds = 0
+                statusMessage = cleanupWarning ?? (summary.goalMet ? "Goal complete. Run saved on this phone." : "Run saved on this phone.")
+            } catch { statusMessage = "Could not finish saving: \(error.localizedDescription). Your session remains paused." }
+        }
     }
 
     func deleteSummary(id: UUID) throws {
-        guard workingSession?.id != id else { throw CocoaError(.fileWriteFileExists) }
+        guard !isSaving, workingSession?.id != id else { throw CocoaError(.fileWriteFileExists) }
         summaries = try RunningSessionStorage(defaults: defaults).deleteSummary(id: id)
     }
 
     func discard(id: UUID) {
-        guard workingSession?.id == id else { return }
+        guard !isSaving, workingSession?.id == id else { return }
         pause()
         do {
             try RunningSessionStorage(defaults: defaults).discardDraft(id: id)
