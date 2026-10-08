@@ -40,6 +40,16 @@ struct BuzzDeliveryStatusView: View {
                     }
                     Button("Test WHOOP buzz now") { ble.buzzStrapOnce() }
                         .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    Button("Test buzz in 30 seconds, then lock phone") {
+                        delivery.cancel(owner: "locked-phone-test")
+                        let context = delivery.link()
+                        delivery.schedule(owner: "locked-phone-test", deviceId: context.deviceId,
+                            due: Date().addingTimeInterval(30), grace: 2, loops: 1)
+                    }
+                    .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    Button("Cancel pending test buzz") { delivery.cancel(owner: "locked-phone-test") }
+                        .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    Text("For a clean test, pause other exercises first. Lock immediately and wait at least 40 seconds before reopening. A buzz after reopening does not count as locked-phone delivery.")
                     Button("Read WHOOP 5 alarm slots") { ble.readWhoop5AlarmSlots() }
                         .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
                     Text("Read-only diagnostic. Six slots are documented, but safe restoration and physical timed execution remain unverified. A zero response does not prove a slot is free.")
