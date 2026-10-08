@@ -72,6 +72,8 @@ final class BuzzDeliveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(delivery.cues.last?.status, .responseReceived)
         delivery.acknowledge(sequence: 7, opcode: 19, result: "SUCCESS(1)", payload: [1,5], deviceId: "strap", connection: connection, now: now)
         XCTAssertEqual(delivery.cues.last?.status, .acknowledged)
+        delivery.recordWearerConfirmation(id: "cue", felt: false)
+        XCTAssertEqual(delivery.cues.last?.status, .notFelt)
         delivery.confirm(id: "cue")
         XCTAssertEqual(delivery.cues.last?.status, .confirmed)
     }

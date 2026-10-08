@@ -5,7 +5,7 @@ import Combine
 @MainActor
 final class BuzzDeliveryCoordinator: ObservableObject {
     enum Status: String, Codable {
-        case scheduled, awaitingOwner, requested, responseReceived, acknowledged, rejected, confirmed, missed, cancelled, unavailable, suppressed
+        case scheduled, awaitingOwner, requested, responseReceived, acknowledged, rejected, confirmed, notFelt, missed, cancelled, unavailable, suppressed
     }
     struct Cue: Codable, Identifiable {
         let id: String
@@ -174,8 +174,13 @@ final class BuzzDeliveryCoordinator: ObservableObject {
         log("\(next[i].owner): command response \(result); vibration unconfirmed")
     }
     func confirm(id: String) {
-        guard let i = cues.firstIndex(where: { $0.id == id && [.requested, .responseReceived, .acknowledged].contains($0.status) }) else { return }
-        var next = cues; next[i].status = .confirmed; next[i].detail = "Vibration confirmed by the wearer"
+        recordWearerConfirmation(id: id, felt: true)
+    }
+    func recordWearerConfirmation(id: String, felt: Bool) {
+        guard let i = cues.firstIndex(where: { $0.id == id && [.requested, .responseReceived, .acknowledged, .confirmed, .notFelt].contains($0.status) }) else { return }
+        var next = cues
+        next[i].status = felt ? .confirmed : .notFelt
+        next[i].detail = felt ? "Vibration confirmed by the wearer" : "Wearer reported no vibration"
         _ = commit(next)
     }
     func retryStorage() {
