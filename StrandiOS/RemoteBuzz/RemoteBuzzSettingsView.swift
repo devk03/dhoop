@@ -5,6 +5,7 @@ import StrandDesign
 
 struct RemoteBuzzSettingsView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.openURL) private var openURL
     @ObservedObject private var client = RemoteBuzzClient.shared
     @State private var envelopeText = ""
     @State private var importingFile = false
@@ -93,6 +94,8 @@ struct RemoteBuzzSettingsView: View {
                 Button("Create pairing invitation") { client.preparePairing() }
                     .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 if let invitation = client.invitationJSON {
+                    Button("Open pairing in Life") { if let url = client.pairingURL() { openURL(url) } }
+                        .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                     ShareLink(item: invitation) { Label("Share public invitation", systemImage: "square.and.arrow.up") }
                         .frame(minHeight: NoopMetrics.minimumTouchTarget)
                     DisclosureGroup("Public invitation") {

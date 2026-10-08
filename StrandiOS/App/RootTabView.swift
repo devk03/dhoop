@@ -40,6 +40,7 @@ struct RootTabView: View {
     @State private var quickAction: QuickAction?
     /// Presents the Devices manager (pair / switch bands) when a screen asks the shell to open it.
     @State private var showDevices = false
+    @State private var showRemoteAlerts = false
     /// A routed v5 pillar screen (Insights hub / Lab Book / fused record / Rhythm) presented as a sheet
     /// when a hub row deep-links to it via NavRouter. nil = closed.
     @State private var routedPillar: NavRouter.Destination?
@@ -153,6 +154,13 @@ struct RootTabView: View {
         // present the Devices manager in its own nav stack, the same way the quick-action screens do.
         .sheet(isPresented: $showDevices) {
             devicesScreen
+        }
+        .sheet(isPresented: $showRemoteAlerts) {
+            NavigationStack { RemoteBuzzSettingsView() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: RemoteBuzzPairingLinks.importedNotification)) { _ in
+            guard homeScreenQuickActionsEnabled else { return }
+            showRemoteAlerts = true
         }
         // v5 pillar deep-links (Insights hub / Lab Book / fused record / Rhythm) present as a sheet in
         // their own nav stack — the same idiom the quick-action + Devices screens use on iPhone.

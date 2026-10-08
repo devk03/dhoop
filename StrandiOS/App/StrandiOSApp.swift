@@ -324,6 +324,10 @@ struct StrandiOSApp: App {
                 // HealthKit-free payload. Filter on the host so other future schemes don't trip the
                 // importer; macOS never registers the scheme so this stays iOS-only.
                 .onOpenURL { url in
+                    if url.scheme == "dhoop", url.host == "remote-buzz" {
+                        RemoteBuzzClient.shared.importPairingURL(url)
+                        return
+                    }
                     if url.host == "import-health" {
                         model.handleHealthImportURL(url)
                     }

@@ -123,6 +123,20 @@ final class RemoteBuzzClient: ObservableObject {
         } catch { status = "Pairing failed. Keep the envelope and create a fresh invitation if expired." }
     }
 
+    func pairingURL() -> URL? {
+        do {
+            guard let invitationJSON else { throw RemoteBuzzEnrollmentError.invalid }
+            let invitation = try JSONDecoder().decode(RemoteBuzzInvitation.self, from: Data(invitationJSON.utf8))
+            return try RemoteBuzzPairingLinks.invitationURL(invitation, now: Date())
+        } catch { status = "Create a fresh pairing invitation before opening Life."; return nil }
+    }
+    func importPairingURL(_ url: URL) {
+        do {
+            importEnvelope(try RemoteBuzzPairingLinks.envelope(from: url))
+            NotificationCenter.default.post(name: RemoteBuzzPairingLinks.importedNotification, object: nil)
+        } catch { status = "Pairing link rejected. Use the encrypted response file instead." }
+    }
+
     func registered(_ token: Data) {
         do {
             try SleepWebhookKeychain.save(token, account: tokenAccount)
