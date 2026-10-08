@@ -70,6 +70,11 @@ pending proof of the push path; existing MCP scopes are not broadened for the pr
 
 ## Required physical checks
 
+On October 8, 2026, build 452 compiled with the refreshed Loshi development profile and was
+installed and launched on the physical iPhone. The signed app was checked for the existing bundle
+identifier and `aps-environment: development`. Receiver opt-in, token registration, APNs delivery,
+and wearer confirmation remain pending; this build result is not remote-buzz verification.
+
 First verify foreground API→APNs→phone receipt→WHOOP vibration using one event. Then lock the
 phone for at least sixty seconds before making a fresh call, and wait without opening Dhoop.
 Record the request and receipt times and ask the wearer whether vibration occurred while locked.
