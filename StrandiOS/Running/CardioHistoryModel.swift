@@ -52,7 +52,7 @@ final class CardioHistoryModel: ObservableObject {
         }
         for (row, url, id) in files.0 { items.append(row); details[row.id] = .intervals(url, id) }
         let spans = items.map { (start: Int($0.start.timeIntervalSince1970), end: Int($0.end.timeIntervalSince1970)) }
-        for row in await recorded where WorkoutSource.classify(row.source) != .lifting && CardioHistoryProjection.includesSport(row.sport) {
+        for row in await recorded where CardioHistoryProjection.includesSport(row.sport) {
             let id = "stored:\(row.source)|\(row.startTs)|\(row.endTs)|\(row.sport)"
             let item = CardioHistoryItem(id: id, kind: .recorded, title: WorkoutSource.displaySport(row.sport), source: sourceLabel(row),
                 start: Date(timeIntervalSince1970: Double(row.startTs)), end: Date(timeIntervalSince1970: Double(row.endTs)),

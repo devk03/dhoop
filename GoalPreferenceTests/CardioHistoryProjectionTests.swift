@@ -24,12 +24,11 @@ final class CardioHistoryProjectionTests: XCTestCase {
         XCTAssertEqual(CardioHistoryProjection.filtered(groups, window: window, kind: .intervals, search: "WHOOP").map(\.id), ["wanted"])
         XCTAssertTrue(CardioHistoryProjection.filtered(groups, window: window, kind: .zone, search: "").isEmpty)
     }
-    func testIndoorCardioAndUnclassifiedActivityAreNotLostToGPSFlags() {
-        for sport in ["Indoor cycle", "Elliptical", "HIIT", "Treadmill run", "Workout", "Other", "Free-form sport"] {
+    func testUnifiedExercisesIncludesStrengthSportsAndUnclassifiedActivity() {
+        for sport in ["Indoor cycle", "Elliptical", "HIIT", "Treadmill run", "Workout", "Other", "Free-form sport",
+                      "Strength", "Strength Training", "TraditionalStrengthTraining", "Functional Strength Training",
+                      "Lift", "Soccer", "Pickleball", "Tennis", "Yoga", "Pilates"] {
             XCTAssertTrue(CardioHistoryProjection.includesSport(sport))
-        }
-        for sport in ["Strength", "Strength Training", "TraditionalStrengthTraining", "Functional Strength Training"] {
-            XCTAssertFalse(CardioHistoryProjection.includesSport(sport))
         }
         XCTAssertFalse(CardioHistoryProjection.includesSport(" Meditation "))
     }

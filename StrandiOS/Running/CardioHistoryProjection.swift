@@ -29,8 +29,9 @@ struct CardioHistoryGroup: Identifiable {
 enum CardioHistoryProjection {
     static func includesSport(_ sport: String) -> Bool {
         let value = sport.lowercased().filter { $0.isLetter || $0.isNumber }
-        // Unknown/generic activities remain browsable without claiming a diagnosed sport.
-        return !["strength", "strengthtraining", "traditionalstrengthtraining", "functionalstrengthtraining", "bodybuilding", "weightlifting", "powerlifting", "yoga", "pilates", "meditation", "gaming", "motorracing", "motocross", "skydiving", "archery", "fishing", "hunting", "billiards", "darts"].contains(value)
+        // Exercises includes the entire activity catalog. Meditation has its own experience.
+        // Unknown/imported labels remain visible without claiming a diagnosed sport.
+        return value != "meditation"
     }
     static func groups(_ items: [CardioHistoryItem]) -> [CardioHistoryGroup] {
         var result: [CardioHistoryGroup] = []

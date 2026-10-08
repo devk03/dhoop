@@ -30,7 +30,7 @@ struct CardioHistoryView: View {
                 ForEach(CardioHistoryKind.allCases) { Text($0.title).tag(Optional($0)) }
             }.pickerStyle(.menu).font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
             TextField("Search workouts or sources", text: $search).font(StrandFont.body).textFieldStyle(.roundedBorder)
-                .frame(minHeight: NoopMetrics.minimumTouchTarget).accessibilityLabel("Search cardio history")
+                .frame(minHeight: NoopMetrics.minimumTouchTarget).accessibilityLabel("Search exercise history")
             DashboardGridLayout(columns: typeSize.isAccessibilitySize ? 1 : 2, squareMinimum: false) {
                 summary("Saved sessions", "\(filtered.count)", "figure.run")
                 summary("Recorded duration", duration(filtered.reduce(0) { $0 + max(0, $1.primary.duration) }), "clock")
@@ -71,15 +71,15 @@ struct CardioHistoryView: View {
             }
             NoopCard {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    Text("Keep a copy of Cardio history").font(StrandFont.headline)
+                    Text("Keep a copy of exercise history").font(StrandFont.headline)
                     Text("The general app backup excludes local zone runs and interval sessions. Export those records separately. This JSON copy has no in-app restore yet.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     if let exportURL {
-                        ShareLink(item: exportURL) { Label("Save or share Cardio export", systemImage: "square.and.arrow.up") }
+                        ShareLink(item: exportURL) { Label("Save or share exercise export", systemImage: "square.and.arrow.up") }
                             .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
                         Button("Prepare a fresh copy") { prepareExport() }.font(StrandFont.caption)
                     } else {
-                        Button { prepareExport() } label: { Label(preparingExport ? "Preparing…" : "Export local Cardio data", systemImage: "square.and.arrow.up") }
+                        Button { prepareExport() } label: { Label(preparingExport ? "Preparing…" : "Export local exercise data", systemImage: "square.and.arrow.up") }
                             .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(preparingExport)
                     }
                     if let exportError { Text(exportError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
