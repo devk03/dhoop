@@ -19,6 +19,7 @@ final class RemoteBuzzContractTests: XCTestCase {
         let value = command()
         XCTAssertEqual(String(data: value.signingBytes, encoding: .utf8),
             "dhoop-buzz:v1|00000000-0000-0000-0000-000000000002|00000000-0000-0000-0000-000000000001|com.devkunjadia.zhoop.loshi.noop|1791500000|1791500060|1")
+        XCTAssertEqual(value.signature, "Lp3V+3Frhno9y+nIMkBtxXFETsN8RgZJD+vrYeVqTBw=")
         XCTAssertTrue(value.validate(secret: secret, installation: installation, topic: topic, now: now))
     }
     func testExpiredFutureWrongSignatureIdentityAndUnsupportedPatternsFailClosed() {

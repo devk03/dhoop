@@ -34,7 +34,6 @@ final class RemoteBuzzReceiver: ObservableObject {
             guard bytes.count <= 2048 else { throw CocoaError(.fileReadCorruptFile) }
             let value = try JSONDecoder().decode(RemoteBuzzTestSetup.self, from: bytes)
             guard value.valid(now: Date()) else { throw CocoaError(.fileReadCorruptFile) }
-            try SleepWebhookKeychain.save(bytes, account: account)
             // Consume the inbox by moving it to a protected, backup-excluded archive; never delete data.
             var archive = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("Dhoop/RemoteBuzz", isDirectory: true)
@@ -44,6 +43,7 @@ final class RemoteBuzzReceiver: ObservableObject {
             let consumed = archive.appendingPathComponent("setup-\(UUID().uuidString).json")
             try FileManager.default.moveItem(at: file, to: consumed)
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: consumed.path)
+            try SleepWebhookKeychain.save(bytes, account: account)
             reload()
             UIApplication.shared.registerForRemoteNotifications()
             registrationStatus = "Requesting Apple push token"
@@ -86,6 +86,17 @@ final class RemoteBuzzReceiver: ObservableObject {
                                    topic: Bundle.main.bundleIdentifier ?? "", now: now) else {
                 receipt = "Push rejected: signature, identity, or expiry"; return .noData
             }
+            struct PushReceipt: Codable {
+                let eventId: String
+                let receivedAt: Date
+                let applicationState: Int
+                let stage: String
+            }
+            let proof = PushReceipt(eventId: command.eventId, receivedAt: now,
+                applicationState: UIApplication.shared.applicationState.rawValue, stage: "authenticated_push_received")
+            let proofFile = documents.appendingPathComponent("dhoop-remote-buzz-receipt.json")
+            try JSONEncoder().encode(proof).write(to: proofFile,
+                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             let cueID = "remote|\(command.eventId)"
             let duplicate = model.ble.buzzDelivery.cues.contains { $0.id == cueID }
             if !duplicate, let previous = model.ble.buzzDelivery.cues.filter({ $0.owner == "remote-test" }).compactMap(\.requestedAt).max(), now.timeIntervalSince(previous) < 30 {
