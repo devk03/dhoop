@@ -98,6 +98,7 @@ targets:
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
       - StrandiOS/RemoteBuzz/RemoteBuzzContract.swift
       - StrandiOS/RemoteBuzz/RemoteBuzzEnrollment.swift
+      - StrandiOS/RemoteBuzz/RemoteBuzzState.swift
       - Strand/BLE/BuzzDeliveryCoordinator.swift
       - Strand/Data/HapticPrefs.swift
       - StrandiOS/Meditation/MeditationSession.swift
