@@ -48,7 +48,6 @@ private struct RunningContent: View, Equatable {
                 }
                 if section == "Train" {
                     BuzzDeliveryStatusView(ble: app.ble)
-                    RemoteBuzzTestView()
                 }
                 if section == "History" {
                     CardioHistoryView(model: history, range: $historyRange, now: capturedAt, controller: controller)
