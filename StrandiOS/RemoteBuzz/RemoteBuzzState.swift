@@ -56,6 +56,30 @@ struct RemoteBuzzState: Codable, Equatable {
     var events: [Event] = []
     var receipts: [PendingReceipt] = []
 
+    func valid() -> Bool {
+        let maximum = 9_007_199_254_740_991
+        guard deviceRevision >= 0, deviceRevision <= maximum,
+              receiptSequence >= 0, receiptSequence <= maximum,
+              Set(events.map { $0.enrollmentId + "|" + $0.id }).count == events.count,
+              Set(receipts.map(\.id)).count == receipts.count,
+              Set(receipts.map(\.receipt.sequence)).count == receipts.count else { return false }
+        let eventKeys = Set(events.map { "\($0.enrollmentId)|\($0.generation)|\($0.id)" })
+        return events.allSatisfy { event in
+            RemoteBuzzV2.uuid(event.id) && RemoteBuzzV2.uuid(event.enrollmentId) && event.generation == 1
+                && event.receivedAt >= 3600 && event.receivedAt <= maximum && event.expiresAt >= 0
+                && RemoteBuzzReceipt.outcomes["phone_received"]?.contains(event.outcome) == true
+        } && receipts.allSatisfy { pending in
+            let receipt = pending.receipt
+            return receipt.version == 2 && receipt.op == "receipt" && RemoteBuzzV2.uuid(receipt.receiptId)
+                && RemoteBuzzV2.uuid(receipt.installationId) && receipt.sequence > 0
+                && receipt.sequence <= receiptSequence && receipt.observedAt >= 0 && receipt.observedAt <= maximum
+                && pending.attempts >= 0 && pending.attempts <= 10
+                && (pending.lastAttemptAt.map { $0 >= 0 && $0 <= maximum } ?? true)
+                && RemoteBuzzReceipt.outcomes[receipt.stage]?.contains(receipt.outcome) == true
+                && eventKeys.contains("\(receipt.enrollmentId)|\(receipt.generation)|\(receipt.eventId)")
+        }
+    }
+
     // Caller authenticates HMAC and identity before entering this funnel. Persist the returned
     // state before dispatching BLE; a failed disk write must never result in a strap command.
     mutating func consume(_ command: RemoteBuzzCommandV2, enrollment: RemoteBuzzEnrollment,
@@ -114,9 +138,12 @@ struct RemoteBuzzStateFile {
     let file: URL
     func load() throws -> RemoteBuzzState {
         guard FileManager.default.fileExists(atPath: file.path) else { return RemoteBuzzState() }
-        return try JSONDecoder().decode(RemoteBuzzState.self, from: Data(contentsOf: file))
+        let state = try JSONDecoder().decode(RemoteBuzzState.self, from: Data(contentsOf: file))
+        guard state.valid() else { throw RemoteBuzzEnrollmentError.invalid }
+        return state
     }
     func save(_ state: RemoteBuzzState) throws {
+        guard state.valid() else { throw RemoteBuzzEnrollmentError.invalid }
         let directory = file.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var directoryURL = directory

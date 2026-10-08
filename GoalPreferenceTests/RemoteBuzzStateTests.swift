@@ -46,6 +46,20 @@ final class RemoteBuzzStateTests: XCTestCase {
         XCTAssertFalse(try state.consume(command(at: now + 150), enrollment: enrollment, now: now + 150, connected: true, exerciseOwnsBuzz: false))
         XCTAssertTrue(try state.consume(command(at: now + 3660), enrollment: enrollment, now: now + 3660, connected: true, exerciseOwnsBuzz: false))
     }
+    func testCorruptCountersAndReceiptOwnershipFailClosed() throws {
+        var state = RemoteBuzzState(); state.enabled = true
+        let cue = command(at: now)
+        _ = try state.consume(cue, enrollment: enrollment, now: now, connected: true, exerciseOwnsBuzz: false)
+        XCTAssertTrue(state.valid())
+        state.receiptSequence = 0
+        XCTAssertFalse(state.valid())
+        state.receiptSequence = 1
+        state.receipts[0].attempts = -1
+        XCTAssertFalse(state.valid())
+        state.receipts[0].attempts = 1
+        state.events = []
+        XCTAssertFalse(state.valid())
+    }
     func testReceiptEvidenceIsIndependentAndRetriesBounded() throws {
         var state = RemoteBuzzState(); state.enabled = true
         let cue = command(at: now)
