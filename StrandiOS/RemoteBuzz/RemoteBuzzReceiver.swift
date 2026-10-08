@@ -30,6 +30,14 @@ final class RemoteBuzzReceiver: ObservableObject {
     func importAndEnable() {
         do {
             let file = documents.appendingPathComponent("dhoop-remote-buzz-setup.json")
+            // A successful import consumes the inbox. Repeated taps refresh the existing test.
+            if !FileManager.default.fileExists(atPath: file.path),
+               let existing = try setup(), existing.valid(now: Date()) {
+                reload()
+                registrationStatus = "Requesting Apple push token"
+                UIApplication.shared.registerForRemoteNotifications()
+                return
+            }
             let bytes = try Data(contentsOf: file)
             guard bytes.count <= 2048 else { throw CocoaError(.fileReadCorruptFile) }
             let value = try JSONDecoder().decode(RemoteBuzzTestSetup.self, from: bytes)
@@ -45,8 +53,8 @@ final class RemoteBuzzReceiver: ObservableObject {
             try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: consumed.path)
             try SleepWebhookKeychain.save(bytes, account: account)
             reload()
-            UIApplication.shared.registerForRemoteNotifications()
             registrationStatus = "Requesting Apple push token"
+            UIApplication.shared.registerForRemoteNotifications()
         } catch { status = "Could not enable test. Setup must be valid, unexpired, and readable." }
     }
     func disable() {

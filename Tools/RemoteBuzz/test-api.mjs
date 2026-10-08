@@ -42,7 +42,24 @@ if(mode==='prepare') {
     const stream=client.request({':method':'POST',':path':target.pathname,...options.headers});
     const cleanup=()=>client.close();
     options.signal?.addEventListener('abort',()=>{stream.close();cleanup();reject(Error('APNs timeout'));},{once:true});
-    stream.on('response',headers=>{stream.resume();stream.on('end',()=>{cleanup();resolve(new Response(null,{status:Number(headers[':status'])}));});});
+    stream.on('response',headers=>{
+      let responseBody='';
+      stream.on('data',chunk=>{if(responseBody.length<1024)responseBody+=chunk.toString();});
+      stream.on('end',()=>{
+        cleanup();
+        if(Number(headers[':status'])!==200) {
+          try {
+            const reason=JSON.parse(responseBody).reason;
+            const safeReasons=['BadDeviceToken','DeviceTokenNotForTopic','BadTopic','TopicDisallowed',
+              'BadPriority','BadExpirationDate','BadMessageId','BadCollapseId','BadPath',
+              'InvalidProviderToken','ExpiredProviderToken','MissingTopic','Unregistered',
+              'PayloadEmpty','PayloadTooLarge','TooManyRequests','Forbidden','BadEnvironmentKeyIdInToken'];
+            if(safeReasons.includes(reason))console.log(`APNs rejected: ${reason}`);
+          } catch {}
+        }
+        resolve(new Response(null,{status:Number(headers[':status'])}));
+      });
+    });
     stream.on('error',e=>{cleanup();reject(e);});client.on('error',reject);stream.end(options.body);
   }); }
   const server=http.createServer(async(req,res)=>{
@@ -53,7 +70,12 @@ if(mode==='prepare') {
     try { let text='';for await(const chunk of req){text+=chunk;if(Buffer.byteLength(text)>1024)throw Error('Too large');}
       const body=JSON.parse(text);if(Object.keys(body).length!==1)throw Error('Invalid payload');
       reply(200,await module.sendBuzzTest(env,body.eventId,Math.floor(Date.now()/1000),appleFetch));
-    } catch {reply(503,{error:'test_failed'});}
+    } catch (error) {
+      // Only known error codes may leave the local server; never print arbitrary exception text.
+      const code=error instanceof module.BuzzTestError && /^[a-z0-9_]+$/.test(error.code)
+        ? error.code : 'test_failed';
+      reply(error instanceof module.BuzzTestError ? error.status : 503,{error:code});
+    }
   });
   server.listen(Number(option('port','8799')),'127.0.0.1',()=>console.log('Test API listening on localhost:8799/buzz. Automatic shutdown before test expiry.'));
   const deadline=setTimeout(()=>server.close(),Math.min(seconds,5400)*1000);
