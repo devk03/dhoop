@@ -93,6 +93,7 @@ struct StrandiOSApp: App {
         _router = StateObject(wrappedValue: router)
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
         let model = AppModel()
+        RemoteBuzzReceiver.shared.attach(model: model)
         _model = StateObject(wrappedValue: model)
         // Settings → "Keep screen on while syncing". Wired once here, not as another modifier on `body`.
         SyncKeepAwake.shared.attach(to: model.live)

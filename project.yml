@@ -21,7 +21,7 @@ settings:
     # iOS build number (CFBundleVersion). GLOBAL so the iOS app AND its widget extension inherit the
     # SAME value — they must match or iOS warns "extension version must match parent app" (#416).
     # macOS sets its own CFBundleVersion on the Strand target and is unaffected by this.
-    CURRENT_PROJECT_VERSION: "450"
+    CURRENT_PROJECT_VERSION: "451"
     SWIFT_VERSION: "5.0"
     # Emit localizable strings so Xcode auto-extracts every LocalizedStringKey into the
     # String Catalog on build (the English (US) base entries).
@@ -96,6 +96,7 @@ targets:
       - StrandiOS/Cut/SleepRangeProjection.swift
       - StrandiOS/Cut/SleepComparisonProjection.swift
       - StrandiOS/Cut/HistoricalHeartRateProjection.swift
+      - StrandiOS/RemoteBuzz/RemoteBuzzContract.swift
       - Strand/BLE/BuzzDeliveryCoordinator.swift
       - Strand/Data/HapticPrefs.swift
       - StrandiOS/Meditation/MeditationSession.swift
@@ -326,6 +327,7 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         UIBackgroundModes:
+          - remote-notification
           - bluetooth-central
           # #524: keep recording an outdoor workout's GPS route while the app is backgrounded (screen off),
           # matching Android's foreground-service capture. Required by GpsWorkoutRecorder's

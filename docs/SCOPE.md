@@ -72,3 +72,11 @@ Scope changes are deliberate, not incidental. If you believe one of the out-of-s
 open an issue that names the constraint it touches and how it would be satisfied — don't open the PR
 first. A "WHOOP has it" argument, on its own, is not a reason: NOOP is a clean-room, offline, anonymous
 tool, not a WHOOP clone.
+
+## Personal Dhoop fork exception — bounded remote buzz test
+
+The owner explicitly authorized a Life API/APNs test on October 8, 2026. This fork may accept
+signed, expiring, installation-bound one-pulse requests only after explicit local enablement,
+for at most two hours. No arbitrary commands, configuration changes, health-data writes, alarm
+writes, polling, telemetry, or NOOP-operated server are permitted by this exception. The user-owned
+API lives in the separate Life repository. This does not change upstream NOOP's scope.
