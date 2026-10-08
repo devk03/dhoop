@@ -15,7 +15,11 @@ final class RemoteBuzzReceiver: ObservableObject {
     private let account = "remote-buzz-test-v1"
     private var token: String?
 
-    func attach(model: AppModel) { self.model = model; reload() }
+    func attach(model: AppModel) {
+        self.model = model
+        RemoteBuzzClient.shared.attach(model: model)
+        reload()
+    }
     private func setup() throws -> RemoteBuzzTestSetup? {
         guard let bytes = try SleepWebhookKeychain.read(account), !bytes.isEmpty else { return nil }
         return try JSONDecoder().decode(RemoteBuzzTestSetup.self, from: bytes)
@@ -66,6 +70,7 @@ final class RemoteBuzzReceiver: ObservableObject {
         } catch { status = "Could not save disabled state. Retry before continuing." }
     }
     func registered(_ bytes: Data) {
+        RemoteBuzzClient.shared.registered(bytes)
         token = bytes.map { String(format: "%02x", $0) }.joined()
         registrationStatus = "Apple push token received"
         do {
@@ -79,9 +84,15 @@ final class RemoteBuzzReceiver: ObservableObject {
             try mutableFile.setResourceValues(resources)
         } catch { registrationStatus = "Push token received; registration export failed" }
     }
-    func registrationFailed() { registrationStatus = "Apple push registration failed. Check entitlement and connection." }
+    func registrationFailed() {
+        RemoteBuzzClient.shared.registrationFailed()
+        registrationStatus = "Apple push registration failed. Check entitlement and connection."
+    }
 
     func receive(_ notification: [AnyHashable: Any]) -> UIBackgroundFetchResult {
+        if let body = notification["dhoopBuzz"] as? [String: Any], body["version"] as? Int == 2 {
+            return RemoteBuzzClient.shared.receive(body)
+        }
         let now = Date()
         do {
             guard let model, let value = try setup(), value.expiresAt > now,

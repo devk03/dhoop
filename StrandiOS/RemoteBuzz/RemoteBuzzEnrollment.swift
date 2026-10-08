@@ -81,8 +81,9 @@ struct RemoteBuzzEnrollment: Codable, Equatable {
             && RemoteBuzzV2.bearer(deviceBearer) && endpoint == RemoteBuzzV2.endpoint
             && !accessClientId.isEmpty && !accessClientSecret.isEmpty
             && accessClientId.count <= 256 && accessClientSecret.count <= 256
-            && !accessClientId.contains(where: { $0.isNewline })
-            && !accessClientSecret.contains(where: { $0.isNewline })
+            && [accessClientId, accessClientSecret].allSatisfy { text in
+                text.unicodeScalars.allSatisfy { $0.value >= 33 && $0.value <= 126 }
+            }
     }
 }
 
