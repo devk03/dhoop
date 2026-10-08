@@ -73,7 +73,15 @@ pending proof of the push path; existing MCP scopes are not broadened for the pr
 On October 8, 2026, build 452 compiled with the refreshed Loshi development profile and was
 installed and launched on the physical iPhone. The signed app was checked for the existing bundle
 identifier and `aps-environment: development`. Receiver opt-in, token registration, APNs delivery,
-and wearer confirmation remain pending; this build result is not remote-buzz verification.
+and wearer confirmation were pending at installation; the build result alone is not remote-buzz verification.
+
+The first API test succeeded after correcting the key's allowed topic (the originally selected
+identifier omitted `.zhoop`). Event `96560405-9aba-4461-9839-338650c6b25f` was accepted by APNs,
+received and authenticated by Dhoop at 11:11:24.352709 PDT with UIApplication state `background`,
+and requested WHOOP opcode 19 at 11:11:25.538383 PDT. The wearer confirmed feeling the vibration
+while the phone was locked. The copied ledger retained `requested`; no command acknowledgment
+is claimed. Lock duration and suspension were not measured, so this proves one locked-phone
+API delivery, not a continuous or guaranteed background service. No wake alarm was changed.
 
 First verify foreground API→APNs→phone receipt→WHOOP vibration using one event. Then lock the
 phone for at least sixty seconds before making a fresh call, and wait without opening Dhoop.
