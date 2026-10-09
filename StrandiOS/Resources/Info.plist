@@ -46,6 +46,7 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>noop</string>
+				<string>dhoop</string>
 			</array>
 		</dict>
 	</array>
@@ -84,6 +85,7 @@
 	<string>$(OURA_REDIRECT_URI)</string>
 	<key>UIBackgroundModes</key>
 	<array>
+		<string>remote-notification</string>
 		<string>bluetooth-central</string>
 		<string>location</string>
 		<string>fetch</string>
