@@ -16,15 +16,29 @@ final class RunningSessionController: ObservableObject {
     @Published private(set) var buzzTestMessage: String?
     @Published private(set) var summaries: [RunningSessionSummary] = []
     @Published private(set) var isSaving = false
+    @Published private(set) var completionBuzzActive = false
     @Published private(set) var isConnected = false
     @Published private(set) var strapAlertsReady = false
-    @Published var selectedZone: Int = 2
-    @Published var targetMinutes: Int = 20
-    @Published var useManualTarget = false
-    @Published var manualLowerBPM: Int = 120
-    @Published var manualUpperBPM: Int = 140
-    @Published var alertsEnabled: Bool = true {
-        didSet { defaults.set(alertsEnabled, forKey: Keys.alerts) }
+    @Published var selectedZone: Int = 2 {
+        didSet { defaults.set(selectedZone, forKey: Keys.zone) }
+    }
+    @Published var targetMinutes: Int = 20 {
+        didSet { defaults.set(targetMinutes, forKey: Keys.minutes) }
+    }
+    @Published var useManualTarget = true {
+        didSet { defaults.set(useManualTarget, forKey: Keys.manual) }
+    }
+    @Published var manualLowerBPM: Int = 120 {
+        didSet { defaults.set(manualLowerBPM, forKey: Keys.lower) }
+    }
+    @Published var manualUpperBPM: Int = 140 {
+        didSet { defaults.set(manualUpperBPM, forKey: Keys.upper) }
+    }
+    @Published var completionAlertsEnabled: Bool = true {
+        didSet {
+            defaults.set(completionAlertsEnabled, forKey: Keys.completionAlerts)
+            if !completionAlertsEnabled { stopCompletionBuzz() }
+        }
     }
 
     private enum Keys {
@@ -35,7 +49,7 @@ final class RunningSessionController: ObservableObject {
         static let manual = "dhoop.running.manualTarget"
         static let lower = "dhoop.running.lowerBPM"
         static let upper = "dhoop.running.upperBPM"
-        static let alerts = "dhoop.running.zoneAlerts"
+        static let completionAlerts = "dhoop.running.completionAlerts.v1"
     }
     private typealias Draft = RunningSessionStorage.Draft
     private let defaults: UserDefaults
@@ -52,15 +66,26 @@ final class RunningSessionController: ObservableObject {
     private var configuredDeviceId: String?
     private var workingSession: RunningZoneSession?
     private var recoveringSummaries = false
+    private var completionCleanup: Task<Void, Never>?
+    private var completionOwner: String?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         selectedZone = max(1, min(5, defaults.object(forKey: Keys.zone) as? Int ?? 2))
         targetMinutes = max(1, min(180, defaults.object(forKey: Keys.minutes) as? Int ?? 20))
-        useManualTarget = defaults.object(forKey: Keys.manual) as? Bool ?? false
-        manualLowerBPM = max(30, min(219, defaults.object(forKey: Keys.lower) as? Int ?? 120))
-        manualUpperBPM = max(manualLowerBPM + 1, min(220, defaults.object(forKey: Keys.upper) as? Int ?? 140))
-        alertsEnabled = defaults.object(forKey: Keys.alerts) as? Bool ?? true
+        // The previous default was inferred HRR zones. The wearer now prefers a personal BPM
+        // range; migrate that old unset/default choice once while retaining later explicit choices.
+        let targetPreferenceVersionKey = "dhoop.running.targetPreferenceVersion"
+        if defaults.integer(forKey: targetPreferenceVersionKey) < 1 {
+            useManualTarget = true
+            defaults.set(true, forKey: Keys.manual)
+            defaults.set(1, forKey: targetPreferenceVersionKey)
+        } else {
+            useManualTarget = defaults.object(forKey: Keys.manual) as? Bool ?? true
+        }
+        manualLowerBPM = max(30, min(220, defaults.object(forKey: Keys.lower) as? Int ?? 120))
+        manualUpperBPM = max(manualLowerBPM, min(220, defaults.object(forKey: Keys.upper) as? Int ?? 140))
+        completionAlertsEnabled = defaults.object(forKey: Keys.completionAlerts) as? Bool ?? true
         if let data = defaults.data(forKey: Keys.summaries),
            let saved = try? JSONDecoder().decode([RunningSessionSummary].self, from: data) { summaries = saved }
         if let data = defaults.data(forKey: Keys.draft),
@@ -78,6 +103,9 @@ final class RunningSessionController: ObservableObject {
 
     deinit {
         timer?.cancel()
+        completionCleanup?.cancel()
+        let completionApp = app, completionID = completionOwner
+        Task { @MainActor in if let completionID { completionApp?.ble.buzzDelivery.release(completionID) } }
         if ownsStream {
             let owner = app
             Task { @MainActor in owner?.ble.buzzDelivery.release("zone-run"); owner?.stopRealtimeHR() }
@@ -239,12 +267,13 @@ final class RunningSessionController: ObservableObject {
 
     func endAndSave() {
         guard !isSaving, var run = workingSession else { return }
+        stopCompletionBuzz()
         updateElapsed(); releaseStream()
         run.pause(); workingSession = run; session = run; currentBPM = nil
         elapsedBeforeResume = elapsedSeconds; runningSinceUptime = nil
         run.end()
         let summary = RunningSessionSummary(id: run.id, deviceId: run.deviceId, target: run.target,
-            startedAt: run.startedAt, endedAt: Date(), elapsedSeconds: elapsedSeconds,
+            startedAt: run.startedAt, endedAt: run.completedAt ?? (run.phase == .completed ? run.lastAcceptedAt.map { Date(timeIntervalSince1970: $0) } : nil) ?? Date(), elapsedSeconds: elapsedSeconds,
             inZoneSeconds: run.inZoneSeconds, goalSeconds: run.goalSeconds, observedSeconds: run.observedSeconds,
             readableSamples: run.readableSamples, averageBPM: run.averageBPM, maximumBPM: run.maximumBPM, goalMet: run.inZoneSeconds >= run.goalSeconds)
         persistDraft()
@@ -275,6 +304,7 @@ final class RunningSessionController: ObservableObject {
 
     func discard(id: UUID) {
         guard !isSaving, workingSession?.id == id else { return }
+        stopCompletionBuzz()
         pause()
         do {
             try RunningSessionStorage(defaults: defaults).discardDraft(id: id)
@@ -323,6 +353,10 @@ final class RunningSessionController: ObservableObject {
 
     private func processIncoming() {
         updateConnection()
+        if completionBuzzActive, !strapAlertsReady || workingSession?.deviceId != app?.repo.deviceId {
+            stopCompletionBuzz()
+            statusMessage = "Completion cues stopped because WHOOP is unavailable. No reconnect replay."
+        }
         guard let app, var run = workingSession, run.phase == .running else { return }
         guard app.activeWorkout == nil else { pause(reason: "Paused because another workout started."); return }
         guard isConnected, app.repo.deviceId == run.deviceId else {
@@ -351,7 +385,7 @@ final class RunningSessionController: ObservableObject {
             lastConsumedAt = sample.receivedAt
             let observation = run.observe(RunningHeartRateSample(deviceId: run.deviceId, bpm: sample.bpm, receivedAt: sample.receivedAt),
                 now: now, connected: isConnected && live.worn,
-                alertsEnabled: alertsEnabled && HapticPrefs.enabled(HapticPrefs.workout), mayBuzz: canBuzz)
+                alertsEnabled: false, mayBuzz: canBuzz)
             if let alert = observation.alert {
                 app.requestBuzz(owner: "zone-run", id: "zone|\(run.id)|\(sample.receivedAt)",
                     loops: 1, gate: HapticPrefs.workout, sampleAt: Date(timeIntervalSince1970: sample.receivedAt))
@@ -369,7 +403,68 @@ final class RunningSessionController: ObservableObject {
             releaseStream(); session = run
             currentBPM = nil; statusMessage = "Goal reached. Save your run."
             persistDraft()
+            beginCompletionBuzz(run)
         }
+    }
+
+    private func beginCompletionBuzz(_ run: RunningZoneSession) {
+        stopCompletionBuzz()
+        let owner = RunningCompletionCues.owner + "|" + UUID().uuidString
+        guard completionAlertsEnabled, workoutHapticsEnabled, strapAlertsReady, let app,
+              app.repo.deviceId == run.deviceId, app.ble.buzzDelivery.claim(owner) else {
+            statusMessage = "Goal reached. Completion buzzes are off or WHOOP is unavailable. Save your workout."
+            return
+        }
+        completionOwner = owner; completionBuzzActive = true
+        let now = Date()
+        for (index, due) in RunningCompletionCues.dates(from: now).enumerated() {
+            app.requestBuzz(owner: owner, id: "\(owner)|\(run.id)|\(index)",
+                loops: 1, due: due, grace: 2, gate: HapticPrefs.workout)
+        }
+        statusMessage = "Goal reached. Completion cues scheduled every ten seconds, for up to three minutes."
+        completionCleanup = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 180_000_000_000) } catch { return }
+            guard self?.completionOwner == owner else { return }
+            self?.stopCompletionBuzz()
+        }
+    }
+
+    func stopCompletionBuzz() {
+        completionCleanup?.cancel(); completionCleanup = nil
+        if let owner = completionOwner {
+            app?.ble.buzzDelivery.cancel(owner: owner)
+            app?.ble.buzzDelivery.release(owner)
+        }
+        completionOwner = nil
+        completionBuzzActive = false
+    }
+
+    func acknowledgeCompletion() {
+        guard let run = workingSession, run.phase == .completed else { return }
+        if let cue = app?.ble.buzzDelivery.cues.filter({
+            $0.owner.hasPrefix(RunningCompletionCues.owner + "|")
+                && $0.id.contains("|\(run.id)|") && $0.requestedAt != nil
+        }).max(by: { ($0.requestedAt ?? .distantPast) < ($1.requestedAt ?? .distantPast) }) {
+            app?.ble.buzzDelivery.confirm(id: cue.id)
+        }
+        stopCompletionBuzz()
+        statusMessage = "Completion cues stopped. Save your workout when ready."
+    }
+
+    func adjustTimeGoal(minutes: Int) {
+        guard !isSaving, (1...180).contains(minutes), var run = workingSession else { return }
+        let wasCompleted = run.phase == .completed
+        guard run.setGoal(seconds: Double(minutes * 60), now: Date()) else { return }
+        stopCompletionBuzz()
+        targetMinutes = minutes; workingSession = run; session = run
+        defaults.set(minutes, forKey: Keys.minutes)
+        if run.phase == .completed {
+            updateElapsed(); elapsedBeforeResume = elapsedSeconds; runningSinceUptime = nil
+            releaseStream(); currentBPM = nil
+            if !wasCompleted { beginCompletionBuzz(run) }
+        } else if wasCompleted { statusMessage = "Time goal increased. Resume to collect more time in range." }
+        else { statusMessage = "Time goal updated. Your observed time in range was kept." }
+        persistDraft()
     }
 
     private func processAndPublish() {

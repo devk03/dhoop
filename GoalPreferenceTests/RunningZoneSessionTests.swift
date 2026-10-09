@@ -151,4 +151,54 @@ final class RunningZoneSessionTests: XCTestCase {
         sample(&restored, 201, 130); sample(&restored, 202, 130)
         XCTAssertEqual(restored.inZoneSeconds, 2)
     }
+    func testEditableTimeGoalKeepsObservedCreditAndStopsAtActualCompletion() throws {
+        var run = makeSession(goal: 60)
+        for time in 100...110 { sample(&run, Double(time), 130, enabled: false) }
+        XCTAssertEqual(run.inZoneSeconds, 10)
+        XCTAssertTrue(run.setGoal(seconds: 5, now: Date(timeIntervalSince1970: 110)))
+        XCTAssertEqual(run.phase, .completed)
+        XCTAssertEqual(run.inZoneSeconds, 10)
+        XCTAssertEqual(run.completedAt, Date(timeIntervalSince1970: 110))
+        XCTAssertTrue(run.setGoal(seconds: 15, now: Date(timeIntervalSince1970: 111)))
+        XCTAssertEqual(run.phase, .paused)
+        XCTAssertNil(run.completedAt)
+        run.resume()
+        for time in 120...125 { sample(&run, Double(time), 130, enabled: false) }
+        XCTAssertEqual(run.inZoneSeconds, 15)
+        XCTAssertEqual(run.phase, .completed)
+        XCTAssertEqual(run.completedAt, Date(timeIntervalSince1970: 125))
+        XCTAssertTrue(run.setGoal(seconds: 15, now: Date(timeIntervalSince1970: 300)))
+        XCTAssertEqual(run.completedAt, Date(timeIntervalSince1970: 125), "Saving/editing after completion must not extend the recorded workout")
+        let restored = try JSONDecoder().decode(RunningZoneSession.self, from: JSONEncoder().encode(run))
+        XCTAssertEqual(restored.completedAt, run.completedAt)
+    }
+    func testGoalEditRejectsInvalidValuesWithoutChangingEvidence() {
+        var run = makeSession(); sample(&run, 100, 130); sample(&run, 101, 130)
+        let before = run
+        for goal in [0.0, -1, .nan, .infinity, 10801] {
+            XCTAssertFalse(run.setGoal(seconds: goal, now: Date(timeIntervalSince1970: 101)))
+            XCTAssertEqual(run, before)
+        }
+    }
+    func testOutsideRangeWithAlertsOffNeverBuzzesOrCompletesEarly() {
+        var run = makeSession(goal: 5)
+        sample(&run, 100, 130, enabled: false)
+        for time in 101...140 {
+            XCTAssertNil(sample(&run, Double(time), 170, enabled: false).alert)
+        }
+        XCTAssertEqual(run.phase, .running); XCTAssertEqual(run.inZoneSeconds, 0)
+        for time in 141...146 { sample(&run, Double(time), 140, enabled: false) }
+        XCTAssertEqual(run.phase, .completed)
+        XCTAssertEqual(run.completedAt, Date(timeIntervalSince1970: 146))
+    }
+    func testCompletionCuePlanIsFiniteAndStopsWithinThreeMinutes() {
+        let start = Date(timeIntervalSince1970: 1000)
+        let dates = RunningCompletionCues.dates(from: start)
+        XCTAssertEqual(dates.count, 18)
+        XCTAssertEqual(dates.first, start)
+        XCTAssertEqual(dates.last, start.addingTimeInterval(170))
+        XCTAssertTrue(zip(dates, dates.dropFirst()).allSatisfy { $1.timeIntervalSince($0) == 10 })
+        XCTAssertTrue(dates.allSatisfy { $0.timeIntervalSince(start) < RunningCompletionCues.duration })
+    }
+
 }

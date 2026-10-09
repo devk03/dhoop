@@ -119,4 +119,22 @@ final class BuzzDeliveryCoordinatorTests: XCTestCase {
         XCTAssertNotNil(broken.storageError)
         XCTAssertEqual(try Data(contentsOf: file), Data("bad".utf8))
     }
+    func testStoppingCompletionSequenceCancelsEveryFutureBuzz() {
+        let delivery = make(); connected(delivery)
+        let start = Date(timeIntervalSince1970: 1000)
+        var requests = 0
+        delivery.transmit = { _ in requests += 1; return .init(sequence: 4, opcode: 19) }
+        let owner = "zone-run-complete|test"
+        XCTAssertTrue(delivery.claim(owner))
+        for (index, due) in RunningCompletionCues.dates(from: start).enumerated() {
+            delivery.schedule(owner: owner, id: "completion-\(index)", deviceId: "strap", due: due, now: start)
+        }
+        XCTAssertEqual(requests, 1)
+        delivery.cancel(owner: owner); delivery.release(owner)
+        delivery.service(now: start.addingTimeInterval(170))
+        XCTAssertEqual(requests, 1)
+        XCTAssertNil(delivery.exclusiveOwner)
+        XCTAssertEqual(delivery.cues.filter { $0.status == .cancelled }.count, 17)
+    }
+
 }

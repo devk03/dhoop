@@ -59,7 +59,7 @@ struct RunningZoneSession: Codable, Equatable {
     let id: UUID
     let deviceId: String
     let target: RunningZoneTarget
-    let goalSeconds: TimeInterval
+    private(set) var goalSeconds: TimeInterval
     let startedAt: Date
     private(set) var phase: Phase = .running
     private(set) var inZoneSeconds: TimeInterval = 0
@@ -69,6 +69,7 @@ struct RunningZoneSession: Codable, Equatable {
     private(set) var maximumBPM: Int?
     private(set) var latestBPM: Int?
     private(set) var lastAcceptedAt: TimeInterval?
+    private(set) var completedAt: Date?
     private var previous: CodableSample?
     private var hasEnteredZone = false
     private var outsideSince: TimeInterval?
@@ -93,6 +94,21 @@ struct RunningZoneSession: Codable, Equatable {
 
     var averageBPM: Double? { observedSeconds > 0 ? weightedHeartRate / observedSeconds : nil }
     var remainingSeconds: Int { Int(ceil(max(0, goalSeconds - inZoneSeconds))) }
+
+    mutating func setGoal(seconds: TimeInterval, now: Date) -> Bool {
+        guard phase != .ended, seconds.isFinite, (1...10_800).contains(seconds),
+              now.timeIntervalSince1970.isFinite, now >= startedAt else { return false }
+        goalSeconds = seconds
+        if inZoneSeconds >= seconds {
+            if phase != .completed { completedAt = now }
+            phase = .completed
+            breakContinuity()
+        } else if phase == .completed {
+            phase = .paused; completedAt = nil
+            breakContinuity()
+        }
+        return true
+    }
 
     mutating func pause() {
         if phase == .running { phase = .paused }
@@ -145,7 +161,8 @@ struct RunningZoneSession: Codable, Equatable {
             hasEnteredZone = true; outsideSince = nil; outsideDirection = nil
         }
         if inZoneSeconds >= goalSeconds {
-            phase = .completed; previous = nil; outsideSince = nil
+            phase = .completed; completedAt = Date(timeIntervalSince1970: sample.receivedAt)
+            previous = nil; outsideSince = nil
             return Observation(accepted: true, alert: nil)
         }
         var alert: Outside?
