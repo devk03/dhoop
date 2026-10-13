@@ -1,5 +1,8 @@
 # Personal Life → APNs → WHOOP buzz test
 
+For permanent agent cues, use [Life remote buzz setup](LIFE_REMOTE_BUZZ.md). This
+document describes the original bounded experiment, not permanent MCP enrollment.
+
 The owner authorized this personal-fork experiment on October 8, 2026. It is default-off and
 expires within two hours. No polling, recurring monitor, health writes, DB migration, wake-alarm
 writes, or remote BLE command selection is introduced. APNs support is Apple-specific; Android's

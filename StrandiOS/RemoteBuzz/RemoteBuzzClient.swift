@@ -7,11 +7,15 @@ import Combine
 @MainActor
 final class RemoteBuzzClient: ObservableObject {
     static let shared = RemoteBuzzClient()
-    @Published private(set) var status = "Remote alerts are off"
+    @Published private(set) var status = "Remote alerts are off" {
+        didSet { writeDebugSnapshotIfRequested() }
+    }
     @Published private(set) var invitationJSON: String?
     @Published private(set) var state = RemoteBuzzState()
     @Published private(set) var paired = false
-    @Published private(set) var registrationStatus = "Not registered with Life"
+    @Published private(set) var registrationStatus = "Not registered with Life" {
+        didSet { writeDebugSnapshotIfRequested() }
+    }
     private weak var model: AppModel?
     private var enrollment: RemoteBuzzEnrollment?
     private var loaded = false
@@ -58,6 +62,11 @@ final class RemoteBuzzClient: ObservableObject {
             }
             if paired { UIApplication.shared.registerForRemoteNotifications() }
             scheduleFlush()
+            #if DEBUG
+            // Explicit developer action only. This creates a public invitation, never a grant.
+            if CommandLine.arguments.contains("--life-buzz-prepare") { preparePairing() }
+            writeDebugSnapshotIfRequested()
+            #endif
         } catch {
             loaded = false; status = "Stored alert state could not be read. Alerts are blocked."
         }
@@ -181,6 +190,45 @@ final class RemoteBuzzClient: ObservableObject {
     private func persist(_ next: RemoteBuzzState) throws {
         try stateFile.save(next)
         state = next
+        writeDebugSnapshotIfRequested()
+    }
+
+    /// One-shot developer diagnostics expose only public setup and delivery state.
+    private func writeDebugSnapshotIfRequested() {
+        #if DEBUG
+        guard loaded, CommandLine.arguments.contains("--life-buzz-diagnostics")
+            || CommandLine.arguments.contains("--life-buzz-prepare") else { return }
+        struct Snapshot: Encodable {
+            let version: Int
+            let capturedAt: Int
+            let paired: Bool
+            let enabled: Bool
+            let revoked: Bool
+            let enrollmentId: String?
+            let installationId: String?
+            let status: String
+            let registrationStatus: String
+            let deviceRevision: Int
+            let eventCount: Int
+            let receiptCount: Int
+            let invitation: RemoteBuzzInvitation?
+        }
+        do {
+            let invitation = invitationJSON.flatMap { try? JSONDecoder().decode(RemoteBuzzInvitation.self, from: Data($0.utf8)) }
+            let snapshot = Snapshot(version: 1, capturedAt: Int(Date().timeIntervalSince1970), paired: paired,
+                enabled: state.enabled, revoked: state.revoked, enrollmentId: enrollment?.enrollmentId,
+                installationId: enrollment?.installationId ?? invitation?.installationId,
+                status: status, registrationStatus: registrationStatus, deviceRevision: state.deviceRevision,
+                eventCount: state.events.count, receiptCount: state.receipts.count, invitation: invitation)
+            var file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("dhoop-life-buzz-diagnostics.json")
+            try JSONEncoder().encode(snapshot).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            var resources = URLResourceValues(); resources.isExcludedFromBackup = true
+            try file.setResourceValues(resources)
+        } catch {
+            // Diagnostics never block pairing/delivery or alter the user-facing registration result.
+        }
+        #endif
     }
     private func queueUpdate(op: String) throws {
         guard let enrollment else { throw RemoteBuzzEnrollmentError.invalid }
