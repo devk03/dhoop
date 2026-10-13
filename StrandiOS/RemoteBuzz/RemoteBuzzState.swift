@@ -12,13 +12,17 @@ struct RemoteBuzzReceipt: Codable, Equatable, Identifiable {
     let observedAt: Int
     let stage: String
     let outcome: String
+    let transport: String?
+    let appState: String?
     var id: String { receiptId }
     init(receiptId: String, enrollmentId: String, generation: Int, installationId: String,
-         eventId: String, sequence: Int, observedAt: Int, stage: String, outcome: String) {
+         eventId: String, sequence: Int, observedAt: Int, stage: String, outcome: String,
+         transport: String? = nil, appState: String? = nil) {
         version = 2; op = "receipt"
         self.receiptId = receiptId; self.enrollmentId = enrollmentId; self.generation = generation
         self.installationId = installationId; self.eventId = eventId; self.sequence = sequence
         self.observedAt = observedAt; self.stage = stage; self.outcome = outcome
+        self.transport = transport; self.appState = appState
     }
     static let outcomes: [String: Set<String>] = [
         "phone_received": ["received", "duplicate", "disabled", "expired", "disconnected", "suppressed"],
@@ -76,6 +80,8 @@ struct RemoteBuzzState: Codable, Equatable {
                 && pending.attempts >= 0 && pending.attempts <= 10
                 && (pending.lastAttemptAt.map { $0 >= 0 && $0 <= maximum } ?? true)
                 && RemoteBuzzReceipt.outcomes[receipt.stage]?.contains(receipt.outcome) == true
+                && (receipt.transport == nil || (receipt.stage == "phone_received" && ["apns", "inbox"].contains(receipt.transport!)))
+                && (receipt.appState == nil || (receipt.stage == "phone_received" && ["foreground", "background", "inactive"].contains(receipt.appState!)))
                 && eventKeys.contains("\(receipt.enrollmentId)|\(receipt.generation)|\(receipt.eventId)")
         }
     }
@@ -83,7 +89,8 @@ struct RemoteBuzzState: Codable, Equatable {
     // Caller authenticates HMAC and identity before entering this funnel. Persist the returned
     // state before dispatching BLE; a failed disk write must never result in a strap command.
     mutating func consume(_ command: RemoteBuzzCommandV2, enrollment: RemoteBuzzEnrollment,
-                          now: Int, connected: Bool, exerciseOwnsBuzz: Bool) throws -> Bool {
+                          now: Int, connected: Bool, exerciseOwnsBuzz: Bool,
+                          transport: String? = nil, appState: String? = nil) throws -> Bool {
         guard command.authenticated(by: enrollment), now >= 3600,
               now <= 9_007_199_254_740_991 else {
             throw RemoteBuzzEnrollmentError.invalid
@@ -101,23 +108,27 @@ struct RemoteBuzzState: Codable, Equatable {
         events.append(Event(id: command.eventId, enrollmentId: command.enrollmentId,
             generation: command.generation, receivedAt: now, expiresAt: command.expiresAt, outcome: outcome))
         try appendReceipt(eventId: command.eventId, enrollment: enrollment,
-            stage: "phone_received", outcome: outcome, now: now)
+            stage: "phone_received", outcome: outcome, now: now, transport: transport, appState: appState)
         return outcome == "received"
     }
 
     mutating func appendReceipt(eventId: String, enrollment: RemoteBuzzEnrollment,
-                                stage: String, outcome: String, now: Int) throws {
+                                stage: String, outcome: String, now: Int,
+                                transport: String? = nil, appState: String? = nil) throws {
         guard RemoteBuzzReceipt.outcomes[stage]?.contains(outcome) == true,
               events.contains(where: { $0.id == eventId && $0.enrollmentId == enrollment.enrollmentId
                   && $0.generation == enrollment.generation }),
               receiptSequence < 9_007_199_254_740_991 else { throw RemoteBuzzEnrollmentError.invalid }
+        guard transport == nil || (stage == "phone_received" && ["apns", "inbox"].contains(transport!)),
+              appState == nil || (stage == "phone_received" && ["foreground", "background", "inactive"].contains(appState!))
+        else { throw RemoteBuzzEnrollmentError.invalid }
         guard !receipts.contains(where: { $0.receipt.eventId == eventId && $0.receipt.enrollmentId == enrollment.enrollmentId
             && $0.receipt.stage == stage && $0.receipt.outcome == outcome }) else { return }
         receiptSequence += 1
         receipts.append(PendingReceipt(receipt: RemoteBuzzReceipt(receiptId: UUID().uuidString.lowercased(),
             enrollmentId: enrollment.enrollmentId, generation: enrollment.generation,
             installationId: enrollment.installationId, eventId: eventId, sequence: receiptSequence,
-            observedAt: now, stage: stage, outcome: outcome)))
+            observedAt: now, stage: stage, outcome: outcome, transport: transport, appState: appState)))
     }
     mutating func nextRevision() throws -> Int {
         guard deviceRevision < 9_007_199_254_740_991 else { throw RemoteBuzzEnrollmentError.invalid }

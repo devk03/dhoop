@@ -85,4 +85,29 @@ final class RemoteBuzzStateTests: XCTestCase {
         XCTAssertTrue(pending.mayAttempt(now: now + 30))
         XCTAssertFalse(pending.mayAttempt(now: now + 3600))
     }
+    func testFirstDeliveryPathSurvivesCrossTransportDuplicateAndRelaunch() throws {
+        for source in ["inbox", "apns"] {
+            var state = RemoteBuzzState(); state.enabled = true
+            let cue = command(at: now)
+            XCTAssertTrue(try state.consume(cue, enrollment: enrollment, now: now, connected: true,
+                exerciseOwnsBuzz: false, transport: source, appState: "background"))
+            state = try JSONDecoder().decode(RemoteBuzzState.self, from: JSONEncoder().encode(state))
+            XCTAssertFalse(try state.consume(cue, enrollment: enrollment, now: now + 1, connected: true,
+                exerciseOwnsBuzz: false, transport: source == "apns" ? "inbox" : "apns", appState: "foreground"))
+            XCTAssertEqual(state.receipts.count, 1)
+            XCTAssertEqual(state.receipts[0].receipt.transport, source)
+            XCTAssertEqual(state.receipts[0].receipt.appState, "background")
+            XCTAssertTrue(state.valid())
+        }
+    }
+    func testLegacyReceiptDecodesAndAttributionCannotClaimAnUnsupportedStage() throws {
+        var state = RemoteBuzzState(); state.enabled = true
+        let cue = command(at: now)
+        _ = try state.consume(cue, enrollment: enrollment, now: now, connected: true, exerciseOwnsBuzz: false)
+        let restored = try JSONDecoder().decode(RemoteBuzzState.self, from: JSONEncoder().encode(state))
+        XCTAssertNil(restored.receipts[0].receipt.transport)
+        XCTAssertTrue(restored.valid())
+        XCTAssertThrowsError(try state.appendReceipt(eventId: cue.eventId, enrollment: enrollment,
+            stage: "strap_response", outcome: "acknowledged", now: now + 1, transport: "inbox"))
+    }
 }

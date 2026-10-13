@@ -2,14 +2,15 @@
 
 ## Missed-push inbox recovery (October 13, 2026)
 
-Build 464 includes an authenticated fallback fetch through the existing `/api/dhoop/buzz/device`
+Build 465 includes an authenticated fallback fetch through the existing `/api/dhoop/buzz/device`
 endpoint. APNs remains the primary trigger. The owner authorized this polling addition explicitly;
 no extra credential, server, Cloudflare Access policy, or database migration is introduced.
 
 - Opening Dhoop, a settled reconnect, and actual received Bluetooth frames can trigger one inbox
   check while the existing connection is ready. The feature does not enable an extra sensor stream.
 - A foreground polling window lasts at most ten minutes and is cancelled on leaving the foreground.
-  Checks back off from 15 to 30 to 60 seconds when quiet; failures back off to five minutes. A manual
+  Checks back off from 15 to 30 seconds when quiet, leaving time inside the 60-second expiry;
+  failures back off to five minutes. A manual
   check/reconnect can request a fresh attempt, with a five-second coalescing guard.
 - Background fetch attempts arise only from existing execution opportunities. They use a seven-second
   network budget. No audio keepalive, perpetual background timer, extra recurring BGTask, or overnight
@@ -26,6 +27,11 @@ no extra credential, server, Cloudflare Access policy, or database migration is 
   that vibrates hours later.
 
 WHOOP alerts Settings shows the latest inbox check and offers **Check for waiting buzzes**.
+New phone-receipt evidence identifies `apns` or `inbox` and the observed foreground/background/inactive
+application state. The first persisted delivery wins; duplicate arrival through the other path cannot
+rewrite that attribution or buzz again. Older receipts retain unknown transport. Background state is
+not evidence that the screen was locked. A fresh authenticated APNs request resets failed-fetch backoff
+because it demonstrates restored connectivity, without requiring an additional network fetch.
 No health data is fetched or uploaded. Locked-phone delivery still depends on genuine iOS runtime;
 force-quit or a powered-down phone prevents this fallback from continuously checking. A successful
 fetch, command acknowledgment, and wearer-confirmed vibration remain separate evidence.

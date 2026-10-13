@@ -37,6 +37,10 @@ struct RemoteBuzzSettingsView: View {
                             evidence("Apple acceptance", "See the separate event status in Life")
                             evidence("Dhoop receipt", latest.outcome.replacingOccurrences(of: "_", with: " "))
                             let receipts = client.state.receipts.filter { $0.receipt.eventId == latest.id }.map(\.receipt)
+                            if let delivery = receipts.first(where: { $0.stage == "phone_received" }), let source = delivery.transport {
+                                evidence("Delivery path", (source == "inbox" ? "Inbox fetch" : "Apple push")
+                                    + (delivery.appState.map { " · " + $0 } ?? ""))
+                            }
                             evidence("WHOOP command", receipts.last(where: { ["strap_requested", "strap_response"].contains($0.stage) })?.outcome.replacingOccurrences(of: "_", with: " ") ?? "No command evidence")
                             evidence("Felt vibration", receipts.last(where: { $0.stage == "wearer_confirmed" })?.outcome == "felt" ? "You confirmed it" : receipts.contains(where: { $0.stage == "wearer_confirmed" && $0.outcome == "not_felt" }) ? "You reported no vibration" : "Not confirmed by you")
                             if receipts.contains(where: { $0.stage == "strap_requested" && $0.outcome == "requested" }) {

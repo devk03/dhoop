@@ -283,7 +283,7 @@ final class RemoteBuzzClient: ObservableObject {
         registrationStatus = "Life update pending"
     }
 
-    func receive(_ body: [String: Any]) -> UIBackgroundFetchResult {
+    func receive(_ body: [String: Any], transport source: String = "apns") -> UIBackgroundFetchResult {
         do {
             guard loaded, let model, let enrollment,
                   JSONSerialization.isValidJSONObject(body) else { return .noData }
@@ -291,11 +291,19 @@ final class RemoteBuzzClient: ObservableObject {
             guard bytes.count <= 2048 else { return .noData }
             let command = try JSONDecoder().decode(RemoteBuzzCommandV2.self, from: bytes)
             let now = Int(Date().timeIntervalSince1970)
+            let appState: String
+            switch UIApplication.shared.applicationState {
+            case .active: appState = "foreground"
+            case .background: appState = "background"
+            default: appState = "inactive"
+            }
             var next = state
             let dispatch = try next.consume(command, enrollment: enrollment, now: now,
                 connected: model.ble.buzzDelivery.link().ready,
-                exerciseOwnsBuzz: model.ble.buzzDelivery.exclusiveOwner != nil)
+                exerciseOwnsBuzz: model.ble.buzzDelivery.exclusiveOwner != nil, transport: source, appState: appState)
             try persist(next)
+            // A fresh authenticated push is evidence connectivity recovered; no extra fetch is needed.
+            if source == "apns", command.fresh(now: Date()) { inboxPolicy.finish(success: true, commandCount: 1) }
             if dispatch {
                 model.requestBuzz(owner: "remote-life", id: "life|" + command.eventId, loops: UInt8(command.loops),
                     due: Date(), grace: min(2, Double(command.expiresAt - now)))
@@ -399,7 +407,7 @@ final class RemoteBuzzClient: ObservableObject {
                     // The identical signed-command funnel persists dedup before any BLE dispatch.
                     guard let body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(command)) as? [String: Any]
                     else { throw RemoteBuzzEnrollmentError.invalid }
-                    if self.receive(body) == .newData { received += 1 }
+                    if self.receive(body, transport: "inbox") == .newData { received += 1 }
                 }
                 self.inboxPolicy.finish(success: true, commandCount: batch.commands.count)
                 self.inboxChecks += 1; self.lastInboxCheckedAt = Int(Date().timeIntervalSince1970)
