@@ -176,3 +176,15 @@ the phone unlocked. Repeating the same thread/readiness identity returned the sa
 event instead of another push. This verifies the distinctive burst and permanent
 one-call MCP path on the physical WHOOP 5; locked three-pulse verification remains
 separate. No claim of suspended, force-quit or powered-off delivery is made.
+
+
+The locked follow-up `ce6f218a-c55b-46a6-904f-9e64f79397db` was submitted at
+9:50:45 p.m. Pacific after the wearer reported locking the phone for at least a
+minute. Apple accepted loops=3; device-authenticated phone receipt and strap
+request were recorded at 9:50:47 p.m. The wearer confirmed three buzzes while the
+phone stayed locked. The captured API result had vibrationConfirmed=false because
+no app wearer receipt had been uploaded at that read; this chat confirmation is
+separate evidence. These observations do not establish guaranteed suspended,
+force-quit or fully powered-off delivery. The temporary verification token was
+revoked and a read returned HTTP 401; existing permanent clients/enrollment stayed
+unchanged. No monitor or wake-alarm write was introduced.
