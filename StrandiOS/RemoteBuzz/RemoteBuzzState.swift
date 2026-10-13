@@ -90,7 +90,8 @@ struct RemoteBuzzState: Codable, Equatable {
     // state before dispatching BLE; a failed disk write must never result in a strap command.
     mutating func consume(_ command: RemoteBuzzCommandV2, enrollment: RemoteBuzzEnrollment,
                           now: Int, connected: Bool, exerciseOwnsBuzz: Bool,
-                          transport: String? = nil, appState: String? = nil) throws -> Bool {
+                          transport: String? = nil, appState: String? = nil,
+                          deferDisconnected: Bool = false) throws -> Bool {
         guard command.authenticated(by: enrollment), now >= 3600,
               now <= 9_007_199_254_740_991 else {
             throw RemoteBuzzEnrollmentError.invalid
@@ -99,6 +100,10 @@ struct RemoteBuzzState: Codable, Equatable {
             // A duplicate cannot dispatch again or create an unbounded receipt queue.
             return false
         }
+        // A wake can precede Bluetooth restoration. Leave a still-fresh inbox request unconsumed;
+        // a real reconnect may fetch it. Terminal outcomes and already-consumed events never replay.
+        if deferDisconnected && enabled && !revoked && !connected && !exerciseOwnsBuzz
+            && command.fresh(now: Date(timeIntervalSince1970: Double(now))) { return false }
         let outcome: String
         if !enabled || revoked { outcome = "disabled" }
         else if !command.fresh(now: Date(timeIntervalSince1970: Double(now))) { outcome = "expired" }

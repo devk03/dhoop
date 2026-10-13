@@ -110,4 +110,30 @@ final class RemoteBuzzStateTests: XCTestCase {
         XCTAssertThrowsError(try state.appendReceipt(eventId: cue.eventId, enrollment: enrollment,
             stage: "strap_response", outcome: "acknowledged", now: now + 1, transport: "inbox"))
     }
+    func testPushBeforeBluetoothRestorationLeavesFreshInboxRequestRecoverable() throws {
+        var state = RemoteBuzzState(); state.enabled = true
+        let cue = command(at: now)
+        XCTAssertFalse(try state.consume(cue, enrollment: enrollment, now: now, connected: false,
+            exerciseOwnsBuzz: false, transport: "apns", appState: "background", deferDisconnected: true))
+        XCTAssertTrue(state.events.isEmpty); XCTAssertTrue(state.receipts.isEmpty)
+        state = try JSONDecoder().decode(RemoteBuzzState.self, from: JSONEncoder().encode(state))
+        XCTAssertTrue(try state.consume(cue, enrollment: enrollment, now: now + 20, connected: true,
+            exerciseOwnsBuzz: false, transport: "inbox", appState: "background", deferDisconnected: true))
+        XCTAssertEqual(state.receipts.first?.receipt.transport, "inbox")
+        XCTAssertFalse(try state.consume(cue, enrollment: enrollment, now: now + 21, connected: true,
+            exerciseOwnsBuzz: false, transport: "apns", deferDisconnected: true))
+    }
+    func testDeferralNeverReplaysExpiredDisabledOrWorkoutSuppressedRequests() throws {
+        for scenario in ["expired", "disabled", "suppressed"] {
+            var state = RemoteBuzzState(); state.enabled = scenario != "disabled"
+            let cue = command(at: now)
+            XCTAssertFalse(try state.consume(cue, enrollment: enrollment,
+                now: scenario == "expired" ? now + 60 : now, connected: false,
+                exerciseOwnsBuzz: scenario == "suppressed", transport: "apns", deferDisconnected: true))
+            XCTAssertEqual(state.events.first?.outcome, scenario)
+            state.enabled = true
+            XCTAssertFalse(try state.consume(cue, enrollment: enrollment, now: now + 61,
+                connected: true, exerciseOwnsBuzz: false, transport: "inbox", deferDisconnected: true))
+        }
+    }
 }

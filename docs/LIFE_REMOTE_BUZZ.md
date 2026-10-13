@@ -2,7 +2,7 @@
 
 ## Missed-push inbox recovery (October 13, 2026)
 
-Build 465 includes an authenticated fallback fetch through the existing `/api/dhoop/buzz/device`
+Build 466 includes an authenticated fallback fetch through the existing `/api/dhoop/buzz/device`
 endpoint. APNs remains the primary trigger. The owner authorized this polling addition explicitly;
 no extra credential, server, Cloudflare Access policy, or database migration is introduced.
 
@@ -22,13 +22,14 @@ no extra credential, server, Cloudflare Access policy, or database migration is 
 - Fetch responses must match the installation/enrollment and every command must pass the existing
   HMAC validation before dispatch. Push and fetch use the same persisted deduplication funnel, so
   the same event cannot cause another vibration after a duplicate delivery or relaunch.
-- The existing 60-second expiry remains enforced. Expired, suppressed, disabled, and disconnected
-  commands are not replayed as late buzzes. This is recovery of missed requests, not a delayed inbox
+- The existing 60-second expiry remains enforced. An authenticated fresh request arriving before
+  Bluetooth restoration is left unconsumed in Life, so a real reconnect can fetch it before expiry.
+  Disabled, suppressed, expired, and already-consumed commands never replay. This is recovery of missed requests, not a delayed inbox
   that vibrates hours later.
 
 WHOOP alerts Settings shows the latest inbox check and offers **Check for waiting buzzes**.
 New phone-receipt evidence identifies `apns` or `inbox` and the observed foreground/background/inactive
-application state. The first persisted delivery wins; duplicate arrival through the other path cannot
+application state. The first consumed delivery wins; duplicate arrival through the other path cannot
 rewrite that attribution or buzz again. Older receipts retain unknown transport. Background state is
 not evidence that the screen was locked. A fresh authenticated APNs request resets failed-fetch backoff
 because it demonstrates restored connectivity, without requiring an additional network fetch.

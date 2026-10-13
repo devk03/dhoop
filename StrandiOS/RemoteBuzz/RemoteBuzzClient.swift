@@ -290,7 +290,8 @@ final class RemoteBuzzClient: ObservableObject {
             let bytes = try JSONSerialization.data(withJSONObject: body)
             guard bytes.count <= 2048 else { return .noData }
             let command = try JSONDecoder().decode(RemoteBuzzCommandV2.self, from: bytes)
-            let now = Int(Date().timeIntervalSince1970)
+            let receivedAt = Date()
+            let now = Int(receivedAt.timeIntervalSince1970)
             let appState: String
             switch UIApplication.shared.applicationState {
             case .active: appState = "foreground"
@@ -300,13 +301,18 @@ final class RemoteBuzzClient: ObservableObject {
             var next = state
             let dispatch = try next.consume(command, enrollment: enrollment, now: now,
                 connected: model.ble.buzzDelivery.link().ready,
-                exerciseOwnsBuzz: model.ble.buzzDelivery.exclusiveOwner != nil, transport: source, appState: appState)
-            try persist(next)
+                exerciseOwnsBuzz: model.ble.buzzDelivery.exclusiveOwner != nil, transport: source, appState: appState,
+                deferDisconnected: true)
+            if next != state { try persist(next) }
+            if !next.events.contains(where: { $0.id == command.eventId && $0.enrollmentId == command.enrollmentId }) {
+                status = "Request arrived before WHOOP was ready; kept in Life only until its expiry"
+            }
             // A fresh authenticated push is evidence connectivity recovered; no extra fetch is needed.
-            if source == "apns", command.fresh(now: Date()) { inboxPolicy.finish(success: true, commandCount: 1) }
+            if source == "apns", command.fresh(now: receivedAt) { inboxPolicy.finish(success: true, commandCount: 1) }
             if dispatch {
+                status = "Remote request accepted; WHOOP delivery evidence is separate"
                 model.requestBuzz(owner: "remote-life", id: "life|" + command.eventId, loops: UInt8(command.loops),
-                    due: Date(), grace: min(2, Double(command.expiresAt - now)))
+                    due: receivedAt, grace: min(2, max(0, Double(command.expiresAt) - receivedAt.timeIntervalSince1970)))
             }
             scheduleFlush()
             return dispatch ? .newData : .noData
