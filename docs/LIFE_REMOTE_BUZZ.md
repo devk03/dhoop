@@ -130,9 +130,17 @@ temporary client token was revoked; existing clients and phone enrollment remain
 The human-requested repeat at 9:20:50 p.m. Pacific, event
 `ba7077b9-75e0-4add-b2b0-cd46ec9ffd09`, completed the permanent path through
 physical confirmation. Apple accepted it; the phone reported receipt, strap
-request and strap-response evidence at 9:20:54 p.m. A signed device receipt
+request and strap-response evidence at 9:20:54 p.m. An authenticated device receipt
 reported `wearer_confirmed:felt` at 9:21:03 p.m., and the human independently
 confirmed feeling it in chat. Life returned `vibrationConfirmed=true`. Phone
 lock state/duration were not reported for this specific repeat, so it does not
 establish locked, suspended or force-quit guarantees. The test credential was
 revoked after verification, preserving existing clients and enrollment.
+
+
+The requested screen-off/locked-phone test at 9:35:33 p.m. Pacific, event
+`62ee53b6-73b3-4f14-a640-f9158ecabeb7`, was accepted by Apple. The phone
+reported receipt in the same recorded second, a strap request at 9:35:34 p.m.,
+and a strap response at 9:35:35 p.m. Wearer confirmation and actual lock state
+remain pending; lock duration was not independently measured. The temporary
+test token was revoked. No wake alarm or firmware scheduling was changed.
