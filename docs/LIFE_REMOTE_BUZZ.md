@@ -47,3 +47,12 @@ showed no active Dhoop pairing. The unlocked phone's state-v2 file showed enable
 revoked=false, deviceRevision=0, receiptSequence=0 and zero events/receipts. This is an
 incomplete enrollment, not proof of an Apple or WHOOP delivery failure. No data migration,
 strap alarm change or server credential change was required by that read.
+
+At 5:37 p.m. Pacific, after the human approved pairing, Life created a fresh encrypted
+enrollment for the same installation. Build 457 imported it successfully. The phone
+reported paired=true, enabled=true, deviceRevision=2 and "Life received device update";
+owner Settings independently displayed "Enabled · sandbox". The switch was enabled
+through the phone UI, not a debug flag. Event and receipt counts were still zero: an
+authenticated permanent API request and wearer-confirmed vibration remained pending.
+The debug snapshot was checked for its public-only field whitelist, and the installed
+app retained the stable bundle identifier and development APNs entitlement.
