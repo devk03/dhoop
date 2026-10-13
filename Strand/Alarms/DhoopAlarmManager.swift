@@ -129,6 +129,23 @@ final class DhoopAlarmManager: ObservableObject {
                     && reading.deviceID == context.deviceID && reading.connection == context.connection }
         }
     }
+    struct RemovalRisk: Identifiable {
+        let id: String
+        let slot: Int
+        let epochs: [Int64]
+    }
+    func pendingRemovalRisks(now: Date) -> [RemovalRisk] {
+        let desired = Set(plan(now: now).map { Int64($0.epoch) })
+        return currentSlots.compactMap { slot in
+            // A merely reserved external slot is not a cancellation request.
+            guard !slot.definitionIDs.isEmpty || !slot.pendingDefinitionIDs.isEmpty || slot.removalRequested else { return nil }
+            let records = [slot.expected, slot.pendingRecord].compactMap { $0 }
+            let epochs = Set(records.map(\.epoch).filter {
+                $0 > Int64(now.timeIntervalSince1970) && (slot.removalRequested || !desired.contains($0))
+            }).sorted()
+            return epochs.isEmpty ? nil : RemovalRisk(id: slot.id, slot: slot.slot, epochs: epochs)
+        }
+    }
     func status(_ alarm: DhoopAlarmDefinition, now: Date) -> String {
         let associated = currentSlots.filter { $0.definitionIDs.contains(alarm.id) || $0.pendingDefinitionIDs.contains(alarm.id) }
         if !alarm.enabled || alarm.deleted {

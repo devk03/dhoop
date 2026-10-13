@@ -57,6 +57,25 @@ private struct AlarmsContent: View, Equatable {
                         }
                     }
                 }.buttonStyle(.plain)
+                let removalRisks = manager.pendingRemovalRisks(now: capturedAt)
+                if !removalRisks.isEmpty {
+                    NoopCard(padding: NoopMetrics.space4) {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                            Label("WHOOP removal unresolved", systemImage: "exclamationmark.triangle")
+                                .font(StrandFont.headline).foregroundStyle(StrandPalette.statusWarning)
+                            Text("These previously scheduled times may still fire, including alarms deleted in Dhoop.")
+                                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                            ForEach(removalRisks) { risk in
+                                Text("Slot \(risk.slot) · \(risk.epochs.map { Date(timeIntervalSince1970: Double($0)).formatted(date: .abbreviated, time: .shortened) }.joined(separator: "; "))")
+                                    .font(StrandFont.caption).fixedSize(horizontal: false, vertical: true)
+                            }
+                            Button("Retry WHOOP sync") { manager.requestSync() }
+                                .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true)).disabled(manager.busy)
+                            NavigationLink("Review WHOOP slots", value: AlarmRoute.slots).font(StrandFont.caption)
+                                .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        }
+                    }
+                }
                 if let alarm = nextDefinition {
                     NoopCard(padding: NoopMetrics.space5) {
                         VStack(alignment: .leading, spacing: NoopMetrics.space2) {

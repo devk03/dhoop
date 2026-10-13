@@ -210,4 +210,28 @@ final class DhoopAlarmManagerTests: XCTestCase {
         XCTAssertEqual(manager.state.slots[0].definitionIDs, [second.id])
         XCTAssertEqual(manager.status(second, now: Date()), "Stored on WHOOP")
     }
+    func testOfflineDeletionRetainsVisibleRemovalRiskUntilReadback() async throws {
+        let (manager, connected, _) = setup()
+        var link = connected
+        manager.link = { link }
+        var records = Dictionary(uniqueKeysWithValues: (1...6).map {
+            ($0, Whoop5AlarmRecord(payload: [4, UInt8($0)] + Array(repeating: 0, count: 19), slot: $0)!)
+        })
+        manager.exchange = { opcode, payload in
+            let slot = Int(payload[1])
+            if opcode == 66 { records[slot] = Whoop5AlarmRecord(payload: payload, slot: slot)! }
+            if opcode == 69 { records[slot] = Whoop5AlarmRecord(payload: [4, UInt8(slot)] + Array(repeating: 0, count: 19), slot: slot)! }
+            return .init(deviceID: link.deviceID, connection: link.connection, opcode: opcode,
+                result: "SUCCESS(1)", payload: records[slot]!.bytes)
+        }
+        let value = alarm(); manager.save(value); await settle(manager)
+        manager.approveSlot(6, expected: records[6]!); await settle(manager)
+        XCTAssertTrue(manager.pendingRemovalRisks(now: Date()).isEmpty)
+        link.ready = false; manager.connectionChanged()
+        manager.delete(value.id); await settle(manager)
+        XCTAssertTrue(manager.definitions.isEmpty)
+        XCTAssertEqual(manager.pendingRemovalRisks(now: Date()).first?.epochs, [Int64(value.rule.oneTimeEpoch!)])
+        link.ready = true; link.connection = UUID(); manager.connectionChanged(); await settle(manager)
+        XCTAssertTrue(manager.pendingRemovalRisks(now: Date()).isEmpty)
+    }
 }
