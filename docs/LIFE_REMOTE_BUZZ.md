@@ -82,3 +82,35 @@ the permanent phone enrollment and existing agent tokens were preserved. Three
 test requests consumed the normal hourly allowance, with no automatic resend or
 rate-limit bypass. This proves the repaired MCP-to-APNs path, not phone delivery,
 WHOOP vibration, force-quit support or dependable wake-up behavior.
+
+## Owner-authorized private API without quotas
+
+The owner explicitly removed the hourly and request-cooldown policy on October 12.
+Life deployed `98a649a` as Worker `5723ee23-b8fb-48eb-ab29-92e6b659e1d6`.
+Dhoop build 458 removes the matching phone gate and was installed on the physical
+iPhone with the same bundle identifier and development APNs entitlement. Five
+targeted Swift receiver-state tests, the signed iOS build, Life's native Workers,
+SQLite and Settings tests, and the production build passed. Distinct private
+requests remain permitted after persisted/reloaded history; duplicate, expiry,
+disabled/revoked, disconnection and exercise-ownership gates remain unchanged.
+No database migration or wake-alarm write was performed. This is an iOS-only
+personal Life integration; Android has no equivalent remote Life receiver.
+
+A fresh request at 6:25:40 p.m., event
+`16a7f652-e3d0-419d-b7f9-077de551d163`, was accepted despite the older three
+requests still being inside their former rolling-hour window. The unlocked
+phone reported receipt at 6:25:45 p.m., WHOOP command request at the same second,
+and a response. Its saved delivery ledger attributed opcode 19 / sequence 4 to
+that event and connection, with `SUCCESS(1)` and an empty response payload.
+This remains `responseReceived`, not an ACK or wearer confirmation. Replaying
+the identical idempotency key returned that original event with no new request.
+The human's vibration confirmation and a maintained locked-phone test remain
+pending; the Mac's iPhone Mirroring session is locked and is not used as proof
+of the phone's foreground view.
+
+The earlier 6:07 p.m. event subsequently appeared in saved phone history and
+Life receipts as `expired`, received at 6:11:28 p.m. The original delivery window
+had ended at 6:08:01 p.m.; no late WHOOP buzz was dispatched. This demonstrates
+why background pushes remain best effort even when private application quotas
+are absent. API authorization and expired-command rejection are separate from
+Apple's delivery timing.
