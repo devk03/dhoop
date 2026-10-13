@@ -370,6 +370,7 @@ struct StrandiOSApp: App {
                 SyncLiveActivityController.shared.reconcile(live: model.live)
                 // Re-arm the strap's smart alarm on foreground: the firmware alarm is a single instant
                 // and iOS can't re-arm it while suspended, so it would otherwise fire once and stop.
+                DhoopPhoneAlarmBackup.configure(model.ble.alarmManager)
                 model.applySmartAlarm()
                 // #267: pull a reasonably fresh sync on open rather than waiting for the 900s periodic
                 // timer or an incidental reconnect. Floored at 90s and never clock/empty-streak-suppressed
