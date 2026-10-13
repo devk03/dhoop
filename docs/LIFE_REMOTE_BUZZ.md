@@ -37,6 +37,13 @@ No health data is fetched or uploaded. Locked-phone delivery still depends on ge
 force-quit or a powered-down phone prevents this fallback from continuously checking. A successful
 fetch, command acknowledgment, and wearer-confirmed vibration remain separate evidence.
 
+Build 466 physical delivery check on October 13: the API request was accepted by Apple; the
+phone subsequently reported `transport: inbox` and `appState: background` two seconds after
+creation, a WHOOP command request after three seconds, and a strap response after five seconds.
+This establishes one real inbox-to-strap command path, not a felt vibration or continuous locked
+execution guarantee. Wearer confirmation remained pending. Earlier receipts without transport
+attribution cannot establish whether push or polling handled them.
+
 The permanent integration uses `tracker.read_buzz` and `tracker.send_buzz` on
 `https://track.kunjadia.dev/mcp`. `/api/dhoop/buzz` is the retired-from-normal-use
 v1 experiment described in REMOTE_BUZZ_TEST.md; its two-hour credentials are not
