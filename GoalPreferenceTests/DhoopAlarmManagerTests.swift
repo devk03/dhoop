@@ -164,4 +164,50 @@ final class DhoopAlarmManagerTests: XCTestCase {
         XCTAssertNotNil(manager.state.slots[0].pendingRecord)
         XCTAssertNotEqual(manager.status(value, now: Date()), "Stored on WHOOP")
     }
+    func testDeletionDuringWriteCancelsTheStoredOccurrence() async throws {
+        let (manager, link, _) = setup()
+        let value = alarm()
+        var records = Dictionary(uniqueKeysWithValues: (1...6).map {
+            ($0, Whoop5AlarmRecord(payload: [4, UInt8($0)] + Array(repeating: 0, count: 19), slot: $0)!)
+        })
+        var mutations: [Int] = []
+        manager.exchange = { opcode, payload in
+            let slot = Int(payload[1])
+            if opcode == 66 {
+                mutations.append(opcode); records[slot] = Whoop5AlarmRecord(payload: payload, slot: slot)!
+                manager.delete(value.id)
+            }
+            if opcode == 69 {
+                mutations.append(opcode)
+                records[slot] = Whoop5AlarmRecord(payload: [4, UInt8(slot)] + Array(repeating: 0, count: 19), slot: slot)!
+            }
+            return .init(deviceID: link.deviceID, connection: link.connection, opcode: opcode, result: "SUCCESS(1)", payload: records[slot]!.bytes)
+        }
+        manager.save(value); await settle(manager)
+        manager.approveSlot(6, expected: records[6]!); await settle(manager)
+        XCTAssertEqual(mutations, [66, 69])
+        XCTAssertTrue(manager.definitions.isEmpty)
+        XCTAssertEqual(records[6]?.epoch, 0)
+    }
+    func testSkippingOneCoincidentAlarmPreservesTheOther() async throws {
+        let (manager, link, _) = setup()
+        var records = Dictionary(uniqueKeysWithValues: (1...6).map {
+            ($0, Whoop5AlarmRecord(payload: [4, UInt8($0)] + Array(repeating: 0, count: 19), slot: $0)!)
+        })
+        var writes = 0
+        manager.exchange = { opcode, payload in
+            let slot = Int(payload[1])
+            if opcode != 67 { writes += 1 }
+            if opcode == 66 { records[slot] = Whoop5AlarmRecord(payload: payload, slot: slot)! }
+            return .init(deviceID: link.deviceID, connection: link.connection, opcode: opcode, result: "SUCCESS(1)", payload: records[slot]!.bytes)
+        }
+        let first = alarm(); var second = alarm(); second.rule = first.rule
+        manager.save(first); await settle(manager); manager.save(second); await settle(manager)
+        manager.approveSlot(6, expected: records[6]!); await settle(manager)
+        let stored = records[6], count = writes
+        manager.skipNext(first.id); await settle(manager)
+        XCTAssertEqual(records[6], stored); XCTAssertEqual(writes, count)
+        XCTAssertEqual(manager.state.slots[0].definitionIDs, [second.id])
+        XCTAssertEqual(manager.status(second, now: Date()), "Stored on WHOOP")
+    }
 }

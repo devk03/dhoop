@@ -2,6 +2,31 @@
 
 Planning specification, October 12, 2026. No alarm configuration, firmware, application code, or health database was changed while preparing this plan.
 
+## Implemented scope and verification boundary
+
+Build 461 implements the fourth Alarms tab, exact-time and weekday definitions, custom days, labels, enable/disable, edit, soft-delete, skip-next, finite dated slot allocation, history, an immediate non-consuming vibration test, and bedtime guidance using the shared 495-minute sleep goal. The optional iOS 26 phone backup uses AlarmKit with separate authorization; earlier iOS versions use explicitly labeled notification backups. Existing legacy wake notifications are retained and reported rather than silently removed. Protocol validation and occurrence calculations have Kotlin twins; the personal ownership file and new UI/phone adapter are Apple-only.
+
+Slot ownership is not inferred from a zero record. Initial setup requires an attributed read and explicit approval for each selected slot. The approval explains the replacement tradeoff and the lack of verified restoration. Definitions alone cannot authorize a strap write. Writes and cancellation are journaled before execution, attributed to device/connection/opcode, and followed by fresh full-record reads. Interrupted operations are reconciled from device state. Wildcard clears and unmanaged WHOOP 5 alarm writes are blocked. Coincident definitions share an occurrence; skipping one preserves the other. Allocations cover each enabled definition before filling additional repeat dates. Coverage states the number and furthest date actually verified, without claiming every intervening date is covered.
+
+The local state file is additive and separate from SQLite. No database migration, deletion, firmware change, or automatic adoption of an existing wake alarm is part of this implementation. Cancelled/deleted definitions retain history and any pending strap removal. Snooze, smart wake, custom waveform/intensity controls, active-wake dismissal, and remote alarm APIs remain outside this first release.
+
+Software verification: signed physical-iPhone and shared macOS builds pass; targeted protocol, DST/planner, Android oracle, cancellation/relaunch, concurrent deletion, coincident skip, foreign-change protection, and delivery-coordinator tests pass. Build 461 was installed as an update with the existing bundle and signing identity. Physical launch was blocked while the phone was locked. Simulator interface inspection was blocked by the existing first-run consent screen; that gate was not bypassed.
+
+No physical WHOOP slot was adopted or written during this implementation pass. Actual slot capacity, storage semantics, device-clock accuracy, firing timing, cancellation effectiveness, future execution without a phone, and perceptual vibration remain hardware gates. The previous command-19/APNs buzz tests do not close any scheduled-alarm gate below.
+
+| Remaining release check | Required evidence |
+| --- | --- |
+| Read-only inventory | Selected WHOOP identity/firmware, six attributed raw responses, current external wake configuration recorded |
+| First owned slot | Explicit owner tradeoff approval for the specific freshly read slot; no other slot changed |
+| Foreground and locked | Full record readback plus wearer-confirmed scheduled firing within the target window, separately for each condition |
+| Disconnected, force-quit, phone powered down | Independently stored test occurrence and wearer confirmation for each distinct condition |
+| Cancellation and edits | Targeted cancellation before its original due instant, no vibration at that instant, preserved external records |
+| Repeat coverage | Two stored upcoming dates and two successive real morning confirmations |
+| Phone backup | Authorization, create/edit/cancel and upgrade-path checks on the physical iPhone; no duplicate legacy notification mistaken for WHOOP delivery |
+| Interface | Physical dark/light, large text, VoiceOver, scrolling, readable time/switches, and comparison with the approved study |
+
+Do not rely on this experimental release as the sole wake alarm until these checks pass. Keep an independent wake alarm during scheduled-strap tests.
+
 Dhoop should have a dedicated **Alarms** tab with the familiarity of iPhone Clock and a clear view of what the WHOOP has actually stored. A person should be able to create, edit, enable, disable, label, repeat, and skip an alarm without navigating through Settings. A saved preference is distinct from a scheduled strap alarm. The central engineering requirement is reliable, independently executing WHOOP scheduling with preservation of existing alarms.
 
 ## Outcome and release criteria
