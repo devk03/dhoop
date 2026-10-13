@@ -7,6 +7,9 @@ final class Whoop5AlarmRecordTests: XCTestCase {
         // Independent little-endian timestamp and existing waveform oracle.
         XCTAssertEqual(record.bytes, [4, 6, 224, 200, 205, 106, 0, 0, 47, 152, 0, 0, 0, 0, 0, 0, 0, 0, 7, 30, 0])
         XCTAssertEqual(record.epoch, 1791871200)
+        XCTAssertEqual(puffinCommandFrame(cmd: 66, seq: 1, payload: record.bytes),
+                       puffinCommandFrame(cmd: 66, seq: 1, payload: Array(record.bytes.prefix(20))),
+                       "explicit zero crescendo and the existing padded body have identical framing")
         XCTAssertEqual(Whoop5AlarmRecord(payload: record.bytes + [0, 0], slot: 6), record)
         XCTAssertNil(Whoop5AlarmRecord(payload: record.bytes + [1], slot: 6))
         XCTAssertNil(Whoop5AlarmRecord(payload: record.bytes, slot: 1))

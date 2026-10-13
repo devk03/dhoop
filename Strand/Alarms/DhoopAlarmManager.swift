@@ -97,7 +97,9 @@ final class DhoopAlarmManager: ObservableObject {
         definition.enabled = enabled
         if enabled && definition.rule.weekdays.isEmpty,
            (definition.rule.oneTimeEpoch ?? 0) <= Int(Date().timeIntervalSince1970) {
-            definition.rule.oneTimeEpoch = AlarmOccurrencePlanner.nextWallTime(minute: definition.rule.minute, after: Date())
+            var calendar = Calendar.current
+            if let id = definition.rule.timeZoneID, let zone = TimeZone(identifier: id) { calendar.timeZone = zone }
+            definition.rule.oneTimeEpoch = AlarmOccurrencePlanner.nextWallTime(minute: definition.rule.minute, after: Date(), calendar: calendar)
         }
         save(definition)
     }
@@ -117,6 +119,16 @@ final class DhoopAlarmManager: ObservableObject {
     func nextEpoch(_ alarm: DhoopAlarmDefinition, now: Date) -> Int? {
         alarm.enabled ? AlarmOccurrencePlanner.dates(rule: alarm.rule, after: now, limit: 1).first : nil
     }
+    func verifiedOccurrences(now: Date) -> [DhoopAlarmSlot] {
+        guard context.ready else { return [] }
+        let desired = Set(plan(now: now).map(\.epoch))
+        return currentSlots.filter { slot in
+            slot.pendingRecord == nil && !slot.removalRequested && desired.contains(Int(slot.expected.epoch))
+                && slot.expected == Whoop5AlarmRecord.standard(slot: slot.slot, epoch: slot.expected.epoch)
+                && readings.contains { reading in reading.slot == slot.slot && reading.record == slot.expected
+                    && reading.deviceID == context.deviceID && reading.connection == context.connection }
+        }
+    }
     func status(_ alarm: DhoopAlarmDefinition, now: Date) -> String {
         let associated = currentSlots.filter { $0.definitionIDs.contains(alarm.id) || $0.pendingDefinitionIDs.contains(alarm.id) }
         if !alarm.enabled || alarm.deleted {
@@ -126,8 +138,11 @@ final class DhoopAlarmManager: ObservableObject {
             return alarm.rule.oneTimeEpoch.map { $0 <= Int(now.timeIntervalSince1970) } == true
                 ? "Due · delivery unconfirmed" : "No future occurrence"
         }
-        if let slot = associated.first(where: { $0.expected.epoch == epoch && $0.verifiedAt != nil && $0.pendingRecord == nil && !$0.removalRequested }) {
-            return slot.detail.hasPrefix("Stored") ? "Stored on WHOOP" : slot.detail
+        if let slot = associated.first(where: { $0.expected.epoch == epoch && $0.pendingRecord == nil && !$0.removalRequested }) {
+            if let read = readings.first(where: { $0.slot == slot.slot && $0.deviceID == context.deviceID && $0.connection == context.connection }),
+               let record = read.record, record != slot.expected { return "Changed on WHOOP · Review slot" }
+            return verifiedOccurrences(now: now).contains(where: { $0.id == slot.id })
+                ? "Stored on WHOOP" : "Previously stored · Check WHOOP"
         }
         return associated.first(where: { $0.pendingRecord != nil })?.detail ?? "Pending sync"
     }
@@ -162,6 +177,7 @@ final class DhoopAlarmManager: ObservableObject {
                                           at: Date(), deviceID: captured.deviceID, connection: captured.connection)) }
             if link().connection != captured.connection { break }
         }
+        if same(captured) { context = link() }
         exportDiagnostics()
     }
     func connectionChanged() {
@@ -207,6 +223,7 @@ final class DhoopAlarmManager: ObservableObject {
             catch { self.error = error.localizedDescription }
             guard same(captured) else { self.error = Failure.stale.localizedDescription; return }
         }
+        context = link()
         let ids = currentSlots.map(\.id)
         for id in ids {
             guard same(captured), let index = state.slots.firstIndex(where: { $0.id == id }) else { return }
@@ -255,13 +272,14 @@ final class DhoopAlarmManager: ObservableObject {
             guard commit(next) else { throw Failure.storage }
             guard let payload = Whoop5AlarmRecord.clearPayload(slot: owned.slot) else { throw Failure.invalidRecord }
             let response = try await exchange(69, payload)
-            guard same(context), response.success else { throw Failure.rejected }
+            guard same(context), attributed(response, opcode: 69, context: context), response.success else { throw Failure.rejected }
             let cleared = try await read(owned.slot, context: context)
             guard let record = cleared.record, record.isClearedCandidate else { throw Failure.invalidRecord }
             var final = state; final.slots[index].expected = record
             final.slots[index].definitionIDs = []; final.slots[index].removalRequested = false
             final.slots[index].verifiedAt = nil; final.slots[index].detail = "Removal reported by WHOOP; physical cancellation unverified"
-            append("Targeted removal reported; no other slot changed.", slot: owned.slot, epoch: Int(current.epoch), to: &final)
+            append("Selected slot read back as zero after a targeted clear; physical cancellation remains unverified.",
+                slot: owned.slot, epoch: Int(current.epoch > 0 ? current.epoch : slot.expected.epoch), to: &final)
             guard commit(final) else { throw Failure.storage }
         } else if consumed {
             var next = state; next.slots[index].expected = current; next.slots[index].definitionIDs = []
@@ -274,7 +292,11 @@ final class DhoopAlarmManager: ObservableObject {
         // Recompute after every await: UI edits may have changed intent during verification.
         let allocated = Set(state.slots.filter { $0.deviceID == context.deviceID && !$0.removalRequested }
             .compactMap { $0.pendingRecord?.epoch ?? ($0.expected.epoch > Int64(Date().timeIntervalSince1970) ? $0.expected.epoch : nil) })
-        guard let candidate = plan().first(where: { !allocated.contains(Int64($0.epoch)) }),
+        let ordered = plan()
+        let covered = Set(state.slots.filter { $0.deviceID == context.deviceID && $0.expected.epoch > Int64(Date().timeIntervalSince1970) }
+            .flatMap(\.definitionIDs))
+        let primary = ordered.first { !allocated.contains(Int64($0.epoch)) && !$0.definitionIDs.allSatisfy(covered.contains) }
+        guard let candidate = primary ?? ordered.first(where: { !allocated.contains(Int64($0.epoch)) }),
               candidate.epoch > Int(Date().timeIntervalSince1970) + 10,
               let record = Whoop5AlarmRecord.standard(slot: owned.slot, epoch: Int64(candidate.epoch)) else { return }
         // Leave near-overlap unresolved; never silently retime a user's requested alarm.
@@ -294,7 +316,8 @@ final class DhoopAlarmManager: ObservableObject {
         guard same(context) else { throw Failure.stale }
         // Even a failure may have stored part of the record: always read it before judging.
         let afterWrite = try await read(owned.slot, context: context)
-        guard response.success, afterWrite.record == record else { throw Failure.invalidRecord }
+        guard attributed(response, opcode: 66, context: context), response.success,
+              afterWrite.record == record else { throw Failure.invalidRecord }
         var final = state; final.slots[index].expected = record
         final.slots[index].definitionIDs = currentPlan.definitionIDs
         final.slots[index].pendingRecord = nil; final.slots[index].pendingDefinitionIDs = []
@@ -318,6 +341,9 @@ final class DhoopAlarmManager: ObservableObject {
     }
     private func same(_ context: Link) -> Bool {
         let current = link(); return current.ready && current.deviceID == context.deviceID && current.connection == context.connection
+    }
+    private func attributed(_ response: Reply, opcode: Int, context: Link) -> Bool {
+        response.deviceID == context.deviceID && response.connection == context.connection && response.opcode == opcode
     }
     private func setDetail(_ id: String, _ detail: String) {
         var next = state

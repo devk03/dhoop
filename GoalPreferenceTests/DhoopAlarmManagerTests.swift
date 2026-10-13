@@ -109,4 +109,59 @@ final class DhoopAlarmManagerTests: XCTestCase {
         manager.save(alarm())
         XCTAssertEqual(try Data(contentsOf:url),original)
     }
+    func testClearRecoveryAfterRelaunchDoesNotResendAlarm() async throws {
+        let (_, link, url) = setup()
+        var value = alarm(); value.deleted = true; value.enabled = false
+        let expected = Whoop5AlarmRecord.standard(slot: 6, epoch: Int64(value.rule.oneTimeEpoch!))!
+        var owned = DhoopAlarmSlot(deviceID: link.deviceID, slot: 6, expected: expected)
+        owned.definitionIDs = [value.id]; owned.removalRequested = true
+        var saved = DhoopAlarmState(); saved.definitions = [value]; saved.slots = [owned]
+        try DhoopAlarmFile(url: url).save(saved)
+        let manager = DhoopAlarmManager(file: .init(url: url)); manager.link = { link }
+        var mutations: [(Int, [UInt8])] = []
+        manager.exchange = { opcode, payload in
+            if opcode != 67 { mutations.append((opcode, payload)) }
+            return .init(deviceID: link.deviceID, connection: link.connection, opcode: opcode, result: "SUCCESS(1)",
+                payload: [4, payload[1]] + Array(repeating: 0, count: 19))
+        }
+        manager.requestSync(); await settle(manager)
+        XCTAssertEqual(mutations.map(\.0), [69])
+        XCTAssertEqual(mutations.first?.1, [2, 6])
+        XCTAssertFalse(manager.state.slots[0].removalRequested)
+        XCTAssertEqual(manager.state.slots[0].expected.epoch, 0)
+    }
+    func testEveryDefinitionGetsCoverageBeforeFillingOneRepeatRule() async throws {
+        let (manager, link, _) = setup()
+        var records = Dictionary(uniqueKeysWithValues: (1...6).map {
+            ($0, Whoop5AlarmRecord(payload: [4, UInt8($0)] + Array(repeating: 0, count: 19), slot: $0)!)
+        })
+        manager.exchange = { opcode, payload in
+            let slot = Int(payload[1])
+            if opcode == 66 { records[slot] = Whoop5AlarmRecord(payload: payload, slot: slot)! }
+            return .init(deviceID: link.deviceID, connection: link.connection, opcode: opcode, result: "SUCCESS(1)", payload: records[slot]!.bytes)
+        }
+        var early = alarm(); early.rule = .init(minute: 7 * 60, weekdays: Set(1...7))
+        var late = alarm(); late.rule = .init(minute: 9 * 60, weekdays: Set(1...7))
+        manager.save(early); await settle(manager); manager.save(late); await settle(manager)
+        manager.approveSlot(5, expected: records[5]!); await settle(manager)
+        manager.approveSlot(6, expected: records[6]!); await settle(manager)
+        XCTAssertEqual(Set(manager.state.slots.flatMap(\.definitionIDs)), [early.id, late.id])
+        XCTAssertEqual(manager.verifiedOccurrences(now: Date()).count, 2)
+    }
+    func testUnattributedWriteACKDoesNotCertifyTheRequest() async throws {
+        let (manager, link, _) = setup()
+        var records = Dictionary(uniqueKeysWithValues: (1...6).map {
+            ($0, Whoop5AlarmRecord(payload: [4, UInt8($0)] + Array(repeating: 0, count: 19), slot: $0)!)
+        })
+        manager.exchange = { opcode, payload in
+            let slot = Int(payload[1])
+            if opcode == 66 { records[slot] = Whoop5AlarmRecord(payload: payload, slot: slot)! }
+            return .init(deviceID: opcode == 66 ? "another device" : link.deviceID, connection: link.connection,
+                opcode: opcode, result: "SUCCESS(1)", payload: records[slot]!.bytes)
+        }
+        let value = alarm(); manager.save(value); await settle(manager)
+        manager.approveSlot(6, expected: records[6]!); await settle(manager)
+        XCTAssertNotNil(manager.state.slots[0].pendingRecord)
+        XCTAssertNotEqual(manager.status(value, now: Date()), "Stored on WHOOP")
+    }
 }
