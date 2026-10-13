@@ -21,7 +21,7 @@ settings:
     # iOS build number (CFBundleVersion). GLOBAL so the iOS app AND its widget extension inherit the
     # SAME value — they must match or iOS warns "extension version must match parent app" (#416).
     # macOS sets its own CFBundleVersion on the Strand target and is unaffected by this.
-    CURRENT_PROJECT_VERSION: "462"
+    CURRENT_PROJECT_VERSION: "464"
     SWIFT_VERSION: "5.0"
     # Emit localizable strings so Xcode auto-extracts every LocalizedStringKey into the
     # String Catalog on build (the English (US) base entries).
@@ -99,6 +99,8 @@ targets:
       - StrandiOS/RemoteBuzz/RemoteBuzzContract.swift
       - StrandiOS/RemoteBuzz/RemoteBuzzEnrollment.swift
       - StrandiOS/RemoteBuzz/RemoteBuzzState.swift
+      - StrandiOS/RemoteBuzz/RemoteBuzzInboxPolicy.swift
+      - StrandiOS/RemoteBuzz/RemoteBuzzInboxResponse.swift
       - StrandiOS/RemoteBuzz/RemoteBuzzPairingLinks.swift
       - Strand/BLE/BuzzDeliveryCoordinator.swift
       - Strand/Alarms/DhoopAlarmState.swift
