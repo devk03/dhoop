@@ -56,3 +56,15 @@ through the phone UI, not a debug flag. Event and receipt counts were still zero
 authenticated permanent API request and wearer-confirmed vibration remained pending.
 The debug snapshot was checked for its public-only field whitelist, and the installed
 app retained the stable bundle identifier and development APNs entitlement.
+
+At 5:55 p.m. Pacific, the approved temporary Life client made a permanent MCP
+request while CoreDevice reported the iPhone locked. Event
+`31b6f8d2-f84b-42ef-8580-1ea219cf34bb` expired with `apnsStatus=uncertain`,
+no phone receipts, and the wearer reported no vibration. A second diagnostic
+request (`9988dfb2-51e6-4d33-afc3-7e98bb8834ab`) identified `apns_submit` /
+`transport_type_error`. The Cloudflare runtime rejected `redirect:error` before
+network submission; this was reproduced locally with native workerd. Life was
+changed to manual redirect handling while continuing to reject every non-200
+response. Native-runtime tests verified synthetic acceptance, no credential
+forwarding on redirects, and no resend on idempotent replay. Its production
+build and deployment succeeded. A real push after that fix remains pending.
