@@ -163,3 +163,16 @@ readinessId and needs_input/ready_for_review/finished reason. It resolves the ac
 phone and returns a compact submission result. The `thread-ready-buzz` skill is
 installed on this Mac; any thread can use it after explicit human authorization.
 Installing a skill does not activate a global monitor or change other hosts.
+
+
+## Three-buzz end-to-end test
+
+Life deployed `a2b1aa0` as Worker `110c8ca6-11b5-4927-af62-243fef882033`
+after the build-459 receiver upgrade. `tracker.notify_thread_ready` produced event
+`1dfc5efe-19c0-4df1-b049-b401ba8c8a3e` at 9:49:10 p.m. Pacific with loops=3.
+Apple accepted it; device-authenticated receipts recorded phone receipt and strap
+request at 9:49:11 p.m. The wearer explicitly confirmed three distinct buzzes with
+the phone unlocked. Repeating the same thread/readiness identity returned the same
+event instead of another push. This verifies the distinctive burst and permanent
+one-call MCP path on the physical WHOOP 5; locked three-pulse verification remains
+separate. No claim of suspended, force-quit or powered-off delivery is made.
