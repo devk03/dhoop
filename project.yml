@@ -101,6 +101,9 @@ targets:
       - StrandiOS/RemoteBuzz/RemoteBuzzState.swift
       - StrandiOS/RemoteBuzz/RemoteBuzzPairingLinks.swift
       - Strand/BLE/BuzzDeliveryCoordinator.swift
+      - Strand/Alarms/DhoopAlarmState.swift
+      - Strand/Alarms/DhoopAlarmManager.swift
+      - Strand/Alarms/DhoopSleepGoal.swift
       - Strand/Data/HapticPrefs.swift
       - StrandiOS/Meditation/MeditationSession.swift
       - StrandiOS/Running/RunningZoneSession.swift
@@ -119,6 +122,7 @@ targets:
     dependencies:
       - package: StrandAnalytics
       - package: StrandDesign
+      - package: WhoopProtocol
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

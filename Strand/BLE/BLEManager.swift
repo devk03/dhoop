@@ -1077,6 +1077,68 @@ public final class BLEManager: NSObject, ObservableObject {
     private var buzzConnectionID = UUID()
     private var alarmReadRequests: [Int: (slot: Int, connection: UUID, at: Date)] = [:]
     private var submittingCoordinatedBuzz = false
+    private var submittingManagedAlarm = false
+    private struct AlarmWaiter {
+        let opcode: Int
+        let deviceID: String
+        let connection: UUID
+        let continuation: CheckedContinuation<DhoopAlarmManager.Reply, Error>
+        let deadline: Task<Void, Never>
+    }
+    private var alarmWaiters: [Int: AlarmWaiter] = [:]
+    lazy var alarmManager: DhoopAlarmManager = {
+        let manager = DhoopAlarmManager()
+        manager.link = { [weak self] in
+            guard let self else { return .init() }
+            return .init(deviceID: self.deviceId, connection: self.buzzConnectionID,
+                ready: self.commandChannelReady && self.state.encryptedBond && self.connectHandshakeDone,
+                whoop5: self.selectedModel.deviceFamily == .whoop5, experimental: PuffinExperiment.isEnabled || self.alarmManager.state.slots.contains(where: { $0.deviceID == self.deviceId }),
+                firmware: self.state.strapFirmware ?? "Unknown firmware",
+                battery: self.state.activeIsWhoop ? self.state.batteryPct : nil)
+        }
+        manager.exchange = { [weak self] opcode, payload in
+            guard let self else { throw DhoopAlarmManager.Failure.unavailable }
+            return try await self.exchangeManagedAlarm(opcode: opcode, payload: payload)
+        }
+        return manager
+    }()
+
+    private func exchangeManagedAlarm(opcode: Int, payload: [UInt8]) async throws -> DhoopAlarmManager.Reply {
+        let context = alarmManager.link()
+        guard context.ready, context.whoop5, [66, 67, 69].contains(opcode),
+              let command = WhoopCommand(rawValue: UInt8(opcode)), payload.count >= 2,
+              (1...6).contains(Int(payload[1])) else { throw DhoopAlarmManager.Failure.unavailable }
+        if opcode != 67 {
+            guard context.experimental,
+                  alarmManager.state.slots.contains(where: { $0.deviceID == context.deviceID && $0.slot == Int(payload[1]) })
+            else { throw DhoopAlarmManager.Failure.unavailable }
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            submittingManagedAlarm = true
+            send(command, payload: payload, writeType: .withResponse)
+            submittingManagedAlarm = false
+            let sequence = Int(seq)
+            let deadline = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                guard !Task.isCancelled, let self, let waiter = self.alarmWaiters.removeValue(forKey: sequence) else { return }
+                waiter.continuation.resume(throwing: DhoopAlarmManager.Failure.timeout)
+            }
+            alarmWaiters[sequence] = .init(opcode: opcode, deviceID: context.deviceID,
+                connection: context.connection, continuation: continuation, deadline: deadline)
+        }
+    }
+    private func receiveManagedAlarm(sequence: Int, opcode: Int, result: String, payload: [UInt8]) {
+        guard let waiter = alarmWaiters[sequence], waiter.opcode == opcode,
+              waiter.connection == buzzConnectionID, waiter.deviceID == deviceId else { return }
+        if result == "PENDING(2)" { return }
+        alarmWaiters.removeValue(forKey: sequence); waiter.deadline.cancel()
+        waiter.continuation.resume(returning: .init(deviceID: deviceId, connection: buzzConnectionID,
+            opcode: opcode, result: result, payload: payload))
+    }
+    private func invalidateManagedAlarmSequence(_ sequence: Int) {
+        guard let waiter = alarmWaiters.removeValue(forKey: sequence) else { return }
+        waiter.deadline.cancel(); waiter.continuation.resume(throwing: DhoopAlarmManager.Failure.stale)
+    }
     lazy var buzzDelivery: BuzzDeliveryCoordinator = {
         let coordinator = BuzzDeliveryCoordinator()
         coordinator.link = { [weak self] in
@@ -1095,6 +1157,7 @@ public final class BLEManager: NSObject, ObservableObject {
             }
             return .init(sequence: Int(sentSequence), opcode: self.selectedModel.deviceFamily == .whoop5 ? 19 : Int(WhoopCommand.runHapticsPattern.rawValue))
         }
+        coordinator.motorBlocked = { [weak self] now in self?.alarmManager.blocksMotor(now: now) ?? false }
         coordinator.log = { [weak self] message in self?.log("Buzz: " + message) }
         return coordinator
     }()
@@ -1406,6 +1469,7 @@ public final class BLEManager: NSObject, ObservableObject {
         }
         router.onBuzzResponse = { [weak self] sequence, opcode, result, payload in
             guard let self else { return }
+            self.receiveManagedAlarm(sequence: sequence, opcode: opcode, result: result, payload: payload)
             self.buzzDelivery.acknowledge(sequence: sequence, opcode: opcode, result: result, payload: payload,
                 deviceId: self.deviceId, connection: self.buzzConnectionID)
         }
@@ -1619,6 +1683,7 @@ public final class BLEManager: NSObject, ObservableObject {
         }
         router.onBuzzResponse = { [weak self] sequence, opcode, result, payload in
             guard let self else { return }
+            self.receiveManagedAlarm(sequence: sequence, opcode: opcode, result: result, payload: payload)
             self.buzzDelivery.acknowledge(sequence: sequence, opcode: opcode, result: result, payload: payload,
                 deviceId: self.deviceId, connection: self.buzzConnectionID)
         }
@@ -2295,6 +2360,11 @@ public final class BLEManager: NSObject, ObservableObject {
     ///     sites are unaffected. Pass `.withResponse` for acked commands (e.g. historicalDataResult).
     public func send(_ command: WhoopCommand, payload: [UInt8] = [0x00],
                      writeType: CBCharacteristicWriteType = .withoutResponse) {
+        if selectedModel.deviceFamily == .whoop5,
+           [.setAlarmTime, .disableAlarm, .runAlarm].contains(command), !submittingManagedAlarm {
+            log("Alarm: unmanaged WHOOP 5 write blocked; existing slots preserved")
+            return
+        }
         if command == .runHapticsPattern && !submittingCoordinatedBuzz {
             buzzDelivery.schedule(owner: "ambient", deviceId: deviceId, loops: payload.count > 1 ? payload[1] : 1)
             return
@@ -2446,6 +2516,7 @@ public final class BLEManager: NSObject, ObservableObject {
             let puffinPayload: [UInt8] = isHaptics
                 ? MaverickHaptics.notificationBuzz(loops: buzzLoops) : payload
             seq = seq &+ 1
+            invalidateManagedAlarmSequence(Int(seq))
             buzzDelivery.willUseSequence(Int(seq), connection: buzzConnectionID)
             let frame = puffinCommandFrame(cmd: puffinCmd, seq: seq, payload: puffinPayload)
             p.writeValue(Data(frame), for: ch, type: writeType)
@@ -2461,7 +2532,8 @@ public final class BLEManager: NSObject, ObservableObject {
             return
         }
         seq = seq &+ 1
-        buzzDelivery.willUseSequence(Int(seq), connection: buzzConnectionID)
+        invalidateManagedAlarmSequence(Int(seq))
+            buzzDelivery.willUseSequence(Int(seq), connection: buzzConnectionID)
         let frame = command.frame(seq: seq, payload: payload)
         p.writeValue(Data(frame), for: ch, type: writeType)
         log("→ \(command.label) payload=\(hex(payload))")
@@ -5995,6 +6067,8 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
                                error: Error?) {
         buzzConnectionID = UUID()
         buzzDelivery.connectionLost()
+        for sequence in Array(alarmWaiters.keys) { invalidateManagedAlarmSequence(sequence) }
+        alarmManager.connectionChanged()
         Task { @MainActor in await collector?.flush() }
         // Reboot trail: if a user reboot is in flight, this drop is the strap acting on it. Log how long
         // the link stayed up (a real reboot drops within ~1-2 s) and cancel the no-disconnect watchdog. The

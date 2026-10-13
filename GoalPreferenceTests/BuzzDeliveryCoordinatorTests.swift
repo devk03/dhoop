@@ -24,6 +24,18 @@ final class BuzzDeliveryCoordinatorTests: XCTestCase {
         delivery.service(now: now.addingTimeInterval(1))
         XCTAssertEqual(writes, 1)
     }
+    func testStoredWakeWindowSuppressesCompetingMotorRequests() {
+        let delivery=make();connected(delivery)
+        let now=Date();var writes=0
+        delivery.motorBlocked={ _ in true }
+        delivery.transmit={ _ in writes += 1;return .init(sequence:1,opcode:19) }
+        delivery.schedule(owner:"remote-life",id:"wake-overlap",deviceId:"strap",due:now,now:now)
+        XCTAssertEqual(writes,0)
+        XCTAssertEqual(delivery.cues.last?.status,.suppressed)
+        delivery.motorBlocked={ _ in false }
+        delivery.service(now:now.addingTimeInterval(1))
+        XCTAssertEqual(writes,0,"suppressed ambient cues never replay after the wake")
+    }
     func testDisconnectCancelsFutureCueAndSequenceReuseCannotMisattributeAck() {
         let delivery = make(); let connection = UUID(); connected(delivery, connection: connection)
         let now = Date(); var writes = 0

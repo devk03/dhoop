@@ -311,7 +311,9 @@ final class AppModel: ObservableObject {
         // Re-arm the next day's firmware alarm the moment the strap reports it fired (if/when the
         // firmware pushes STRAP_DRIVEN_ALARM_EXECUTED). Gated on enabled inside applySmartAlarm.
         live.onSmartAlarmFired = { [weak self] in
-            guard let self, self.behavior.smartAlarmEnabled else { return }
+            guard let self else { return }
+            if self.whoop5Detected { self.ble.alarmManager.executionReported(); return }
+            guard self.behavior.smartAlarmEnabled else { return }
             // PR #577 (iOS): mirror the strap's wake buzz to a local notification so a phone-in-pocket
             // user still gets woken; no-op on macOS / when wrist alerts are off.
             AppModel.postSmartAlarm()
@@ -387,7 +389,9 @@ final class AppModel: ObservableObject {
         // `disarmPending` latches exactly that dropped write, so this stays a no-op for the many users who
         // never armed one (re-running unconditionally would put a DISABLE_ALARM on every connect).
         live.$connectSettled.dropFirst().sink { [weak self] _ in
-            guard let self, self.behavior.smartAlarmEnabled || self.ble.disarmPending else { return }
+            guard let self else { return }
+            if self.whoop5Detected { self.ble.alarmManager.connectionChanged(); self.applySmartAlarm(); return }
+            guard self.behavior.smartAlarmEnabled || self.ble.disarmPending else { return }
             self.applySmartAlarm()
         }.store(in: &hrCancellables)
         // The firmware alarm is a single absolute instant with no recurrence, and was re-armed ONLY on
@@ -1686,6 +1690,12 @@ final class AppModel: ObservableObject {
     /// only the evening reminder. Mirrors Android's `reconcileStrapAlarm` which passes `dayOverrides`
     /// to `nextSmartAlarmEpochSec`, and `SmartAlarmScheduler.arm` which reads `targetOverrides`.
     func applySmartAlarm() {
+        if whoop5Detected {
+            ble.alarmManager.importLegacy(enabled: behavior.smartAlarmEnabled, minute: behavior.smartAlarmMinutes,
+                weekdays: behavior.smartAlarmWeekdays, overrides: WindDownNudge.perDayWakeOverrides)
+            ble.alarmManager.requestSync()
+            return
+        }
         let overrides = WindDownNudge.perDayWakeOverrides
         guard behavior.smartAlarmEnabled else {
             ble.disableStrapAlarm()
@@ -1760,6 +1770,7 @@ final class AppModel: ObservableObject {
     /// `applySmartAlarm` self-gates on `smartAlarmEnabled`, so this is a no-op when the alarm is off.
     private func scheduleDailySmartAlarmRearm() {
         smartAlarmRearmTimer?.invalidate()
+        guard !whoop5Detected else { return }
         let cal = Calendar.current
         guard let firstFire = cal.nextDate(after: Date(),
                                            matching: DateComponents(hour: 0, minute: 1, second: 0),

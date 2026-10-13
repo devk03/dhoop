@@ -36,6 +36,7 @@ final class BuzzDeliveryCoordinator: ObservableObject {
     var link: () -> Link = { Link(deviceId: "", connection: UUID(), ready: false) }
     var transmit: (Cue) -> Transmission? = { _ in nil }
     var gateEnabled: (String) -> Bool = { HapticPrefs.enabled($0) }
+    var motorBlocked: (Date) -> Bool = { _ in false }
     var log: (String) -> Void = { _ in }
     private let file: URL
     private var timer: Task<Void, Never>?
@@ -133,6 +134,8 @@ final class BuzzDeliveryCoordinator: ObservableObject {
                 next[i].status = .missed; next[i].detail = "Heart-rate sample stale; no buzz requested"
             } else if let gate = cue.gate, !gateEnabled(gate) {
                 next[i].status = .cancelled; next[i].detail = "Alert preference is off"
+            } else if motorBlocked(now) {
+                next[i].status = .suppressed; next[i].detail = "A scheduled wake alarm owns this vibration window"
             } else if let owner = exclusiveOwner, cue.owner != owner && cue.owner != "manual-test" {
                 next[i].status = .suppressed; next[i].detail = "Another exercise owns WHOOP cues"
             } else if !context.ready || context.deviceId != cue.deviceId {

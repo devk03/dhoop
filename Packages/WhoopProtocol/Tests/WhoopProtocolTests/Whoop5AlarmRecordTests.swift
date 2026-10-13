@@ -14,6 +14,7 @@ final class Whoop5AlarmRecordTests: XCTestCase {
         XCTAssertNil(Whoop5AlarmRecord.clearPayload(slot: 255))
     }
     func testAmbiguousZerosAndMalformedData() throws {
+        XCTAssertThrowsError(try JSONDecoder().decode(Whoop5AlarmRecord.self, from: Data("{\"bytes\":[]}".utf8)))
         let zero = try XCTUnwrap(Whoop5AlarmRecord(payload: [4, 1] + Array(repeating: 0, count: 19), slot: 1))
         XCTAssertTrue(zero.isClearedCandidate)
         XCTAssertTrue(zero.isZeroTime)

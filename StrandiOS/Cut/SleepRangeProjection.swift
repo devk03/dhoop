@@ -45,7 +45,7 @@ enum SleepRangeProjection {
 
 /// Personal duration target, independent of sleep staging or physiological quality scores.
 struct SleepDurationGoal: Equatable {
-    static let minutes: Double = 495
+    static let minutes: Double = Double(DhoopSleepGoal.minutes)
     let recordedMinutes: Double?
     init(recordedMinutes: Double?) {
         self.recordedMinutes = recordedMinutes.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
