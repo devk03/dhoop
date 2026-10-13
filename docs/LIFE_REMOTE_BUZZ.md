@@ -67,4 +67,15 @@ network submission; this was reproduced locally with native workerd. Life was
 changed to manual redirect handling while continuing to reject every non-200
 response. Native-runtime tests verified synthetic acceptance, no credential
 forwarding on redirects, and no resend on idempotent replay. Its production
-build and deployment succeeded. A real push after that fix remains pending.
+build and deployment succeeded.
+
+The repaired permanent MCP request at 6:07 p.m. Pacific, event
+`df987f94-5d7d-4275-aeac-9b98cdd8b316`, was accepted by Apple. It expired with
+no device-reported receipts. CoreDevice reported locked at 6:05:17 p.m. but
+unlocked at 6:06:42 p.m., before submission; the lock condition was not maintained
+for this test. Wearer confirmation remained pending. The temporary verification
+token was revoked and an authenticated read with that token returned HTTP 401;
+the permanent phone enrollment and existing agent tokens were preserved. Three
+test requests consumed the normal hourly allowance, with no automatic resend or
+rate-limit bypass. This proves the repaired MCP-to-APNs path, not phone delivery,
+WHOOP vibration, force-quit support or dependable wake-up behavior.
