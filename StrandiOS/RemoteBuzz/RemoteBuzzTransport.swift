@@ -7,13 +7,13 @@ final class RemoteBuzzTransport: NSObject, URLSessionTaskDelegate, @unchecked Se
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 
-    func send(_ bytes: Data, enrollment: RemoteBuzzEnrollment) async throws -> [String: Any] {
+    func send(_ bytes: Data, enrollment: RemoteBuzzEnrollment, timeout: TimeInterval = 15) async throws -> [String: Any] {
         guard enrollment.endpoint == RemoteBuzzV2.endpoint,
               RemoteBuzzV2.bearer(enrollment.deviceBearer), bytes.count <= 8192,
               let url = URL(string: enrollment.endpoint) else { throw RemoteBuzzEnrollmentError.invalid }
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil; config.httpShouldSetCookies = false; config.urlCache = nil
-        config.timeoutIntervalForRequest = 10; config.timeoutIntervalForResource = 15
+        config.timeoutIntervalForRequest = min(10, timeout); config.timeoutIntervalForResource = timeout
         let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url)

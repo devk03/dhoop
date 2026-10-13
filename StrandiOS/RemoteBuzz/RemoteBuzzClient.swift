@@ -3,7 +3,7 @@ import Foundation
 import UIKit
 import Combine
 
-/// Opt-in permanent Life receiver. No health upload, firmware alarm write or polling keepalive.
+/// Opt-in Life receiver with bounded foreground and actual Bluetooth-wake inbox recovery.
 @MainActor
 final class RemoteBuzzClient: ObservableObject {
     static let shared = RemoteBuzzClient()
@@ -16,10 +16,22 @@ final class RemoteBuzzClient: ObservableObject {
     @Published private(set) var registrationStatus = "Not registered with Life" {
         didSet { writeDebugSnapshotIfRequested() }
     }
+    @Published private(set) var inboxStatus = "Missed requests checked when Dhoop has execution time" {
+        didSet { writeDebugSnapshotIfRequested() }
+    }
+    private var inboxChecks = 0
+    private var lastInboxCheckedAt: Int?
+    private var lastInboxTrigger: String?
     private weak var model: AppModel?
     private var enrollment: RemoteBuzzEnrollment?
     private var loaded = false
     private var subscription: AnyCancellable?
+    private var wakeSubscriptions = Set<AnyCancellable>()
+    private var inboxPolicy = RemoteBuzzInboxPolicy()
+    private var inboxTask: Task<Void, Never>?
+    private var foregroundTask: Task<Void, Never>?
+    private var foregroundToken: UUID?
+    private var foreground = false
     private var retryTask: Task<Void, Never>?
     private var flushing = false
     private let transport = RemoteBuzzTransport()
@@ -60,8 +72,16 @@ final class RemoteBuzzClient: ObservableObject {
             subscription = model.ble.buzzDelivery.$cues.sink { [weak self] cues in
                 Task { @MainActor in self?.collectDeliveryEvidence(cues) }
             }
+            wakeSubscriptions.removeAll()
+            model.live.$connectSettled.dropFirst().sink { [weak self] _ in
+                self?.requestInboxFetch(.reconnect)
+            }.store(in: &wakeSubscriptions)
+            model.live.$lastFrameType.dropFirst().sink { [weak self] value in
+                if value != nil { self?.requestInboxFetch(.bluetooth) }
+            }.store(in: &wakeSubscriptions)
             if paired { UIApplication.shared.registerForRemoteNotifications() }
             scheduleFlush()
+            setForeground(UIApplication.shared.applicationState == .active)
             #if DEBUG
             // Explicit developer action only. This creates a public invitation, never a grant.
             if CommandLine.arguments.contains("--life-buzz-prepare") { preparePairing() }
@@ -162,10 +182,14 @@ final class RemoteBuzzClient: ObservableObject {
             guard loaded, enrollment != nil, !state.revoked else { throw RemoteBuzzEnrollmentError.invalid }
             var next = state; next.enabled = enabled
             try persist(next)
-            if !enabled { model?.ble.buzzDelivery.cancel(owner: "remote-life") }
+            if !enabled {
+                model?.ble.buzzDelivery.cancel(owner: "remote-life")
+                inboxTask?.cancel(); stopForegroundChecks()
+            }
             status = enabled ? "Phone permits remote alerts. Life must also allow sends." : "Remote alerts disabled on this phone"
             try queueUpdate(op: enabled ? "register" : "disable")
             scheduleFlush()
+            if enabled { startForegroundChecks() }
         } catch {
             if enabled {
                 var next = state; next.enabled = false
@@ -181,6 +205,7 @@ final class RemoteBuzzClient: ObservableObject {
             var next = state; next.enabled = false; next.revoked = true
             try persist(next)
             model?.ble.buzzDelivery.cancel(owner: "remote-life")
+            inboxTask?.cancel(); stopForegroundChecks()
             status = "Revoked on phone; updating Life"
             try queueUpdate(op: "revoke")
             scheduleFlush()
@@ -208,6 +233,10 @@ final class RemoteBuzzClient: ObservableObject {
             let installationId: String?
             let status: String
             let registrationStatus: String
+            let inboxStatus: String
+            let inboxChecks: Int
+            let lastInboxCheckedAt: Int?
+            let lastInboxTrigger: String?
             let deviceRevision: Int
             let eventCount: Int
             let receiptCount: Int
@@ -218,7 +247,9 @@ final class RemoteBuzzClient: ObservableObject {
             let snapshot = Snapshot(version: 1, capturedAt: Int(Date().timeIntervalSince1970), paired: paired,
                 enabled: state.enabled, revoked: state.revoked, enrollmentId: enrollment?.enrollmentId,
                 installationId: enrollment?.installationId ?? invitation?.installationId,
-                status: status, registrationStatus: registrationStatus, deviceRevision: state.deviceRevision,
+                status: status, registrationStatus: registrationStatus,
+                inboxStatus: inboxStatus, inboxChecks: inboxChecks, lastInboxCheckedAt: lastInboxCheckedAt,
+                lastInboxTrigger: lastInboxTrigger, deviceRevision: state.deviceRevision,
                 eventCount: state.events.count, receiptCount: state.receipts.count, invitation: invitation)
             var file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("dhoop-life-buzz-diagnostics.json")
@@ -317,6 +348,71 @@ final class RemoteBuzzClient: ObservableObject {
     }
 
     func retryPending() { scheduleFlush() }
+    func checkInbox() { requestInboxFetch(.manual) }
+    func setForeground(_ value: Bool) {
+        foreground = value
+        if value { startForegroundChecks() } else { stopForegroundChecks() }
+    }
+    private func stopForegroundChecks() {
+        foregroundTask?.cancel(); foregroundTask = nil; foregroundToken = nil
+    }
+    private func startForegroundChecks() {
+        guard foreground, loaded, state.enabled, !state.revoked, foregroundTask == nil else { return }
+        let token = UUID(); foregroundToken = token
+        requestInboxFetch(.foreground)
+        foregroundTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let deadline = Date().addingTimeInterval(600)
+            defer { if self.foregroundToken == token { self.foregroundTask = nil; self.foregroundToken = nil } }
+            // Ten minutes maximum per foreground window, cancelled on leaving the foreground.
+            for _ in 0..<40 {
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
+                guard !Task.isCancelled, self.foreground, Date() < deadline else { return }
+                self.requestInboxFetch(.foregroundTimer)
+            }
+        }
+    }
+    private func requestInboxFetch(_ trigger: RemoteBuzzInboxPolicy.Trigger) {
+        guard loaded, state.enabled, !state.revoked, let enrollment, let model, inboxTask == nil,
+              model.ble.buzzDelivery.link().ready, model.ble.buzzDelivery.exclusiveOwner == nil,
+              inboxPolicy.begin(trigger, now: Date()) else { return }
+        inboxTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.inboxTask = nil }
+            do {
+                let now = Int(Date().timeIntervalSince1970)
+                let seen = Array(self.state.events.filter { $0.enrollmentId == enrollment.enrollmentId && $0.expiresAt > now }
+                    .suffix(128).map(\.id))
+                let body: [String: Any] = ["version": 2, "op": "inbox", "enrollmentId": enrollment.enrollmentId,
+                    "generation": enrollment.generation, "installationId": enrollment.installationId, "seenEventIds": seen]
+                let reply = try await self.transport.send(JSONSerialization.data(withJSONObject: body), enrollment: enrollment,
+                    timeout: UIApplication.shared.applicationState == .active ? 15 : 7)
+                try Task.checkCancellation()
+                let batch = try JSONDecoder().decode(RemoteBuzzInboxResponse.self,
+                    from: JSONSerialization.data(withJSONObject: reply))
+                guard self.state.enabled, !self.state.revoked, self.enrollment?.enrollmentId == enrollment.enrollmentId,
+                      batch.valid(for: enrollment)
+                else { throw RemoteBuzzEnrollmentError.invalid }
+                var received = 0
+                for command in batch.commands {
+                    try Task.checkCancellation()
+                    // The identical signed-command funnel persists dedup before any BLE dispatch.
+                    guard let body = try JSONSerialization.jsonObject(with: JSONEncoder().encode(command)) as? [String: Any]
+                    else { throw RemoteBuzzEnrollmentError.invalid }
+                    if self.receive(body) == .newData { received += 1 }
+                }
+                self.inboxPolicy.finish(success: true, commandCount: batch.commands.count)
+                self.inboxChecks += 1; self.lastInboxCheckedAt = Int(Date().timeIntervalSince1970)
+                self.lastInboxTrigger = trigger.rawValue
+                self.inboxStatus = "Inbox checked \(Date().formatted(date: .omitted, time: .standard)) · \(received) new requests accepted locally"
+            } catch is CancellationError {
+                self.inboxStatus = "Inbox check cancelled"
+            } catch {
+                self.inboxPolicy.finish(success: false, commandCount: 0)
+                self.inboxStatus = "Inbox check unavailable; adaptive retry at the next execution opportunity"
+            }
+        }
+    }
     private func scheduleFlush() {
         guard loaded, enrollment != nil, retryTask == nil else { return }
         // One bounded outbox pass, triggered by an actual event. No background keepalive or monitor.
@@ -354,6 +450,7 @@ final class RemoteBuzzClient: ObservableObject {
                     if state.deviceRevision == pending.revision {
                         try SleepWebhookKeychain.save(Data(), account: updateAccount)
                         registrationStatus = outcome == "stale" ? "Life has a newer device update" : "Life received device update"
+                        if pending.op == "register" && state.enabled { requestInboxFetch(.reconnect) }
                         if pending.op == "revoke" && ["revoked", "duplicate"].contains(outcome) {
                             try SleepWebhookKeychain.save(Data(), account: credentialsAccount)
                             self.enrollment = nil; paired = false

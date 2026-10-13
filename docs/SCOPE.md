@@ -73,10 +73,14 @@ open an issue that names the constraint it touches and how it would be satisfied
 first. A "WHOOP has it" argument, on its own, is not a reason: NOOP is a clean-room, offline, anonymous
 tool, not a WHOOP clone.
 
-## Personal Dhoop fork exception — bounded remote buzz test
+## Personal Dhoop fork exception — owner-authorized remote buzzes
 
-The owner explicitly authorized a Life API/APNs test on October 8, 2026. This fork may accept
-signed, expiring, installation-bound one-pulse requests only after explicit local enablement,
-for at most two hours. No arbitrary commands, configuration changes, health-data writes, alarm
-writes, polling, telemetry, or NOOP-operated server are permitted by this exception. The user-owned
-API lives in the separate Life repository. This does not change upstream NOOP's scope.
+The owner authorized a bounded Life API/APNs test on October 8, 2026, subsequently approved
+permanent opt-in enrollment and three-pulse agent cues, and explicitly requested intelligent
+inbox polling on October 13. This personal Apple fork may accept signed, expiring,
+installation-bound cues after explicit local enablement. Recovery checks use existing execution
+opportunities and a foreground window limited to ten minutes; no background keepalive or
+unbounded monitoring job is permitted. The original test receiver remains limited to two hours.
+No arbitrary commands, configuration changes, health-data writes, alarm writes, telemetry,
+or NOOP-operated server are permitted by this remote-buzz exception. The user-owned API lives
+in the separate Life repository. This does not change upstream NOOP's scope.

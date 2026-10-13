@@ -23,6 +23,7 @@ struct RemoteBuzzSettingsView: View {
                             .disabled(!client.paired || client.state.revoked)
                         Text(client.status).font(StrandFont.subhead)
                         Text(client.registrationStatus).font(StrandFont.caption)
+                        Text(client.inboxStatus).font(StrandFont.caption)
                         Text("Life must also permit sends. One short WHOOP cue per request, with no private-API hourly limit or cooldown. No health data is sent by this feature.")
                         Text("When locked: Apple may let Dhoop run briefly to send the buzz. Delivery is best effort; a lost connection or delayed push can prevent it. Force-quitting stops normal background delivery.")
                     }.foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
@@ -63,7 +64,9 @@ struct RemoteBuzzSettingsView: View {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Button("Retry pending Life updates") { client.retryPending() }
                             .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        Text("Receipt attempts stop after ten tries or one hour. No polling keepalive is used.")
+                        Button("Check for waiting buzzes") { client.checkInbox() }
+                            .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        Text("Missed requests are checked on opening, reconnecting and real Bluetooth wakes, with a ten-minute adaptive foreground window. No background keepalive is used. Expired requests never buzz late.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         BuzzDeliveryStatusView(ble: app.ble)
                         RemoteBuzzTestView()

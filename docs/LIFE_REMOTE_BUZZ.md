@@ -1,5 +1,35 @@
 # Permanent Life MCP → Dhoop → WHOOP cues
 
+## Missed-push inbox recovery (October 13, 2026)
+
+Build 464 includes an authenticated fallback fetch through the existing `/api/dhoop/buzz/device`
+endpoint. APNs remains the primary trigger. The owner authorized this polling addition explicitly;
+no extra credential, server, Cloudflare Access policy, or database migration is introduced.
+
+- Opening Dhoop, a settled reconnect, and actual received Bluetooth frames can trigger one inbox
+  check while the existing connection is ready. The feature does not enable an extra sensor stream.
+- A foreground polling window lasts at most ten minutes and is cancelled on leaving the foreground.
+  Checks back off from 15 to 30 to 60 seconds when quiet; failures back off to five minutes. A manual
+  check/reconnect can request a fresh attempt, with a five-second coalescing guard.
+- Background fetch attempts arise only from existing execution opportunities. They use a seven-second
+  network budget. No audio keepalive, perpetual background timer, extra recurring BGTask, or overnight
+  monitor is added. iOS can suspend the app before work finishes; Bluetooth background mode does not
+  guarantee continuous execution. See [Apple background strategies](https://developer.apple.com/documentation/backgroundtasks/choosing-background-strategies-for-your-app).
+- Life keeps at most 256 unexpired recovery references and returns at most 16 commands per fetch.
+  This bounds fallback work; it does not limit private API sends or change APNs submission. A receipt
+  removes the corresponding reference. Existing events predating this addition are not backfilled.
+- Fetch responses must match the installation/enrollment and every command must pass the existing
+  HMAC validation before dispatch. Push and fetch use the same persisted deduplication funnel, so
+  the same event cannot cause another vibration after a duplicate delivery or relaunch.
+- The existing 60-second expiry remains enforced. Expired, suppressed, disabled, and disconnected
+  commands are not replayed as late buzzes. This is recovery of missed requests, not a delayed inbox
+  that vibrates hours later.
+
+WHOOP alerts Settings shows the latest inbox check and offers **Check for waiting buzzes**.
+No health data is fetched or uploaded. Locked-phone delivery still depends on genuine iOS runtime;
+force-quit or a powered-down phone prevents this fallback from continuously checking. A successful
+fetch, command acknowledgment, and wearer-confirmed vibration remain separate evidence.
+
 The permanent integration uses `tracker.read_buzz` and `tracker.send_buzz` on
 `https://track.kunjadia.dev/mcp`. `/api/dhoop/buzz` is the retired-from-normal-use
 v1 experiment described in REMOTE_BUZZ_TEST.md; its two-hour credentials are not
