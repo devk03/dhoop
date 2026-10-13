@@ -114,3 +114,6 @@ had ended at 6:08:01 p.m.; no late WHOOP buzz was dispatched. This demonstrates
 why background pushes remain best effort even when private application quotas
 are absent. API authorization and expired-command rejection are separate from
 Apple's delivery timing.
+
+The session's temporary verification MCP token was revoked and then rejected
+with HTTP 401. Existing clients and the enabled phone enrollment were preserved.
