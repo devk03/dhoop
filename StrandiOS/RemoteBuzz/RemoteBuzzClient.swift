@@ -266,7 +266,7 @@ final class RemoteBuzzClient: ObservableObject {
                 exerciseOwnsBuzz: model.ble.buzzDelivery.exclusiveOwner != nil)
             try persist(next)
             if dispatch {
-                model.requestBuzz(owner: "remote-life", id: "life|" + command.eventId, loops: 1,
+                model.requestBuzz(owner: "remote-life", id: "life|" + command.eventId, loops: UInt8(command.loops),
                     due: Date(), grace: min(2, Double(command.expiresAt - now)))
             }
             scheduleFlush()

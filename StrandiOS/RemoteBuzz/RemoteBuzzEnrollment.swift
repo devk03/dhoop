@@ -133,7 +133,8 @@ struct RemoteBuzzCommandV2: Codable, Equatable {
         Data("dhoop-buzz:v2|\(eventId)|\(installationId)|\(enrollmentId)|\(generation)|\(topic)|\(issuedAt)|\(expiresAt)|\(loops)".utf8)
     }
     func authenticated(by enrollment: RemoteBuzzEnrollment) -> Bool {
-        guard version == 2, loops == 1, RemoteBuzzV2.uuid(eventId),
+        // Keep previously signed single-buzz events valid during the three-buzz rollout.
+        guard version == 2, [1, 3].contains(loops), RemoteBuzzV2.uuid(eventId),
               installationId == enrollment.installationId, enrollmentId == enrollment.enrollmentId,
               generation == enrollment.generation, topic == enrollment.topic,
               issuedAt >= 0, expiresAt > issuedAt, expiresAt - issuedAt == 60,

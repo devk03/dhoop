@@ -141,6 +141,25 @@ revoked after verification, preserving existing clients and enrollment.
 The requested screen-off/locked-phone test at 9:35:33 p.m. Pacific, event
 `62ee53b6-73b3-4f14-a640-f9158ecabeb7`, was accepted by Apple. The phone
 reported receipt in the same recorded second, a strap request at 9:35:34 p.m.,
-and a strap response at 9:35:35 p.m. Wearer confirmation and actual lock state
-remain pending; lock duration was not independently measured. The temporary
+and a strap response at 9:35:35 p.m. The wearer subsequently confirmed in chat that this screen-off test worked.
+Lock duration was not independently measured, and a device confirmation receipt
+was not checked in this follow-up. The temporary
 test token was revoked. No wake alarm or firmware scheduling was changed.
+
+
+## Distinctive agent burst
+
+Build 459 accepts authenticated v2 commands for one or three buzzes and forwards
+the signed count to the shared delivery coordinator. Existing historical single-buzz
+commands stay valid; the retired v1 prototype is unchanged. New Life events use
+three total pulses in one existing opcode-19 command, encoded as two repeats.
+No wake alarm, workout cue, firmware or health-data schema is changed.
+Eight targeted receiver authentication/state tests and the signed iOS build passed;
+build 459 was installed and launched on the physical phone with its existing
+bundle identifier. Three-pulse physical confirmation remains pending.
+
+The Life `tracker.notify_thread_ready` tool takes the actual thread UUID, stable
+readinessId and needs_input/ready_for_review/finished reason. It resolves the active
+phone and returns a compact submission result. The `thread-ready-buzz` skill is
+installed on this Mac; any thread can use it after explicit human authorization.
+Installing a skill does not activate a global monitor or change other hosts.

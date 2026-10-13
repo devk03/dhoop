@@ -36,11 +36,12 @@ final class RemoteBuzzEnrollmentTests: XCTestCase {
     }
     func testNodeHMACOracleExpiryAndGeneration() throws {
         let box = try envelope(), enrollment = try box.open(pairing: pairing(box), now: now)
-        func command(generation: Int = 1, loops: Int = 1) -> RemoteBuzzCommandV2 {
+        func command(generation: Int = 1, loops: Int = 1,
+                     signature: String = "tY0GcsvylVf7QVpIw7dhLMezAc3FMgIlHMcrAw3PN2w=") -> RemoteBuzzCommandV2 {
             RemoteBuzzCommandV2(version: 2, eventId: "44444444-4444-4444-8444-444444444444",
                 installationId: enrollment.installationId, enrollmentId: enrollment.enrollmentId,
                 generation: generation, topic: enrollment.topic, issuedAt: 1791500000, expiresAt: 1791500060,
-                loops: loops, signature: "tY0GcsvylVf7QVpIw7dhLMezAc3FMgIlHMcrAw3PN2w=")
+                loops: loops, signature: signature)
         }
         XCTAssertTrue(command().authenticated(by: enrollment))
         XCTAssertTrue(command().fresh(now: now))
@@ -48,5 +49,9 @@ final class RemoteBuzzEnrollmentTests: XCTestCase {
         XCTAssertFalse(command().fresh(now: Date(timeIntervalSince1970: 1791499994)))
         XCTAssertFalse(command(generation: 2).authenticated(by: enrollment))
         XCTAssertFalse(command(loops: 2).authenticated(by: enrollment))
+        // Independent Node HMAC oracle: loop count is signed, not an unsigned delivery hint.
+        XCTAssertTrue(command(loops: 3, signature: "V/rkKcjpo16m5gc/y5MYJFfWM54ny9MqGjghlajjmSw=")
+            .authenticated(by: enrollment))
+        XCTAssertFalse(command(loops: 3).authenticated(by: enrollment))
     }
 }
