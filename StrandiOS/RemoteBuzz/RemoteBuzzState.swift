@@ -89,7 +89,7 @@ struct RemoteBuzzState: Codable, Equatable {
             throw RemoteBuzzEnrollmentError.invalid
         }
         if events.contains(where: { $0.id == command.eventId && $0.enrollmentId == command.enrollmentId }) {
-            // A duplicate cannot consume another rate slot or create an unbounded receipt queue.
+            // A duplicate cannot dispatch again or create an unbounded receipt queue.
             return false
         }
         let outcome: String
@@ -97,15 +97,7 @@ struct RemoteBuzzState: Codable, Equatable {
         else if !command.fresh(now: Date(timeIntervalSince1970: Double(now))) { outcome = "expired" }
         else if exerciseOwnsBuzz { outcome = "suppressed" }
         else if !connected { outcome = "disconnected" }
-        else {
-            let accepted = events.filter {
-                $0.enrollmentId == enrollment.enrollmentId && $0.outcome == "received"
-                    && $0.receivedAt > now - 3600
-            }
-            if accepted.count >= 3 || accepted.contains(where: { $0.receivedAt > now - 30 }) {
-                outcome = "suppressed"
-            } else { outcome = "received" }
-        }
+        else { outcome = "received" }
         events.append(Event(id: command.eventId, enrollmentId: command.enrollmentId,
             generation: command.generation, receivedAt: now, expiresAt: command.expiresAt, outcome: outcome))
         try appendReceipt(eventId: command.eventId, enrollment: enrollment,

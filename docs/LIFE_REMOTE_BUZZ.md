@@ -18,7 +18,10 @@ permanent enrollment credentials. The server/crypto contract is maintained in
 7. Read `tracker.read_buzz {eventId}` to distinguish Apple acceptance, phone receipt,
    strap request/response, and explicit wearer confirmation. A response is not a felt buzz.
 
-At most three requests per hour and at least thirty seconds between requests apply.
+The owner-authorized private API has no hourly quota or request cooldown on Life
+or the phone. Authentication, opt-in, duplicate protection and exercise ownership
+still apply. Existing shared BLE overlap protection and Apple's delivery limits
+are separate from an API quota. External sharing needs its own reviewed policy.
 Commands expire after sixty seconds. Test foreground first, then a phone locked for
 at least one minute. Background delivery is best effort and requires a usable strap
 connection; force-quit behavior must not be inferred from a short lock test.

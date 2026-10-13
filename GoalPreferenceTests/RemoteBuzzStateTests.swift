@@ -32,20 +32,28 @@ final class RemoteBuzzStateTests: XCTestCase {
         XCTAssertEqual(state.events.map(\.outcome), ["received", "disconnected"])
         XCTAssertEqual(state.receipts.count, 2)
     }
-    func testDefaultOffExpiryOwnershipCooldownAndHourLimit() throws {
+    func testDefaultOffExpiryAndExerciseOwnership() throws {
         var state = RemoteBuzzState()
         XCTAssertFalse(try state.consume(command(at: now), enrollment: enrollment, now: now, connected: true, exerciseOwnsBuzz: false))
         state.enabled = true
         XCTAssertFalse(try state.consume(command(at: now), enrollment: enrollment, now: now + 60, connected: true, exerciseOwnsBuzz: false))
         XCTAssertFalse(try state.consume(command(at: now + 60), enrollment: enrollment, now: now + 60, connected: true, exerciseOwnsBuzz: true))
         XCTAssertTrue(try state.consume(command(at: now + 60), enrollment: enrollment, now: now + 60, connected: true, exerciseOwnsBuzz: false))
-        XCTAssertFalse(try state.consume(command(at: now + 89), enrollment: enrollment, now: now + 89, connected: true, exerciseOwnsBuzz: false))
-        for delta in [90, 120] {
-            XCTAssertTrue(try state.consume(command(at: now + delta), enrollment: enrollment, now: now + delta, connected: true, exerciseOwnsBuzz: false))
-        }
-        XCTAssertFalse(try state.consume(command(at: now + 150), enrollment: enrollment, now: now + 150, connected: true, exerciseOwnsBuzz: false))
-        XCTAssertTrue(try state.consume(command(at: now + 3660), enrollment: enrollment, now: now + 3660, connected: true, exerciseOwnsBuzz: false))
     }
+    func testDistinctPrivateCommandsHaveNoHourlyQuotaOrCooldown() throws {
+        var state = RemoteBuzzState(); state.enabled = true
+        for _ in 0..<12 {
+            XCTAssertTrue(try state.consume(command(at: now), enrollment: enrollment,
+                now: now, connected: true, exerciseOwnsBuzz: false))
+        }
+        state = try JSONDecoder().decode(RemoteBuzzState.self, from: JSONEncoder().encode(state))
+        XCTAssertTrue(try state.consume(command(at: now + 1), enrollment: enrollment,
+            now: now + 1, connected: true, exerciseOwnsBuzz: false))
+        XCTAssertEqual(state.events.count, 13)
+        XCTAssertEqual(state.receipts.count, 13)
+        XCTAssertTrue(state.valid())
+    }
+
     func testCorruptCountersAndReceiptOwnershipFailClosed() throws {
         var state = RemoteBuzzState(); state.enabled = true
         let cue = command(at: now)

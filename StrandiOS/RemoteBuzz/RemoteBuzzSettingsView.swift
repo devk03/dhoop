@@ -23,7 +23,7 @@ struct RemoteBuzzSettingsView: View {
                             .disabled(!client.paired || client.state.revoked)
                         Text(client.status).font(StrandFont.subhead)
                         Text(client.registrationStatus).font(StrandFont.caption)
-                        Text("Life must also permit sends. One short WHOOP cue per request, at most three per hour. No health data is sent by this feature.")
+                        Text("Life must also permit sends. One short WHOOP cue per request, with no private-API hourly limit or cooldown. No health data is sent by this feature.")
                         Text("When locked: Apple may let Dhoop run briefly to send the buzz. Delivery is best effort; a lost connection or delayed push can prevent it. Force-quitting stops normal background delivery.")
                     }.foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
                 }
