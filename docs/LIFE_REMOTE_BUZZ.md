@@ -117,3 +117,12 @@ Apple's delivery timing.
 
 The session's temporary verification MCP token was revoked and then rejected
 with HTTP 401. Existing clients and the enabled phone enrollment were preserved.
+
+At 9:13:31 p.m. Pacific, an explicitly requested fresh remote test produced event
+`b1ccb14f-95c0-4d76-8e26-d346b5d32505`. Apple accepted it; Life received
+`phone_received:received` and `strap_requested:requested` evidence at 9:13:32 p.m.,
+then `strap_response:response_received` at 9:13:33 p.m. The Mac developer
+connection was unavailable, so lock state and lock duration could not be
+independently inspected. The wearer's vibration and locked-phone confirmation
+remain pending. No second buzz was sent to resolve that uncertainty. The test's
+temporary client token was revoked; existing clients and phone enrollment remain.
