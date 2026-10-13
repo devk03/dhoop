@@ -31,6 +31,7 @@ public enum NoopMetrics {
     public static let sleepGoalStroke: CGFloat = 6
     public static let sleepGoalNumber: CGFloat = 22
     public static let dashboardHeroNumber: CGFloat = 64
+    public static let alarmTimeNumber: CGFloat = 44
     public static let dashboardMetricNumber: CGFloat = 36
     public static let minimumTouchTarget: CGFloat = 44
     /// Minimum macOS detail-sheet footprint for a scrollable editor/history surface.

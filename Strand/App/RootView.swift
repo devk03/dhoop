@@ -457,7 +457,7 @@ struct RootView: View {
         case .noopLimitations: NoopLimitationsView()
         case .notifications: NotificationSettingsView()
         case .automation: AutomationsView()
-        case .smartAlarm: SmartAlarmView()
+        case .smartAlarm: AlarmsView()
         case .powerSaving: PowerSavingView()
         case .settings: settingsDetail
         case .testCentre: TestCentreView()

@@ -145,6 +145,8 @@ public enum StrandPalette {
     public static let metricSteps = Color(light: "#1767AE", dark: "#479DE4")
     public static let metricProtein = Color(light: "#936016", dark: "#DCAA51")
     public static let metricVO2 = Color(light: "#4E45A9", dark: "#8880E6")
+    /// Alarm identity uses the established deep-violet world; switches retain their system track.
+    public static let alarmAccent = metricVO2
 
     // MARK: - Chart style (data-viz colour mode) — Titanium (brand) or Classic (throwback)
     //
