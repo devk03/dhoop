@@ -8,7 +8,7 @@ struct RemoteBuzzInboxPolicy {
     private(set) var emptyChecks = 0
     var delay: TimeInterval {
         failures > 0 ? min(300, 15 * pow(2, Double(min(failures, 5))))
-            : emptyChecks > 0 ? min(60, 15 * pow(2, Double(min(emptyChecks, 2)))) : 15
+            : emptyChecks > 0 ? 30 : 15
     }
     mutating func begin(_ trigger: Trigger, now: Date) -> Bool {
         let urgent = trigger == .foreground || trigger == .reconnect || trigger == .manual

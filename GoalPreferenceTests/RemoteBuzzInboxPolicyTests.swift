@@ -9,8 +9,9 @@ final class RemoteBuzzInboxPolicyTests: XCTestCase {
         XCTAssertFalse(policy.begin(.bluetooth, now: start.addingTimeInterval(29)))
         XCTAssertTrue(policy.begin(.bluetooth, now: start.addingTimeInterval(30)))
         policy.finish(success: true, commandCount: 0)
-        XCTAssertFalse(policy.begin(.bluetooth, now: start.addingTimeInterval(89)))
-        XCTAssertTrue(policy.begin(.bluetooth, now: start.addingTimeInterval(90)))
+        XCTAssertEqual(policy.delay, 30, "quiet polling must leave time inside the 60-second expiry")
+        XCTAssertFalse(policy.begin(.bluetooth, now: start.addingTimeInterval(59)))
+        XCTAssertTrue(policy.begin(.bluetooth, now: start.addingTimeInterval(60)))
         policy.finish(success: true, commandCount: 1)
         XCTAssertEqual(policy.delay, 15)
     }
