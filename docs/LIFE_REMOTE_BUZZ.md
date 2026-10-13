@@ -126,3 +126,13 @@ connection was unavailable, so lock state and lock duration could not be
 independently inspected. The wearer's vibration and locked-phone confirmation
 remain pending. No second buzz was sent to resolve that uncertainty. The test's
 temporary client token was revoked; existing clients and phone enrollment remain.
+
+The human-requested repeat at 9:20:50 p.m. Pacific, event
+`ba7077b9-75e0-4add-b2b0-cd46ec9ffd09`, completed the permanent path through
+physical confirmation. Apple accepted it; the phone reported receipt, strap
+request and strap-response evidence at 9:20:54 p.m. A signed device receipt
+reported `wearer_confirmed:felt` at 9:21:03 p.m., and the human independently
+confirmed feeling it in chat. Life returned `vibrationConfirmed=true`. Phone
+lock state/duration were not reported for this specific repeat, so it does not
+establish locked, suspended or force-quit guarantees. The test credential was
+revoked after verification, preserving existing clients and enrollment.
