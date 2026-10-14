@@ -29,6 +29,9 @@ final class LiftSessionController: ObservableObject {
     @Published private(set) var programName: String?
     @Published private(set) var collectionMessage: String?
     @Published private(set) var recoveryError: String?
+    @Published private(set) var previousPerformanceError: String?
+    @Published private(set) var readingPreviousPerformance = false
+    private var previousReadGeneration = 0
     @Published private(set) var sourceDeviceId: String?
     @Published private(set) var isSaving = false
     @Published private(set) var recordingId: UUID?
@@ -153,6 +156,8 @@ final class LiftSessionController: ObservableObject {
         }
         guard claimCollection() else { return false }
         self.trackerBinding = trackerBinding
+        lastSession = [:]; previousPerformanceError = nil
+        previousReadGeneration += 1; readingPreviousPerformance = false
         recordingId = trackerBinding?.sourceWorkoutId ?? UUID()
         setIdentities = [:]
         setNotes = [:]
@@ -188,6 +193,8 @@ final class LiftSessionController: ObservableObject {
     /// back as the bottom bar, and the user opens it if they want to.
     func resume(from snapshot: LiftSessionPersistence.Snapshot, present: Bool = false) {
         guard engine == nil else { return }
+        lastSession = [:]; previousPerformanceError = nil
+        previousReadGeneration += 1; readingPreviousPerformance = false
         engine = LiftSessionPersistence.engine(from: snapshot)
         sourceDeviceId = snapshot.sourceDeviceId
         trackerBinding = snapshot.trackerBinding
@@ -234,6 +241,8 @@ final class LiftSessionController: ObservableObject {
     }
 
     private func teardown() {
+        lastSession = [:]; previousPerformanceError = nil
+        previousReadGeneration += 1; readingPreviousPerformance = false
         releaseCollection()
         engine = nil
         programId = nil
@@ -444,6 +453,43 @@ final class LiftSessionController: ObservableObject {
     /// it; safe to call again if it reloads.
     func setLastSession(_ values: [String: [Int: LiftSetCarry]]) {
         lastSession = values
+    }
+
+    /// Previous performance belongs to the capture's source, not a newly selected strap.
+    func readPreviousPerformance(read: @MainActor (String, String, Int) async throws -> [LiftSetRow]) async throws {
+        previousReadGeneration += 1
+        let ticket = previousReadGeneration
+        guard let captured = engine, let id = recordingId, let source = sourceDeviceId, !source.isEmpty else {
+            previousPerformanceError = "The workout source is unavailable. Previous performance was not inferred from another strap."
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        readingPreviousPerformance = true
+        defer { if previousReadGeneration == ticket { readingPreviousPerformance = false } }
+        let names = NSOrderedSet(array: captured.plan.map(\.exercise)).compactMap { $0 as? String }
+        var result: [String: [Int: LiftSetCarry]] = [:]
+        do {
+            for name in names {
+                let rows = try await read(source, name, captured.startTs)
+                try Task.checkCancellation()
+                guard rows.allSatisfy({ $0.deviceId == source && $0.exercise == name &&
+                    ($0.weightKg.map { $0.isFinite && $0 >= 0 } ?? true) && ($0.reps.map { $0 >= 0 } ?? true) }) else {
+                    throw WorkoutTrackerContractError.invalidSnapshot
+                }
+                var values: [Int: LiftSetCarry] = [:]
+                for row in rows where !row.isWarmup { values[row.setIndex] = LiftSetCarry(weightKg: row.weightKg, reps: row.reps) }
+                result[name] = values
+            }
+            guard previousReadGeneration == ticket, recordingId == id, sourceDeviceId == source, engine?.plan.map(\.exercise) == captured.plan.map(\.exercise) else {
+                throw WorkoutTrackerContractError.sessionChanged
+            }
+            lastSession = result; previousPerformanceError = nil
+        } catch is CancellationError { throw CancellationError() }
+        catch {
+            if previousReadGeneration == ticket && recordingId == id && sourceDeviceId == source {
+                previousPerformanceError = "Previous performance could not be refreshed. Existing known carry values and typed entries are retained."
+            }
+            throw error
+        }
     }
 
     /// The grey numbers a slot shows — the one chain every surface reads, so the sheet, the minimised

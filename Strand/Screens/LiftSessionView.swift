@@ -104,7 +104,7 @@ struct LiftSessionView: View {
         .dismissesKeyboardOnTap($focused)
         // Re-read whenever the session's exercises change, so an exercise added mid-session that was
         // done before shows last time's numbers in grey, like every other line.
-        .task(id: engine?.plan.map(\.exercise)) { await loadLastTime() }
+        .task(id: engine?.plan.map(\.exercise)) { try? await loadLastTime() }
         // Release a field's draft once the user leaves it, so the row returns to the canonical
         // formatting ("45.50" typed becomes "45.5"). The single-argument form on purpose: the
         // two-argument `onChange` is macOS 14+ and this file also builds for macOS 13.
@@ -125,6 +125,12 @@ struct LiftSessionView: View {
                 VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                     header(engine)
                     LiftCollectionReadout(fromTs: engine.startTs, deviceId: session.sourceDeviceId)
+                    if session.readingPreviousPerformance { ProgressView("Reading previous performance…").font(StrandFont.caption) }
+                    if let error = session.previousPerformanceError {
+                        Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                        NoopAsyncButton("Retry previous performance", systemImage: "arrow.clockwise", kind: .secondary) { try await loadLastTime() }
+                            .disabled(session.readingPreviousPerformance)
+                    }
                     ForEach(engine.exerciseOrder, id: \.self) { index in
                         exerciseCard(engine, index: index, item: engine.plan[index])
                     }
@@ -910,23 +916,11 @@ struct LiftSessionView: View {
 
     /// What was lifted for each of this session's exercises LAST time, by set number — the middle
     /// layer of the grey numbers, handed to the controller that owns the chain.
-    private func loadLastTime() async {
-        guard let engine, let store = await repo.storeHandle() else { return }
-        var out: [String: [Int: LiftSetCarry]] = [:]
-        // One query per DISTINCT exercise, not per plan line. A program that programs the same
-        // movement twice — or an imported one with many lines — would otherwise re-ask the store the
-        // same question, and this runs when the sheet opens.
-        for exercise in NSOrderedSet(array: engine.plan.map(\.exercise)).compactMap({ $0 as? String }) {
-            let rows = (try? await store.lastLiftSets(deviceId: repo.deviceId,
-                                                      exercise: exercise,
-                                                      before: engine.startTs)) ?? []
-            var bySet: [Int: LiftSetCarry] = [:]
-            for r in rows where !r.isWarmup {
-                bySet[r.setIndex] = LiftSetCarry(weightKg: r.weightKg, reps: r.reps)
-            }
-            out[exercise] = bySet
+    @MainActor private func loadLastTime() async throws {
+        try await session.readPreviousPerformance { source, exercise, before in
+            guard let store = await repo.storeHandle() else { throw LiftExerciseCatalogModel.Failure.unavailable }
+            return try await store.lastLiftSets(deviceId: source, exercise: exercise, before: before)
         }
-        session.setLastSession(out)
     }
 
     private func save() async {
