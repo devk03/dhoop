@@ -133,7 +133,9 @@ struct SettingsView: View {
     @AppStorage(DayCycleMode.storageKey) private var dayCycleModeRaw = DayCycleMode.sleepOnset.rawValue
     // Alternate app icon (iOS only) — false = Titanium (primary AppIcon), true = Blue Titanium
     // ("AppIcon-Navy"). Display-only preference; the live switch goes through setAlternateIconName.
-    @AppStorage("appIcon.alt") private var useNavyIcon = false
+    #if os(iOS)
+    @StateObject private var appIconChoice = AppIconSelectionController.native()
+    #endif
     // Light/Dark/System theme. Read by both app roots' .preferredColorScheme; default follows the OS.
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
     // App-owned copy language. Apple binds a bundle localization at process launch, so this writes the
@@ -1350,16 +1352,37 @@ struct SettingsView: View {
                 }
                 #if os(iOS)
                 rowDivider   // #79: separator before App icon (inside #if so macOS keeps a single divider)
-                FormRow(label: "App icon") {
-                    Picker("App icon", selection: $useNavyIcon) {
+                FormRow(label: "Icon choice") {
+                    Picker("App icon choice", selection: Binding(get: { appIconChoice.selection }, set: { choice in
+                        Task { await appIconChoice.change(to: choice) }
+                    })) {
                         Text("Default").tag(false)
                         Text("Navy").tag(true)
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .tint(StrandPalette.accent)
-                    .accessibilityLabel("App icon")
-                    .onChangeCompat(of: useNavyIcon) { applyAppIcon($0) }
+                    .accessibilityLabel("App icon choice")
+                    .disabled(appIconChoice.isWorking || !appIconChoice.isSupported)
+                }
+                Text("Home Screen (last confirmed): \(appIconChoice.confirmedName == nil ? "Default" : appIconChoice.confirmedName == AppIconSelectionController.navyName ? "Navy" : appIconChoice.confirmedName ?? "Unknown")")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                if appIconChoice.isWorking {
+                    ProgressView("Applying requested icon…").font(StrandFont.caption)
+                } else if let error = appIconChoice.error {
+                    Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                    NoopActionButton("Retry requested icon", systemImage: "arrow.clockwise", kind: .secondary,
+                                     fullWidth: true, state: appIconChoice.state) {
+                        Task { await appIconChoice.retry() }
+                    }
+                    NoopButton("Keep current icon", kind: .tertiary) { appIconChoice.keepCurrent() }
+                } else if appIconChoice.state == .succeeded {
+                    Label("Icon applied", systemImage: "checkmark.circle")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }
+                if !appIconChoice.isSupported {
+                    Text("Alternate icons are unavailable in this installation.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
                 #endif
 
@@ -1466,27 +1489,14 @@ struct SettingsView: View {
         }
     }
 
-    #if os(iOS)
-    /// Apply the alternate-icon choice. Runs on the main actor (UIKit requirement) and tolerates the
-    /// no-op cases (already-set, unsupported); on failure it surfaces the error and reverts the toggle
-    /// so the control never disagrees with what's actually on the Home Screen.
-    private func applyAppIcon(_ useNavy: Bool) {
-        Task { @MainActor in
-            let target = useNavy ? "AppIcon-Navy" : nil
-            // No-op if iOS already shows the requested icon (avoids a needless system prompt).
-            guard UIApplication.shared.supportsAlternateIcons,
-                  UIApplication.shared.alternateIconName != target else { return }
-            do {
-                try await UIApplication.shared.setAlternateIconName(target)
-            } catch {
-                useNavyIcon = !useNavy
-                backupAlertTitle = String(localized: "Couldn't change the app icon")
-                backupAlertMessage = error.localizedDescription
-                showBackupAlert = true
-            }
+    private var updateActionState: NoopActionState {
+        switch updateChecker.state {
+        case .idle: return .idle
+        case .checking: return .working
+        case .upToDate, .available: return .succeeded
+        case .failed: return .failed("The release check failed. Try again.")
         }
     }
-    #endif
 
     // MARK: - Strap
 
@@ -2487,29 +2497,16 @@ struct SettingsView: View {
                 #endif
 
                 // Check for updates — a single, user-initiated read of GitHub's public releases API.
-                // No background polling, no auto-update; sends nothing about you, just reads the version.
+                // The existing daily checker is separate; this button starts one read and installs nothing.
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    HStack(spacing: NoopMetrics.space2 + 2) {
-                        Button {
-                            // Compare the ACTUAL installed bundle version against GitHub's latest, not the
-                            // hand-maintained AppChangelog.currentVersion (which drifts stale and told v7
-                            // users they were behind, #697-adjacent). Mirrors Android's BuildConfig check.
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                        NoopActionButton("Check for updates", systemImage: "arrow.triangle.2.circlepath", kind: .secondary, fullWidth: true,
+                                         state: updateActionState) {
                             updateChecker.check(currentVersion: bundleVersionString)
-                        } label: {
-                            if updateChecker.state == .checking {
-                                HStack(spacing: NoopMetrics.space1 + 2) {
-                                    ProgressView().controlSize(.small)
-                                    Text("Checking…")
-                                }
-                            } else {
-                                Label("Check for updates", systemImage: "arrow.triangle.2.circlepath")
-                            }
                         }
-                        .buttonStyle(NoopButtonStyle(.secondary))
-                        .disabled(updateChecker.state == .checking)
 
                         if case .upToDate(let v) = updateChecker.state {
-                            Text("You're on the latest (\(v)).")
+                            Text("No newer release found (\(v)).")
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textSecondary)
                         } else if case .failed = updateChecker.state {
@@ -2517,7 +2514,6 @@ struct SettingsView: View {
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.statusWarning)
                         }
-                        Spacer()
                     }
 
                     // #1659: the automatic half. iOS cannot auto-update a sideloaded build at all — no API
