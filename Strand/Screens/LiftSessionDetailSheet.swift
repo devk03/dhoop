@@ -24,24 +24,29 @@ struct LiftSessionDetailSheet: View {
     @EnvironmentObject var repo: Repository
     @Environment(\.dismiss) private var dismiss
 
-    @State private var sets: [LiftSetRow] = []
-    /// The `workout` row this session is pinned to, for the HR-measured figures.
-    @State private var workout: WorkoutRow?
-    /// Previous performance per exercise, for the "vs last time" comparison.
-    @State private var previousVolume: [String: Double] = [:]
-    @State private var loaded = false
-    @State private var loadError: String?
+    @StateObject private var detail = LiftSessionDetailModel()
+    private var sets: [LiftSetRow] { detail.snapshot?.sets ?? [] }
+    private var workout: WorkoutRow? { detail.snapshot?.workout }
+    private var previousVolume: [String: Double] {
+        (detail.snapshot?.previousSets ?? [:]).compactMapValues { LiftMetrics.volumeLoadKg($0) }
+    }
     @State private var confirmingDelete = false
     @State private var deleting = false
     @State private var deleteError: String?
     @State private var editing = false
-    /// Session RPE as stored now. The edit sheet can correct it, and the session load must follow.
-    @State private var sessionRpe: Double?
-    @State private var heartRateStats: HRWindowStats?
-    @State private var setHeartRate: [String: HRWindowStats] = [:]
-    @State private var heartRatePoints: [TrendPoint] = []
-    @State private var heartRateError: String?
-    @State private var chartLimited = false
+    private var sessionRpe: Double? { detail.snapshot?.session.sessionRpe }
+    @State private var cachedHeartRateStats: HRWindowStats?
+    @State private var cachedSetHeartRate: [String: HRWindowStats] = [:]
+    @State private var cachedHeartRatePoints: [TrendPoint] = []
+    @State private var cachedHeartRateError: String?
+    @State private var cachedChartLimited = false
+    @State private var heartRateReadID: UUID?
+    @State private var heartRateLoadingID: UUID?
+    private var heartRateStats: HRWindowStats? { heartRateReadID == detail.readID ? cachedHeartRateStats : nil }
+    private var setHeartRate: [String: HRWindowStats] { heartRateReadID == detail.readID ? cachedSetHeartRate : [:] }
+    private var heartRatePoints: [TrendPoint] { heartRateReadID == detail.readID ? cachedHeartRatePoints : [] }
+    private var heartRateError: String? { heartRateReadID == detail.readID ? cachedHeartRateError : nil }
+    private var chartLimited: Bool { heartRateReadID == detail.readID && cachedChartLimited }
     #if os(iOS)
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
     @State private var reviewingDelivery: UUID?
@@ -51,23 +56,32 @@ struct LiftSessionDetailSheet: View {
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
 
     private var durationSec: Int {
-        guard let end = session.endTs else { return 0 }
-        return max(0, end - session.startTs)
+        guard let end = storedSession.endTs else { return 0 }
+        return max(0, end - storedSession.startTs)
     }
 
     var body: some View {
         ScreenScaffold(title: "Session", subtitle: subtitle) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                if !loaded {
-                    ComingSoon(what: "Reading the session…", symbol: "dumbbell")
-                } else if let loadError {
+                if detail.isLoading {
+                    ProgressView("Reading the saved session…").font(StrandFont.caption)
+                }
+                if let error = detail.error {
                     NoopCard {
                         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                            Text(loadError).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical)
-                            NoopButton("Retry loading session", systemImage: "arrow.clockwise", kind: .secondary) { Task { await load() } }
+                            Text(error).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical)
+                            NoopAsyncButton("Retry loading session", systemImage: "arrow.clockwise", kind: .secondary, fullWidth: true) {
+                                await load()
+                                if let error = detail.error { throw DetailReadFailure(message: error) }
+                            }.disabled(detail.isLoading || deleting)
                         }
                     }
-                } else {
+                }
+                if detail.snapshot != nil {
+                    if !detail.isFresh, let at = detail.capturedAt {
+                        Text("Last confirmed read: \(at.formatted(date: .abbreviated, time: .shortened)). Editing is unavailable until a fresh read succeeds.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+                    }
                     figuresSection
                     heartRateSection
                     exercisesSection
@@ -77,6 +91,7 @@ struct LiftSessionDetailSheet: View {
                     }
                     footnote
                     NoopButton("Edit sets", systemImage: "pencil", kind: .secondary) { editing = true }
+                        .disabled(!detail.isFresh || deleting)
                     #if os(iOS)
                     if let source = UUID(uuidString: session.id), let reference = tracker.historyReferences.first(where: { $0.sourceWorkoutId == source }) {
                         NoopButton("Tracker delivery", systemImage: "link", kind: .secondary) { reviewingDelivery = reference.id }
@@ -109,11 +124,11 @@ struct LiftSessionDetailSheet: View {
         } message: { Text(deleteError ?? "Please try again.") }
     }
 
-    /// The session as stored now, with any corrected RPE.
-    private var storedSession: LiftSessionRow {
-        var row = session
-        row.sessionRpe = sessionRpe
-        return row
+    /// One confirmed row supplies every metadata readout and the editor.
+    private var storedSession: LiftSessionRow { detail.snapshot?.session ?? session }
+    private struct DetailReadFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
     }
 
     /// Remove a session that should not have been recorded — a mis-tap, or a test.
@@ -134,7 +149,7 @@ struct LiftSessionDetailSheet: View {
         .font(StrandFont.body)
         .foregroundStyle(StrandPalette.statusCritical)
         .padding(.top, NoopMetrics.gap)
-        .disabled(deleting)
+        .disabled(deleting || !detail.isFresh)
         .confirmationDialog("Delete this session?",
                             isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { Task { await deleteSession() } }
@@ -145,7 +160,10 @@ struct LiftSessionDetailSheet: View {
     }
 
     private func deleteSession() async {
-        guard !deleting else { return }
+        guard !deleting, detail.isFresh else {
+            deleteError = "A fresh session read is required before deleting. The existing recording is retained."
+            return
+        }
         deleting = true
         defer { deleting = false }
         guard let store = await repo.storeHandle() else {
@@ -157,7 +175,7 @@ struct LiftSessionDetailSheet: View {
             #if os(iOS)
             let trackerEvent = try await WorkoutTrackerClient.shared.prepareHistoryChange(record: storedSession, sets: sets, store: store, deleting: true)
             #endif
-            _ = try await store.deleteLiftRecording(session)
+            _ = try await store.deleteLiftRecording(storedSession)
             #if os(iOS)
             if let trackerEvent {
                 do { try await WorkoutTrackerClient.shared.confirmPersistence(trackerEvent, store: store) }
@@ -172,9 +190,9 @@ struct LiftSessionDetailSheet: View {
     }
 
     private var subtitle: LocalizedStringKey {
-        let date = Date(timeIntervalSince1970: TimeInterval(session.startTs))
+        let date = Date(timeIntervalSince1970: TimeInterval(storedSession.startTs))
             .formatted(date: .abbreviated, time: .shortened)
-        if let name = session.programName, !name.isEmpty {
+        if let name = storedSession.programName, !name.isEmpty {
             return "\(name) · \(date)"
         }
         return "\(date)"
@@ -348,7 +366,7 @@ struct LiftSessionDetailSheet: View {
                   .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
               if let error = heartRateError {
                   Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
-              } else if start < session.startTs || end > (session.endTs ?? start) {
+              } else if start < storedSession.startTs || end > (storedSession.endTs ?? start) {
                   Text("Set timing is outside this workout window").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
               } else if let stats = setHeartRate[row.id], let average = stats.avg, let peak = stats.max {
                   Text("\(average.formatted(.number.precision(.fractionLength(0)))) avg bpm · \(peak) peak · \(stats.n) measured readings")
@@ -370,12 +388,14 @@ struct LiftSessionDetailSheet: View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 Text("Heart rate").font(StrandFont.headline)
-                if let stats = heartRateStats, let average = stats.avg, let peak = stats.max {
+                if heartRateLoadingID == detail.readID {
+                    ProgressView("Checking stored heart-rate samples…").font(StrandFont.caption)
+                } else if let stats = heartRateStats, let average = stats.avg, let peak = stats.max {
                     Text("\(average.formatted(.number.precision(.fractionLength(0)))) avg bpm · \(peak) peak")
                         .font(StrandFont.bodyNumber).foregroundStyle(StrandPalette.metricRose)
-                    if let end = session.endTs, end > session.startTs, !heartRatePoints.isEmpty {
+                    if let end = storedSession.endTs, end > storedSession.startTs, !heartRatePoints.isEmpty {
                         DashboardChart(points: heartRatePoints,
-                            domain: Date(timeIntervalSince1970: Double(session.startTs))...Date(timeIntervalSince1970: Double(end)),
+                            domain: Date(timeIntervalSince1970: Double(storedSession.startTs))...Date(timeIntervalSince1970: Double(end)),
                             range: chartRange, tint: StrandPalette.metricRose, label: "Workout measured heart-rate averages",
                             valueFormat: { "\($0.formatted(.number.precision(.fractionLength(0)))) avg bpm" })
                     }
@@ -389,7 +409,7 @@ struct LiftSessionDetailSheet: View {
                     Text(heartRateError ?? "No measured heart-rate data in this workout window.")
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                 }
-                Text("Minute averages from measured sensor rows. Optical estimates are excluded. Source: \(session.deviceId)")
+                Text("Minute averages from measured sensor rows. Optical estimates are excluded. Source: \(storedSession.deviceId)")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -533,64 +553,48 @@ struct LiftSessionDetailSheet: View {
 
     // MARK: - Load
 
-    private func load() async {
-        loaded = false; loadError = nil
+    @MainActor private func load() async {
         guard let store = await repo.storeHandle() else {
-            loadError = "Storage is unavailable. The session could not be checked."
-            loaded = true
+            await detail.load(record: session) { _, _ in
+                throw DetailReadFailure(message: "Storage is unavailable. The last confirmed view is retained.")
+            }
             return
         }
-        do { sets = try await store.liftSets(sessionId: session.id) }
-        catch {
-            loadError = "Session loading failed: \(error.localizedDescription)"
-            loaded = true
-            return
-        }
-        // Re-read rather than trusting the row this sheet was opened with: the edit sheet can change it.
-        let stored = try? await store.liftSessions(deviceId: session.deviceId,
-                                                   fromTs: session.startTs, toTs: session.startTs)
-        if let row = stored?.first(where: { $0.id == session.id }) {
-            sessionRpe = row.sessionRpe
-        } else {
-            sessionRpe = session.sessionRpe
-        }
-
-        // The workout row this session is pinned to, by that table's own natural key.
-        let rows = (try? await store.workouts(deviceId: session.deviceId,
-                                              from: session.startTs - 1,
-                                              to: session.startTs + 1, limit: 10)) ?? []
-        workout = rows.first { $0.startTs == session.startTs && $0.sport == session.sport }
-
-        // Previous volume per exercise, for the "vs last time" line.
-        var previous: [String: Double] = [:]
-        for name in Set(performed.map(\.exercise)) {
-            let before = (try? await store.lastLiftSets(deviceId: session.deviceId,
-                                                        exercise: name,
-                                                        before: session.startTs)) ?? []
-            if let v = LiftMetrics.volumeLoadKg(before) { previous[name] = v }
-        }
-        previousVolume = previous
-        await loadHeartRate(store: store)
-        loaded = true
+        guard let ticket = await detail.load(record: session, read: { deviceId, id in
+            try await store.liftRecordingDetail(deviceId: deviceId, sessionId: id)
+        }), let snapshot = detail.snapshot else { return }
+        await loadHeartRate(store: store, snapshot: snapshot, ticket: ticket)
     }
 
-    private func loadHeartRate(store: WhoopStore) async {
-        heartRateStats = nil; setHeartRate = [:]; heartRatePoints = []; heartRateError = nil; chartLimited = false
-        guard let end = session.endTs, end > session.startTs else { return }
+    @MainActor private func loadHeartRate(store: WhoopStore, snapshot: LiftRecordingDetail, ticket: UUID) async {
+        heartRateLoadingID = ticket
+        defer { if heartRateLoadingID == ticket { heartRateLoadingID = nil } }
+        let record = snapshot.session
+        guard let end = record.endTs, end > record.startTs else {
+            cachedHeartRateStats = nil; cachedSetHeartRate = [:]; cachedHeartRatePoints = []
+            cachedHeartRateError = "No measured workout time window was recorded."; cachedChartLimited = false
+            heartRateReadID = ticket
+            return
+        }
         do {
-            let stats = try await store.measuredHeartRateStats(deviceId: session.deviceId, from: session.startTs, toExclusive: end)
-            let samples = try await store.measuredHeartRateSamples(deviceId: session.deviceId, from: session.startTs, toExclusive: end, limit: 100_000)
+            let stats = try await store.measuredHeartRateStats(deviceId: record.deviceId, from: record.startTs, toExclusive: end)
+            let samples = try await store.measuredHeartRateSamples(deviceId: record.deviceId, from: record.startTs, toExclusive: end, limit: 100_000)
             let display = HistoricalHeartRateProjection.summarize(samples.map {
                 DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm))
-            }, from: Double(session.startTs), through: Double(end))
+            }, from: Double(record.startTs), through: Double(end))
             var perSet: [String: HRWindowStats] = [:]
-            for row in sets {
-                guard let start = row.startTs, let stop = row.endTs, start >= session.startTs, stop <= end, stop > start else { continue }
-                perSet[row.id] = try await store.measuredHeartRateStats(deviceId: session.deviceId, from: start, toExclusive: stop)
+            for row in snapshot.sets {
+                guard let start = row.startTs, let stop = row.endTs, start >= record.startTs, stop <= end, stop > start else { continue }
+                perSet[row.id] = try await store.measuredHeartRateStats(deviceId: record.deviceId, from: start, toExclusive: stop)
             }
-            guard !Task.isCancelled else { return }
-            heartRateStats = stats; setHeartRate = perSet; chartLimited = stats.n > samples.count
-            heartRatePoints = display.readings.map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.averageBPM, segment: $0.segment) }
-        } catch { heartRateError = "Heart-rate storage check failed: \(error.localizedDescription)" }
+            guard !Task.isCancelled, detail.readID == ticket, detail.isFresh else { return }
+            cachedHeartRateStats = stats; cachedSetHeartRate = perSet; cachedChartLimited = stats.n > samples.count
+            cachedHeartRatePoints = display.readings.map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.averageBPM, segment: $0.segment) }
+            cachedHeartRateError = nil; heartRateReadID = ticket
+        } catch {
+            guard detail.readID == ticket, detail.isFresh else { return }
+            cachedHeartRateStats = nil; cachedSetHeartRate = [:]; cachedHeartRatePoints = []; cachedChartLimited = false
+            cachedHeartRateError = "Heart-rate storage check failed: \(error.localizedDescription)"; heartRateReadID = ticket
+        }
     }
 }
