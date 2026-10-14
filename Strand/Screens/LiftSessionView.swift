@@ -45,6 +45,12 @@ struct LiftSessionView: View {
     /// The card to bring into view once an exercise has been added — the new one, at the end.
     @State private var scrollTarget: Int?
     @State private var expandedNotes: Set<LiftSlot> = []
+    @State private var replacementTarget: ReplacementTarget?
+    private struct ReplacementTarget: Identifiable {
+        let id: Int
+        let sessionId: UUID?
+        let name: String
+    }
 
     private enum UnfinishedChoice: Hashable { case complete, discard }
     private enum ProgramChoice: Hashable { case update, keep }
@@ -150,6 +156,15 @@ struct LiftSessionView: View {
                     return true
                 }
             }
+            .sheet(item: $replacementTarget) { target in
+                LiftSessionExerciseSheet(requiresLoadType: session.trackerBinding != nil, sourceDeviceId: session.sourceDeviceId, replacingExercise: target.name) { name, primary, secondaries, sourceId, mode in
+                    guard session.recordingId == target.sessionId,
+                          let index = session.replaceExercise(target.id, with: name, primaryMuscle: primary, secondaryMuscles: secondaries,
+                                                              sourceExerciseId: sourceId, loadMode: mode) else { return false }
+                    scrollTarget = index
+                    return true
+                }
+            }
         }
     }
 
@@ -211,6 +226,13 @@ struct LiftSessionView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                     exerciseMenu(engine, index: index, item: item)
                 }
+                if let replacement = engine.exerciseReplacements[index] {
+                    Label("Replaced by \(engine.plan[replacement].exercise) · \(engine.sets.filter { $0.exerciseIndex == index }.count) logged sets retained", systemImage: "arrow.triangle.2.circlepath")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.metricAmber)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(NoopMetrics.space2).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(StrandPalette.metricAmber.opacity(0.08), in: RoundedRectangle(cornerRadius: NoopVisualStyle.compactRadius))
+                }
                 if let note = item.note, !note.isEmpty {
                     Text(note)
                         .font(StrandFont.footnote)
@@ -225,16 +247,16 @@ struct LiftSessionView: View {
                                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
 
-                columnHeadings
+                if engine.exerciseReplacements[index] == nil || engine.sets.contains(where: { $0.exerciseIndex == index }) { columnHeadings }
 
-                ForEach(engine.slots(forExercise: index), id: \.self) { slot in
+                ForEach(engine.slots(forExercise: index).filter { engine.exerciseReplacements[index] == nil || engine.isCompleted($0) }, id: \.self) { slot in
                     setRow(engine, slot: slot)
                     if expandedNotes.contains(slot) { setNoteRow(slot) }
                     // The rest belongs BETWEEN two sets, because that is where it happens.
                     if isRestingAfter(engine, slot: slot) { restBand(engine) }
                 }
 
-                setCountRow(engine, index: index, item: item)
+                if engine.exerciseReplacements[index] == nil { setCountRow(engine, index: index, item: item) }
             }
         }
         .id(index)
@@ -253,6 +275,11 @@ struct LiftSessionView: View {
                 if session.moveExercise(index, by: 1) { scrollTarget = index }
             } label: { Label("Move later", systemImage: "arrow.down") }
                 .disabled(position == engine.exerciseOrder.count - 1 || engine.isFinished)
+            Button {
+                focused = nil
+                replacementTarget = ReplacementTarget(id: index, sessionId: session.recordingId, name: item.exercise)
+            } label: { Label("Replace remaining sets", systemImage: "arrow.triangle.2.circlepath") }
+                .disabled(!engine.canReplaceExercise(index))
             Button {
                 let slots = engine.slots(forExercise: index)
                 if slots.allSatisfy({ expandedNotes.contains($0) }) { slots.forEach { expandedNotes.remove($0) } }
@@ -396,7 +423,8 @@ struct LiftSessionView: View {
             }
             .buttonStyle(NoopFeedbackButtonStyle())
             .frame(width: Self.tickColumnWidth)
-            .accessibilityLabel(recorded == nil
+            .disabled(engine.exerciseReplacements[slot.exerciseIndex] != nil)
+            .accessibilityLabel(engine.exerciseReplacements[slot.exerciseIndex] != nil ? String(localized: "Completed original set") : recorded == nil
                                 ? String(localized: "Start this set")
                                 : String(localized: "Redo this set"))
         }
@@ -959,7 +987,7 @@ struct LiftSessionView: View {
         let updatedProgramItems = try await programChanges(store: store, plan: engine.plan, sets: finished)
         #if os(iOS)
         let trackerEvent: UUID?
-        if let binding = session.trackerBinding {
+        if let binding = session.trackerBindingForSave() {
             trackerEvent = try await WorkoutTrackerClient.shared.prepare(record: row, sets: rows, binding: binding, store: store)
         } else { trackerEvent = nil }
         #endif

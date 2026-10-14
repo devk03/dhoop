@@ -12,6 +12,7 @@ struct LiftSessionExerciseSheet: View {
     /// Handed the exercise once it is remembered; the session adds it.
     var requiresLoadType = false
     var sourceDeviceId: String?
+    var replacingExercise: String? = nil
     let onAdd: (_ name: String, _ primary: LiftMuscle?, _ secondaries: [LiftMuscle], _ sourceExerciseId: UUID?, _ loadMode: WorkoutTrackerLoadMode?) -> Bool
 
     @EnvironmentObject var repo: Repository
@@ -38,13 +39,13 @@ struct LiftSessionExerciseSheet: View {
     private var canAdd: Bool { !trimmedExercise.isEmpty && !adding && (!requiresLoadType || loadMode != nil) }
 
     var body: some View {
-        ScreenScaffold(title: "Add exercise",
+        ScreenScaffold(title: replacingExercise == nil ? "Add exercise" : "Replace exercise",
                        subtitle: "Pick one you have done before, or type a new name.") {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 exerciseSection
                 if requiresLoadType { loadTypeSection }
                 LiftMusclePicker(primary: $primary, secondaries: $secondaries)
-                Text(requiresLoadType ? "Added to workout history. Your Life routine stays unchanged." : "It joins this session with one set. Type what you lift; finishing asks whether the program keeps it.")
+                Text(replacingExercise.map { "Replace the remaining sets of \($0). Completed sets keep their original exercise. Your routine stays unchanged." } ?? (requiresLoadType ? "Added to workout history. Your Life routine stays unchanged." : "It joins this session with one set. Type what you lift; finishing asks whether the program keeps it."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -122,7 +123,7 @@ struct LiftSessionExerciseSheet: View {
 
     private var footer: some View {
         VStack(spacing: NoopMetrics.space2) {
-            NoopAsyncButton("Add exercise", systemImage: "plus") { try await add() }.disabled(!canAdd)
+            NoopAsyncButton(replacingExercise == nil ? "Add exercise" : "Replace remaining sets", systemImage: replacingExercise == nil ? "plus" : "arrow.triangle.2.circlepath") { try await add() }.disabled(!canAdd)
             NoopButton("Cancel", kind: .tertiary) { dismiss() }.disabled(adding)
         }
     }
