@@ -42,6 +42,7 @@ enum LiftSessionPersistence {
         var trackerBinding: WorkoutTrackerCaptureBinding? = nil
         var setIdentities: [SetIdentity]? = nil
         var setNotes: [SetNote]? = nil
+        var exerciseOrder: [Int]? = nil
 
         struct SetNote: Codable, Equatable {
             let exerciseIndex: Int
@@ -139,6 +140,7 @@ enum LiftSessionPersistence {
             guard identities.count <= 1000, identities.allSatisfy({ $0.exerciseIndex >= 0 && $0.setIndex > 0 && UUID(uuidString: $0.id) != nil }),
                   Set(identities.map(\.id)).count == identities.count else { return nil }
         }
+        if let order = raw.exerciseOrder, order.count != raw.plan.count || Set(order) != Set(raw.plan.indices) { return nil }
         return raw
     }
 
@@ -217,7 +219,8 @@ enum LiftSessionPersistence {
                 .map { Snapshot.SlotBox(exerciseIndex: $0.exerciseIndex, setIndex: $0.setIndex) },
             sourceDeviceId: sourceDeviceId, recordingId: recordingId, trackerBinding: trackerBinding,
             setIdentities: setIdentities?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) },
-            setNotes: setNotes?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) })
+            setNotes: setNotes?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) },
+            exerciseOrder: engine.exerciseOrder)
     }
 
     /// The numbers typed in advance, back as the controller holds them.
@@ -260,7 +263,7 @@ enum LiftSessionPersistence {
                             restSec: $0.restSec)
         }
         return LiftSessionEngine(restoring: plan, startTs: s.startSec,
-                                 stage: unbox(s.stage), sets: sets, stageStartedAt: s.stageStartedAt)
+                                 stage: unbox(s.stage), sets: sets, stageStartedAt: s.stageStartedAt, exerciseOrder: s.exerciseOrder)
     }
 
     private static func box(_ stage: LiftSessionEngine.Stage) -> Snapshot.StageBox {

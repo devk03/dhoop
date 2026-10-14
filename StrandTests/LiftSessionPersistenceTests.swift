@@ -72,12 +72,18 @@ final class LiftSessionPersistenceTests: XCTestCase {
         controller.setNote("Full range, no added weight", for: slot)
         controller.setLastSession(["Pull-up": [1: LiftSetCarry(weightKg: 25, reps: 8)]])
         XCTAssertNil(controller.carry(for: slot).weightKg, "A no-load exercise cannot inherit a previous added load")
+        let originalBinding = controller.trackerBinding
+        XCTAssertTrue(controller.moveExercise(1, by: -1))
+        XCTAssertEqual(controller.trackerBinding, originalBinding, "Moving a card cannot move its prescribed or additional source IDs")
         let snapshot = try XCTUnwrap(LiftSessionPersistence.load())
         let restored = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
         restored.resume(from: snapshot)
         XCTAssertEqual(restored.identity(for: slot), id)
         XCTAssertEqual(restored.note(for: slot), "Full range, no added weight")
         XCTAssertEqual(restored.trackerLoadMode(exerciseIndex: 1), .bodyweight)
+        XCTAssertEqual(restored.engine?.exerciseOrder, [1, 0])
+        XCTAssertEqual(restored.trackerBinding, originalBinding)
+        controller.undo() // Undo the card move before undoing the added exercise.
         controller.undo()
         XCTAssertNil(controller.note(for: slot), "Undoing the added exercise removes its detached note intent")
         XCTAssertTrue(controller.addExercise("Row", primaryMuscle: nil, secondaryMuscles: [], sourceExerciseId: UUID(), loadMode: .machine))

@@ -127,6 +127,8 @@ struct LiftSessionEngine: Equatable {
     /// Nothing about a line already there changes mid-session, so the plan stays the snapshot it was at
     /// start, plus whatever was added.
     private(set) var plan: [LiftPlanItem]
+    /// Presentation and suggestion order. Slot indices stay fixed so moving a card never relabels data.
+    private(set) var exerciseOrder: [Int]
     /// When the session began (unix seconds).
     let startTs: Int
     private(set) var stage: Stage
@@ -148,6 +150,7 @@ struct LiftSessionEngine: Equatable {
     /// a slot the sheet no longer draws — and completing it would write a set nobody could see.
     private struct Snapshot: Equatable {
         var plan: [LiftPlanItem]
+        var exerciseOrder: [Int]
         var stage: Stage
         var sets: [LiftRecordedSet]
         var stageStartedAt: Int
@@ -155,6 +158,7 @@ struct LiftSessionEngine: Equatable {
 
     init(plan: [LiftPlanItem], startTs: Int) {
         self.plan = plan
+        self.exerciseOrder = Array(plan.indices)
         self.startTs = startTs
         self.stage = .warmup
         self.sets = []
@@ -166,8 +170,9 @@ struct LiftSessionEngine: Equatable {
     /// The undo history is deliberately NOT restored: it is a within-sitting convenience, and a
     /// stack that survives a relaunch invites reaching back past a save boundary.
     init(restoring plan: [LiftPlanItem], startTs: Int, stage: Stage,
-         sets: [LiftRecordedSet], stageStartedAt: Int) {
+         sets: [LiftRecordedSet], stageStartedAt: Int, exerciseOrder: [Int]? = nil) {
         self.plan = plan
+        self.exerciseOrder = exerciseOrder.flatMap { $0.count == plan.count && Set($0) == Set(plan.indices) ? $0 : nil } ?? Array(plan.indices)
         self.startTs = startTs
         self.stage = stage
         self.sets = sets
@@ -183,7 +188,7 @@ struct LiftSessionEngine: Equatable {
     }
 
     /// Every slot in the whole session, in plan order.
-    var allSlots: [LiftSlot] { plan.indices.flatMap { slots(forExercise: $0) } }
+    var allSlots: [LiftSlot] { exerciseOrder.flatMap { slots(forExercise: $0) } }
 
     func recordedSet(for slot: LiftSlot) -> LiftRecordedSet? {
         sets.first { $0.slot == slot }
@@ -428,6 +433,16 @@ struct LiftSessionEngine: Equatable {
 
     // MARK: - Adding an exercise
 
+    /// Move a card and its next-set suggestion, without changing recorded slots or the current stage.
+    @discardableResult
+    mutating func moveExercise(_ index: Int, by offset: Int) -> Bool {
+        guard stage != .finished, offset == -1 || offset == 1,
+              let position = exerciseOrder.firstIndex(of: index), exerciseOrder.indices.contains(position + offset) else { return false }
+        pushHistory()
+        exerciseOrder.swapAt(position, position + offset)
+        return true
+    }
+
     /// The most lines one session may hold: the importer's cap on one program, so a session grown during
     /// the workout stays inside the bound its crash snapshot (written on every change) was sized for.
     static let maxExercises = 200
@@ -443,6 +458,7 @@ struct LiftSessionEngine: Equatable {
         var line = item
         line.targetSets = 1
         plan.append(line)
+        exerciseOrder.append(plan.count - 1)
         return true
     }
 
@@ -462,13 +478,14 @@ struct LiftSessionEngine: Equatable {
     mutating func undo() {
         guard let previous = history.popLast() else { return }
         plan = previous.plan
+        exerciseOrder = previous.exerciseOrder
         stage = previous.stage
         sets = previous.sets
         stageStartedAt = previous.stageStartedAt
     }
 
     private mutating func pushHistory() {
-        history.append(Snapshot(plan: plan, stage: stage,
+        history.append(Snapshot(plan: plan, exerciseOrder: exerciseOrder, stage: stage,
                                 sets: sets, stageStartedAt: stageStartedAt))
     }
 }

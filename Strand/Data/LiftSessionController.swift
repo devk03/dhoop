@@ -587,6 +587,13 @@ final class LiftSessionController: ObservableObject {
         return binding.additionalOccurrences?.first { $0.planIndex == exerciseIndex }?.loadMode
     }
 
+    @discardableResult
+    func moveExercise(_ index: Int, by offset: Int) -> Bool {
+        guard !isSaving, engine?.moveExercise(index, by: offset) == true else { return false }
+        persist()
+        return true
+    }
+
     /// Drop the last pending set of an exercise. See `LiftSessionEngine.canRemoveSet(fromExercise:)`
     /// for what "can" means — a completed set is never removed this way.
     @discardableResult

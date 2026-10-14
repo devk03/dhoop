@@ -54,6 +54,30 @@ final class LiftSessionEngineTests: XCTestCase {
         XCTAssertFalse(e.canUndo)
         XCTAssertEqual(e.nextPendingSlot, slot(0, 1))
     }
+    func testMovingExercisesPreservesRecordedSlotsAndCurrentTimingWhileChangingSuggestions() {
+        var e = LiftSessionEngine(plan: threeExercisePlan(), startTs: t0)
+        e.start(slot(0, 1), now: t0 + 10); e.advance(now: t0 + 40)
+        e.updateSet(slot(0, 1), weightKg: 80, reps: 10, rpe: 7.5, isWarmup: false)
+        let recorded = e.sets, stage = e.stage, anchor = e.stageStartedAt
+        XCTAssertTrue(e.moveExercise(2, by: -1))
+        XCTAssertTrue(e.moveExercise(2, by: -1))
+        XCTAssertEqual(e.exerciseOrder, [2, 0, 1])
+        XCTAssertEqual(e.plan[0].exercise, "Leg press")
+        XCTAssertEqual(e.sets, recorded)
+        XCTAssertEqual(e.stage, stage)
+        XCTAssertEqual(e.stageStartedAt, anchor)
+        XCTAssertEqual(e.nextPendingSlot, slot(2, 1))
+        XCTAssertEqual(e.slotAfter(slot(0, 1)), slot(0, 2), "Rest still continues on the current exercise")
+        e.undo()
+        XCTAssertEqual(e.exerciseOrder, [0, 2, 1])
+        XCTAssertEqual(e.sets, recorded)
+        XCTAssertFalse(e.moveExercise(0, by: -1))
+        XCTAssertFalse(e.moveExercise(0, by: 2))
+        XCTAssertTrue(e.addExercise(LiftPlanItem(exercise: "Calf raise")))
+        XCTAssertEqual(e.exerciseOrder, [0, 2, 1, 3])
+        e.undo()
+        XCTAssertEqual(e.exerciseOrder, [0, 2, 1])
+    }
 
     // MARK: - The occupied-machine path (reported from a real session)
 
