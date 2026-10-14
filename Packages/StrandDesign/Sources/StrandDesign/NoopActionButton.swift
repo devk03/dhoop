@@ -17,7 +17,7 @@ public struct NoopActionButton: View {
     }
 
     public var body: some View {
-        Button(action: action) {
+        Button(role: kind.role, action: action) {
             HStack(spacing: NoopButtonMetrics.iconSpacing) {
                 ZStack {
                     if state.isWorking {
@@ -32,7 +32,7 @@ public struct NoopActionButton: View {
                 Text(title)
             }
         }
-        .buttonStyle(NoopButtonStyle(kind, fullWidth: fullWidth))
+        .buttonStyle(NoopButtonStyle(kind, fullWidth: fullWidth, isPending: state.isWorking))
         .disabled(state.isWorking)
         .accessibilityValue(value)
     }

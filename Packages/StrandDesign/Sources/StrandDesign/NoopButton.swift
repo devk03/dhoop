@@ -25,6 +25,11 @@ public enum NoopButtonKind: Sendable {
     case tertiary
     /// Filled critical (red), white label — destructive / irreversible actions.
     case destructive
+
+    var role: ButtonRole? {
+        if case .destructive = self { return .destructive }
+        return nil
+    }
 }
 
 // MARK: - Shared geometry / resolved styling
@@ -156,14 +161,16 @@ private struct NoopButtonBackground: View {
 public struct NoopButtonStyle: ButtonStyle {
     private let kind: NoopButtonKind
     private let fullWidth: Bool
-    public init(_ kind: NoopButtonKind = .primary, fullWidth: Bool = false) {
+    private let isPending: Bool
+    public init(_ kind: NoopButtonKind = .primary, fullWidth: Bool = false, isPending: Bool = false) {
         self.kind = kind
         self.fullWidth = fullWidth
+        self.isPending = isPending
     }
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label.modifier(NoopButtonChrome(kind: configuration.role == .destructive ? .destructive : kind,
-            fullWidth: fullWidth, pressed: configuration.isPressed))
+            fullWidth: fullWidth, pressed: configuration.isPressed, isPending: isPending))
     }
 }
 
@@ -172,8 +179,13 @@ struct NoopButtonChrome: ViewModifier {
     let kind: NoopButtonKind
     let fullWidth: Bool
     let pressed: Bool
+    let isPending: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
+
+    init(kind: NoopButtonKind, fullWidth: Bool, pressed: Bool, isPending: Bool = false) {
+        self.kind = kind; self.fullWidth = fullWidth; self.pressed = pressed; self.isPending = isPending
+    }
 
     func body(content: Content) -> some View {
         let appearance = NoopButtonAppearance(kind)
@@ -193,7 +205,7 @@ struct NoopButtonChrome: ViewModifier {
             .contentShape(Rectangle())
             .background(NoopButtonBackground(appearance: appearance))
             .clipShape(RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius, style: .continuous))
-            .opacity(isEnabled ? opacity : NoopButtonMetrics.disabledOpacity)
+            .opacity(isEnabled || isPending ? opacity : NoopButtonMetrics.disabledOpacity)
             .scaleEffect(scale)
             .animation(reduceMotion ? nil : StrandMotion.interactive, value: pressed)
     }
@@ -232,7 +244,7 @@ public struct NoopButton: View {
     }
 
     public var body: some View {
-        Button(action: action) {
+        Button(role: kind.role, action: action) {
             // The ButtonStyle owns the chrome (fill / colour / press / padding). The label here is
             // just the icon + word as one centred unit at the exact 8pt token spacing. When there's
             // no icon the HStack holds a single Text, so the word sits dead-centre with no phantom gap.
