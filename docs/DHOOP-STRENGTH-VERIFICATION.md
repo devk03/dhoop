@@ -37,6 +37,20 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   `/private/tmp/dhoop-strength-replacement-contract-tests.log` and
   `/private/tmp/dhoop-native-replacement-fixture-tests.log`.
 
+## Build 479 software evidence
+
+- iOS and macOS compile checks passed. The final selected tracker/client tests passed (26), including
+  credential-free cached starts, unknown fetch ages, transient errors, blocked prescriptions,
+  fresh-read unblocking and restoration of fetch dates/blocks.
+- The selected recovery/numeric tests passed (22). The new last-good-snapshot regression failed on
+  the previous code because an encoding error deleted recovery data, then passed after the fix.
+- A native-generated `planAtStart` payload passed the Life receiver's strict schema in a bounded
+  read-only check. No live POST, credential, website mutation or physical collection was tested.
+- Logs: `/private/tmp/dhoop-recovery-encoding-before-tests.log`,
+  `/private/tmp/dhoop-recovery-479-verified-tests.log`,
+  `/private/tmp/dhoop-cached-start-479-final-tests.log`,
+  `/private/tmp/dhoop-cached-start-479-final-ios-build.log`.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
@@ -59,6 +73,8 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
    unchanged. Review local persistence separately from any tracker receipt/canonical website update.
 7. Export and import a companion metadata package through Files. Confirm the connection remains off,
    no credentials are restored and workout history still requires its separate `.noopbak` backup.
+   Check cached plan fetch dates/unknown ages and that a reported invalid plan remains blocked.
+   Start a valid cached plan with delivery off; verify there is no read or silent connection activation.
 
 No vibration tests or substitute notifications are permitted during the owner's current quiet
 window, ending October 14 at 14:26:57 America/Los_Angeles (21:26:57 UTC). Cues are not queued for

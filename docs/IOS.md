@@ -694,8 +694,18 @@ wearer-felt vibration, or physiological accuracy. Those require physical-device 
 The iPhone Strength hub exposes Tracker routines; Settings exposes Workout tracker. The connection
 is off by default. A dedicated workout credential is stored separately in Keychain, bound to the
 explicitly configured owner origin and public installation UUID. Saving the connection keeps it off.
-No credentials or production service are created by the app. Reads use bounded pagination, reject
-mixed revisions and check a fresh manifest before starting. No recurring polling job is installed.
+No credentials or production service are created by the app. Reads use bounded pagination and reject
+mixed revisions. Read latest and start checks a fresh manifest. An explicit Start cached plan action
+uses a complete saved snapshot without a request or Keychain read, even with delivery switched off.
+It retains the original public destination, bindings and source IDs. Per-plan fetch timestamps are
+separate from index refresh times; legacy unknown ages stay unknown. A reported inconsistent,
+unavailable or invalid latest plan blocks cached reuse until a valid fresh read. Backup/restore retains
+these blocks and known fetch dates. No recurring polling job is installed.
+
+New captures retain `planAtStart` with live/cached provenance, the original supported hash or null,
+and the actual fetch timestamp or null. Older capture bindings keep unknown provenance; a refreshed
+cache never retroactively relabels their start. Future reviewed write-precondition changes must retain
+this original reference. The local receiver locks first-accepted provenance, including unknown.
 
 A tracker capture retains exact cycle/session/occurrence/set IDs, its prescription snapshot, actual
 IANA timezone and original connection destination. Source workout and set UUIDs survive relaunch and
@@ -727,6 +737,12 @@ The [session-order study](design/dhoop-strength-session-order-study.png) and its
 [built-in ImageGen prompt](design/dhoop-strength-session-order-study.prompt.txt) use demo data only.
 The [replacement study](design/dhoop-strength-replacement-study.png) and its
 [built-in ImageGen prompt](design/dhoop-strength-replacement-study.prompt.txt) are also demo references.
+An unencodable active-session update preserves the last good recovery snapshot. Explicit discard
+still clears it. Non-finite numeric text is rejected; an encoding failure retains current in-memory
+entries, reports a recovery error and prevents saving until corrected. This is Apple input/recovery
+behavior; Android has no corresponding session editor in this fork. SQLite row shapes and analytics
+are unchanged. The [cached-start/recovery study](design/dhoop-cached-start-recovery-study.png) and
+[built-in ImageGen prompt](design/dhoop-cached-start-recovery-study.prompt.txt) contain demo data.
 The [picker and delivery study](design/dhoop-tracker-picker-delivery-study.png) and its
 [built-in ImageGen prompt](design/dhoop-tracker-picker-delivery-study.prompt.txt) use demo data only.
 
@@ -774,5 +790,5 @@ workflow has not yet been verified on the physical iPhone.
 
 The native integration and matching Life receiver are local development work. Production deployment,
 dedicated credentials and any Cloudflare path activation require separate authorization. Additional
-offline cached-plan starts and reviewed conflict rebinding require further work before this
+reviewed conflict recovery requires further work before this
 integration is considered complete. Physical-device verification remains outstanding.
