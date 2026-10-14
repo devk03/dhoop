@@ -67,7 +67,8 @@ enum LiftFormat {
     static func number(_ text: String) -> Double? {
         let cleaned = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
         guard !cleaned.isEmpty else { return nil }
-        return Double(cleaned)
+        guard let value = Double(cleaned), value.isFinite else { return nil }
+        return value
     }
 
     // MARK: - Durations

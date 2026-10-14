@@ -153,12 +153,15 @@ enum LiftSessionPersistence {
 
     // MARK: - UserDefaults
 
-    static func store(_ snapshot: Snapshot?, into d: UserDefaults = .standard) {
-        guard let snapshot, let data = encode(snapshot) else {
+    @discardableResult
+    static func store(_ snapshot: Snapshot?, into d: UserDefaults = .standard) -> Bool {
+        guard let snapshot else {
             d.removeObject(forKey: defaultsKey)
-            return
+            return true
         }
+        guard let data = encode(snapshot) else { return false }
         d.set(data, forKey: defaultsKey)
+        return true
     }
 
     static func load(from d: UserDefaults = .standard) -> Snapshot? {

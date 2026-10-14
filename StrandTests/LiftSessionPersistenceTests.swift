@@ -34,6 +34,35 @@ final class LiftSessionPersistenceTests: XCTestCase {
         snapshot.stage.kind = "finished"
         XCTAssertNil(LiftSessionPersistence.activeWorkoutSpan(snapshot, deviceID: "strap", now: t0 + 100))
     }
+    func testUnencodableUpdatePreservesTheLastGoodRecoverySnapshot() throws {
+        let original = try XCTUnwrap(LiftSessionPersistence.decode(snapshotJSONWithoutProgramItemId()))
+        LiftSessionPersistence.store(original)
+        let bytes = try XCTUnwrap(UserDefaults.standard.data(forKey: LiftSessionPersistence.defaultsKey))
+        var invalid = original; invalid.plan[0].targetWeightKg = .infinity
+        XCTAssertNil(LiftSessionPersistence.encode(invalid))
+        LiftSessionPersistence.store(invalid)
+        XCTAssertEqual(UserDefaults.standard.data(forKey: LiftSessionPersistence.defaultsKey), bytes,
+                       "An encoding failure is not an instruction to discard the active workout")
+        XCTAssertEqual(LiftSessionPersistence.load(), original)
+        LiftSessionPersistence.store(nil)
+        XCTAssertNil(LiftSessionPersistence.load(), "Explicit discard still clears the recovery snapshot")
+    }
+    @MainActor
+    func testFailedRecoveryUpdateKeepsEntriesOpenAndBlocksSavingUntilCorrected() throws {
+        let controller = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
+        XCTAssertTrue(controller.start(plan: [LiftPlanItem(exercise: "Bench")], programId: nil, programName: nil))
+        let slot = LiftSlot(exerciseIndex: 0, setIndex: 1)
+        controller.updateSet(slot, weightKg: .infinity, reps: 8, rpe: nil, isWarmup: false)
+        XCTAssertNotNil(controller.recoveryError)
+        XCTAssertFalse(controller.beginSaving())
+        XCTAssertEqual(controller.enteredValues(for: slot).weightKg, .infinity)
+        controller.updateSet(slot, weightKg: 60, reps: 8, rpe: nil, isWarmup: false)
+        XCTAssertNil(controller.recoveryError)
+        let saved = try XCTUnwrap(LiftSessionPersistence.load())
+        XCTAssertEqual(LiftSessionPersistence.pendingValues(from: saved)[slot]?.weightKg, 60)
+        XCTAssertTrue(controller.beginSaving())
+        controller.endSaving(); controller.discard()
+    }
 
     @MainActor
     func testWorkoutAndSetIdentitiesSurviveRelaunchAndSaveRetries() throws {

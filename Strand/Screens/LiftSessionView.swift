@@ -205,6 +205,10 @@ struct LiftSessionView: View {
                 .foregroundStyle(StrandPalette.textSecondary)
             Text("Exercise menu changes this session's order. Logged sets keep their original exercise.")
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            if let recoveryError = session.recoveryError {
+                Text(recoveryError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -776,7 +780,11 @@ struct LiftSessionView: View {
                 // One way to save. Session RPE above is optional, so an empty field is simply no rating;
                 // a separate "Skip" saved exactly the same way and read as a second choice.
                 NoopActionButton("Save session", fullWidth: true, state: saving ? .working : .idle) { Task { await save() } }
-                    .disabled(saving || !answered)
+                    .disabled(saving || !answered || session.recoveryError != nil)
+                if let recoveryError = session.recoveryError {
+                    Text(recoveryError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if !answered {
                     Text("Choose an option above to save.")
                         .font(StrandFont.footnote)

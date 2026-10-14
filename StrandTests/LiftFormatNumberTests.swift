@@ -70,6 +70,7 @@ final class LiftFormatNumberTests: XCTestCase {
         XCTAssertNil(LiftFormat.number("   "))
         XCTAssertNil(LiftFormat.number("kg"))
         XCTAssertNil(LiftFormat.number("."))
+        for invalid in ["nan", "NaN", "inf", "-inf", "1e999"] { XCTAssertNil(LiftFormat.number(invalid)) }
     }
 
     /// The round trip the entry field performs on every keystroke. Whatever a user types must come

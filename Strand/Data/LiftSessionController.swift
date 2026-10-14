@@ -28,6 +28,7 @@ final class LiftSessionController: ObservableObject {
     @Published private(set) var programId: String?
     @Published private(set) var programName: String?
     @Published private(set) var collectionMessage: String?
+    @Published private(set) var recoveryError: String?
     @Published private(set) var sourceDeviceId: String?
     @Published private(set) var isSaving = false
     @Published private(set) var recordingId: UUID?
@@ -240,6 +241,7 @@ final class LiftSessionController: ObservableObject {
         sourceDeviceId = nil
         isSaving = false
         recordingId = nil; trackerBinding = nil; setIdentities = [:]
+        recoveryError = nil
         setNotes = [:]
         warnedFor = nil
         lastStrapStepAt = nil
@@ -709,7 +711,7 @@ final class LiftSessionController: ObservableObject {
     /// Freeze the submitted snapshot while its transaction runs, including hardware gestures.
     @discardableResult
     func beginSaving() -> Bool {
-        guard engine != nil, !isSaving else { return false }
+        guard engine != nil, !isSaving, recoveryError == nil else { return false }
         isSaving = true
         return true
     }
@@ -942,7 +944,7 @@ final class LiftSessionController: ObservableObject {
 
     private func persist() {
         guard let engine, !engine.isFinished else { return }
-        LiftSessionPersistence.store(
+        let updated = LiftSessionPersistence.store(
             LiftSessionPersistence.snapshot(engine: engine,
                                             programId: programId,
                                             programName: programName,
@@ -952,5 +954,10 @@ final class LiftSessionController: ObservableObject {
                                             recordingId: recordingId?.uuidString.lowercased(), trackerBinding: trackerBinding,
                                             setNotes: setNotes.map { .init(exerciseIndex: $0.key.exerciseIndex, setIndex: $0.key.setIndex, text: $0.value) },
                                             setIdentities: setIdentities.map { .init(exerciseIndex: $0.key.exerciseIndex, setIndex: $0.key.setIndex, id: $0.value.uuidString.lowercased()) }))
+        if updated { recoveryError = nil }
+        else {
+            if recoveryError == nil { log("Strength: session recovery snapshot could not be encoded; existing recovery data left untouched") }
+            recoveryError = "Session recovery could not be updated. Current entries remain open; correct invalid numeric values before saving."
+        }
     }
 }
