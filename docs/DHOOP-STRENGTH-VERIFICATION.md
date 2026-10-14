@@ -25,9 +25,7 @@ The final iOS metadata rebuild is `/private/tmp/dhoop-strength-477-final-metadat
 Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests.log` and
 `/private/tmp/dhoop-strength-477-reviewed-final-ios-build.log`.
 
-## Physical checks still required
-
-### Build 478 replacement evidence
+## Build 478 replacement evidence
 
 - iOS build and macOS app/test build passed. The 68 selected engine/recovery tests and 32 selected
   tracker/payload/client tests passed. No build 478 physical installation has been verified.
@@ -39,7 +37,7 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   `/private/tmp/dhoop-strength-replacement-contract-tests.log` and
   `/private/tmp/dhoop-native-replacement-fixture-tests.log`.
 
-### Device procedure
+## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
    pairing. Confirm older workouts and imperial preferences still appear.
