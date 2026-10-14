@@ -46,6 +46,9 @@ public struct OnboardingWizard: View {
 
     @State private var step: Step = .welcome
     @State private var glow = false
+    @State private var permissionGate = OnboardingPermissionGate()
+    @State private var finished = false
+    @State private var importBusy = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Low Power Mode / "Reduce motion in Zhoop" pose these looping glows still too. Onboarding is
     /// first-run only, but a `repeatForever` is a `repeatForever` wherever it lives.
@@ -73,7 +76,7 @@ public struct OnboardingWizard: View {
                     case .scan:       ScanStep(advance: advance)
                     case .bonded:     BondedStep()
                     case .profile:    ProfileStep()
-                    case .importData: ImportStep()
+                    case .importData: ImportStep(busy: $importBusy)
                     case .notifications: NotificationsStep()
                     case .appearance: AppearanceStep()
                     case .done:       DoneStep()
@@ -99,10 +102,11 @@ public struct OnboardingWizard: View {
         // Isolated live observation — a hidden watcher slides Scan → celebration on bond
         // without subscribing the whole wizard to per-tick updates.
         .background(BondWatcher(onBonded: handleBond))
+        .onDisappear { permissionGate.invalidate() }
     }
 
     private func handleBond() {
-        if step == .scan { withAnimation(StrandMotion.hero) { step = .bonded } }
+        if step == .scan { withAnimation(poseStill ? nil : StrandMotion.hero) { step = .bonded } }
     }
 
     // MARK: Backgrounds
@@ -148,7 +152,9 @@ public struct OnboardingWizard: View {
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
+                .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
+                .disabled(permissionGate.isPending || importBusy || finished)
                 .accessibilityLabel("Back")
             }
 
@@ -170,7 +176,10 @@ public struct OnboardingWizard: View {
                 .frame(maxWidth: 620)
 
             HStack(spacing: 14) {
-                PrimaryButton(title: ctaTitle, systemImage: ctaIcon, action: primaryAction)
+                PrimaryButton(title: ctaTitle, systemImage: ctaIcon,
+                              state: permissionGate.isPending ? .working : finished ? .succeeded : .idle,
+                              action: primaryAction)
+                    .disabled(finished || importBusy)
                     .frame(maxWidth: .infinity)
             }
             .frame(maxWidth: 620)
@@ -208,7 +217,9 @@ public struct OnboardingWizard: View {
     }
 
     private func primaryAction() {
+        guard !permissionGate.isPending, !importBusy, !finished else { return }
         if step.isLast {
+            finished = true
             onFinished()
         } else {
             advance()
@@ -226,14 +237,16 @@ public struct OnboardingWizard: View {
     /// already determined (so a re-run/upgrade doesn't re-prompt), and advance once the OS dialog is
     /// dismissed either way — the per-feature toggles still handle a later denial on their own.
     private func advance() {
+        guard !permissionGate.isPending, !importBusy, !finished else { return }
         guard step != .notifications else {
+            guard let request = permissionGate.begin(page: step.rawValue) else { return }
             UNUserNotificationCenter.current().getNotificationSettings { settings in
                 guard settings.authorizationStatus == .notDetermined else {
-                    Task { @MainActor in advanceStep() }
+                    Task { @MainActor in completeNotificationAdvance(request) }
                     return
                 }
                 UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
-                    Task { @MainActor in advanceStep() }
+                    Task { @MainActor in completeNotificationAdvance(request) }
                 }
             }
             return
@@ -241,18 +254,26 @@ public struct OnboardingWizard: View {
         advanceStep()
     }
 
+    @MainActor
+    private func completeNotificationAdvance(_ request: UUID) {
+        guard permissionGate.consume(request, page: step.rawValue) else { return }
+        advanceStep()
+    }
+
     private func advanceStep() {
         guard let next = Step(rawValue: step.rawValue + 1) else { onFinished(); return }
-        withAnimation(StrandMotion.gentle) { step = next }
+        withAnimation(poseStill ? nil : StrandMotion.gentle) { step = next }
     }
 
     private func back() {
+        guard !permissionGate.isPending, !importBusy, !finished else { return }
         guard let prev = Step(rawValue: step.rawValue - 1) else { return }
-        withAnimation(StrandMotion.gentle) { step = prev }
+        withAnimation(poseStill ? nil : StrandMotion.gentle) { step = prev }
     }
 
     private var stepTransition: AnyTransition {
-        .asymmetric(
+        if poseStill { return .identity }
+        return .asymmetric(
             insertion: .move(edge: .trailing).combined(with: .opacity),
             removal: .move(edge: .leading).combined(with: .opacity)
         )
@@ -569,11 +590,8 @@ private struct ScanStep: View {
                             .frame(maxWidth: 360)
                     }
 
-                    Button(action: { startScan() }) {
-                        Label(scanning ? "Scanning…" : "Scan", systemImage: "dot.radiowaves.left.and.right")
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(scanning)
+                    NoopActionButton("Scan", systemImage: "dot.radiowaves.left.and.right", kind: .secondary,
+                                     state: scanning ? .working : .idle) { startScan() }
 
                     DisclosureToggle(open: $showHelp, label: String(localized: "Don't see it?"))
 
@@ -657,7 +675,7 @@ private struct ScanStep: View {
                 Button(action: retry) {
                     Label("Try again", systemImage: "arrow.clockwise")
                 }
-                .buttonStyle(SecondaryButtonStyle())
+                .buttonStyle(NoopButtonStyle(.secondary))
                 .padding(.top, 2)
             }
         }
@@ -832,9 +850,15 @@ private struct ProfileStep: View {
 // MARK: - Step 8 · Import (optional)
 
 private struct ImportStep: View {
+    @Binding var busy: Bool
     @EnvironmentObject private var model: AppModel
     @State private var showingImporter = false
     @State private var importTarget: ImportTarget = .whoop
+    @State private var pendingTarget: ImportTarget?
+    @State private var selectedURL: URL?
+    @State private var selectedTarget: ImportTarget?
+    @State private var pickerError: String?
+    @State private var pickerErrorTarget: ImportTarget?
 
     var body: some View {
         StepShell(title: String(localized: "Bring your history"),
@@ -852,29 +876,44 @@ private struct ImportStep: View {
                 InfoCard(
                     icon: "clock.arrow.circlepath",
                     tint: StrandPalette.accent,
-                    title: String(localized: "History fills the dashboard immediately"),
-                    message: String(localized: "A WHOOP export backfills recovery, strain, sleep and workouts. Apple Health can add HR, HRV, sleep, SpO₂, steps, workouts and weight.")
+                    title: String(localized: "Import recorded history"),
+                    message: String(localized: "Supported exports can add recorded metrics. Import completion and availability of each metric are separate; missing records stay unavailable.")
                 )
 
                 StrandCard {
                     VStack(spacing: 10) {
                         ImportActionButton(
-                            title: model.isImporting(.whoop) ? String(localized: "Importing…") : String(localized: "Import WHOOP export"),
+                            title: String(localized: "Import WHOOP export"),
                             systemImage: "tray.and.arrow.down",
-                            disabled: model.hasActiveImport
+                            state: importActionState(.whoop),
+                            disabled: model.hasActiveImport || pendingTarget != nil
                         ) {
                             presentImporter(.whoop)
                         }
                         ImportActionButton(
-                            title: model.isImporting(.appleHealth) ? String(localized: "Working…") : String(localized: "Import Apple Health export"),
+                            title: String(localized: "Import Apple Health export"),
                             systemImage: "heart.fill",
-                            disabled: model.hasActiveImport
+                            state: importActionState(.appleHealth),
+                            disabled: model.hasActiveImport || pendingTarget != nil
                         ) {
                             presentImporter(.appleHealth)
                         }
                     }
                 }
                 .frame(maxWidth: 480)
+
+                if let pickerError {
+                    Text(pickerError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                }
+                if let selectedURL, let selectedTarget,
+                   selectedTarget == importTarget, (model.importFailed(selectedTarget.kind) || pickerErrorTarget == selectedTarget) {
+                    NoopActionButton("Retry selected import", systemImage: "arrow.clockwise", kind: .secondary,
+                                     fullWidth: true, state: importActionState(selectedTarget)) {
+                        startImport(selectedURL, target: selectedTarget)
+                    }.disabled(model.hasActiveImport || pendingTarget != nil)
+                    Text("Selected: \(selectedURL.lastPathComponent)")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                }
 
                 if model.hasActiveImport {
                     ProgressView()
@@ -893,13 +932,25 @@ private struct ImportStep: View {
                 }
             }
         }
+        .onAppear { busy = model.hasActiveImport || pendingTarget != nil }
+        .onChangeCompat(of: model.hasActiveImport) { busy = $0 || pendingTarget != nil }
+        .onChangeCompat(of: pendingTarget) { busy = model.hasActiveImport || $0 != nil }
+        .onDisappear { busy = false }
         .fileImporter(
             isPresented: $showingImporter,
-            allowedContentTypes: importTarget.allowedContentTypes,
+            allowedContentTypes: (pendingTarget ?? importTarget).allowedContentTypes,
             allowsMultipleSelection: false
         ) { result in
-            handleImportResult(result, for: importTarget)
+            handleImportResult(result)
         }
+    }
+
+    private func importActionState(_ target: ImportTarget) -> NoopActionState {
+        if model.isImporting(target.kind) || pendingTarget == target { return .working }
+        if pickerErrorTarget == target, let pickerError { return .failed(pickerError) }
+        let summary = target == .whoop ? model.whoopImportSummary : model.appleHealthImportSummary
+        if model.importFailed(target.kind) { return .failed(summary ?? "The import failed. Choose the file again to retry.") }
+        return summary == nil ? .idle : .succeeded
     }
 
     /// The AppModel source kind matching the last-chosen import target.
@@ -919,12 +970,33 @@ private struct ImportStep: View {
     }
 
     private func presentImporter(_ target: ImportTarget) {
-        importTarget = target
+        guard !model.hasActiveImport, pendingTarget == nil else { return }
+        busy = true; pendingTarget = target; pickerError = nil; pickerErrorTarget = nil
         showingImporter = true
     }
 
-    private func handleImportResult(_ result: Result<[URL], Error>, for target: ImportTarget) {
-        guard case .success(let urls) = result, let url = urls.first else { return }
+    private func handleImportResult(_ result: Result<[URL], Error>) {
+        guard let target = pendingTarget else { return }
+        defer { pendingTarget = nil; busy = model.hasActiveImport }
+        do {
+            let urls = try result.get()
+            guard let url = urls.first else { return }
+            selectedURL = url; selectedTarget = target; importTarget = target
+            startImport(url, target: target)
+        } catch {
+            if (error as? CocoaError)?.code != .userCancelled {
+                pickerError = error.localizedDescription; pickerErrorTarget = target
+            }
+        }
+    }
+
+    private func startImport(_ url: URL, target: ImportTarget) {
+        guard !model.hasActiveImport else {
+            pickerError = "Another import is in progress. Your selected file is retained; retry when it finishes."
+            pickerErrorTarget = target
+            return
+        }
+        busy = true; pickerError = nil; pickerErrorTarget = nil
         switch target {
         case .whoop:
             model.importWhoop(url: url)
@@ -933,9 +1005,11 @@ private struct ImportStep: View {
         }
     }
 
-    private enum ImportTarget {
+    private enum ImportTarget: Equatable {
         case whoop
         case appleHealth
+
+        var kind: DataSourceImportKind { self == .whoop ? .whoop : .appleHealth }
 
         var allowedContentTypes: [UTType] {
             // See DataSourcesView: `.folder` is a macOS-only affordance (pick an unzipped export
@@ -1324,9 +1398,11 @@ private struct FieldRow: View {
 private struct DisclosureToggle: View {
     @Binding var open: Bool
     let label: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var motion = NoopMotionState.shared
     var body: some View {
         Button {
-            withAnimation(StrandMotion.gentle) { open.toggle() }
+            withAnimation(motion.poseStill(reduceMotion) ? nil : StrandMotion.gentle) { open.toggle() }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: open ? "chevron.up" : "chevron.down")
@@ -1335,34 +1411,22 @@ private struct DisclosureToggle: View {
             .font(StrandFont.subhead)
             .foregroundStyle(StrandPalette.accent)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
+        .frame(minHeight: NoopMetrics.minimumTouchTarget)
     }
 }
 
 private struct ImportActionButton: View {
     let title: String
     let systemImage: String
+    var state: NoopActionState = .idle
     var disabled = false
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 18)
-                Text(title)
-                    .font(StrandFont.subhead.weight(.semibold))
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(StrandPalette.textTertiary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(SecondaryButtonStyle())
-        .disabled(disabled)
-        .opacity(disabled ? 0.55 : 1)
+        NoopActionButton(LocalizedStringKey(title), systemImage: systemImage, kind: .secondary,
+                         fullWidth: true, state: state, action: action)
+            .disabled(disabled)
     }
 }
 
@@ -1371,51 +1435,11 @@ private struct ImportActionButton: View {
 private struct PrimaryButton: View {
     let title: String
     var systemImage: String? = nil
+    var state: NoopActionState = .idle
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Text(title).font(StrandFont.headline)
-                if let systemImage {
-                    Image(systemName: systemImage).font(.system(size: 14, weight: .semibold))
-                }
-            }
-        }
-        .buttonStyle(PrimaryButtonStyle())
-    }
-}
-
-private struct PrimaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(maxWidth: .infinity)
-            .foregroundStyle(Color.white)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 20)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(configuration.isPressed ? StrandPalette.accentHover : StrandPalette.accent)
-            )
-            .shadow(color: StrandPalette.accent.opacity(0.4), radius: 12, y: 4)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(StrandMotion.interactive, value: configuration.isPressed)
-    }
-}
-
-private struct SecondaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(StrandFont.subhead.weight(.semibold))
-            .foregroundStyle(StrandPalette.textPrimary)
-            .padding(.vertical, 11)
-            .padding(.horizontal, 18)
-            .background(NoopPanelSurface(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(configuration.isPressed ? StrandPalette.hairlineStrong : StrandPalette.hairline, lineWidth: 1)
-            )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(StrandMotion.interactive, value: configuration.isPressed)
+        NoopActionButton(LocalizedStringKey(title), systemImage: systemImage, fullWidth: true,
+                         state: state, action: action)
     }
 }
 
