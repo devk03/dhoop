@@ -66,7 +66,7 @@ struct WhoopCollectionCard: View {
                                 Text("Connection, fresh receipt and stored samples are separate evidence. Collection checks do not establish the physiological accuracy of derived metrics.")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                                 Button("Check now") { Task { await collection.refresh(repo: repo, live: live) } }
-                                    .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                                    .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                                 ShareLink(item: collection.proofText(live: live, now: context.date, deviceId: repo.deviceId)) {
                                     Label("Share collection proof", systemImage: "square.and.arrow.up")
                                 }

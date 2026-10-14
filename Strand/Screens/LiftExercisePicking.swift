@@ -150,7 +150,7 @@ struct LiftMusclePicker: View {
                 )
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 

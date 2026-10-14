@@ -61,7 +61,7 @@ struct HIITWorkoutView: View {
                     Text("Short: work · Longer: recovery · Longest: finished").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     Text("Warm-up and cool-down use the recovery cue. Workout haptics must be on in Settings.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    Button("Test WHOOP buzz", action: testBuzz).font(StrandFont.subhead).buttonStyle(.bordered)
+                    Button("Test WHOOP buzz", action: testBuzz).font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.secondary))
                         .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!canTestBuzz)
                     if let buzzFeedback { Text(buzzFeedback).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                     if !canTestBuzz { Text("Connect and wear WHOOP with workout haptics enabled to test.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
@@ -88,7 +88,7 @@ struct HIITWorkoutView: View {
                     Button { value.wrappedValue = min(600, value.wrappedValue + 5) } label: {
                         Image(systemName: "plus").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
                     }.accessibilityLabel("Increase \(title.lowercased()) by 5 seconds").disabled(value.wrappedValue >= 600)
-                }.buttonStyle(.bordered).tint(tint)
+                }.buttonStyle(NoopButtonStyle(.secondary)).tint(tint)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
@@ -117,11 +117,11 @@ struct HIITWorkoutView: View {
                     .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan).disabled(!canStart)
             }
             Button { controller.save() } label: { Label(controller.isSaving ? "Saving…" : "End and save", systemImage: "stop.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
-                .buttonStyle(.bordered).disabled(controller.isSaving)
+                .buttonStyle(NoopButtonStyle(.secondary)).disabled(controller.isSaving)
             Button(role: .destructive) { discardID = run.id } label: {
                 Label("Discard workout", systemImage: "trash").font(StrandFont.subhead)
                     .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
-            }.buttonStyle(.bordered).tint(StrandPalette.statusCritical).disabled(controller.isSaving)
+            }.buttonStyle(NoopButtonStyle(.secondary)).tint(StrandPalette.statusCritical).disabled(controller.isSaving)
         }
     }
     private func statTile(_ title: String, value: String, detail: String, symbol: String, tint: Color) -> some View {

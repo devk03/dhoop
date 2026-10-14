@@ -87,7 +87,7 @@ struct LiftSessionExerciseSheet: View {
                             Text("Used before").strandOverline()
                             ForEach(suggestions, id: \.id) { row in
                                 Button { adopt(row) } label: { LiftExerciseSuggestionLabel(row: row) }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(NoopFeedbackButtonStyle())
                             }
                         }
                     }
@@ -99,7 +99,7 @@ struct LiftSessionExerciseSheet: View {
     private var footer: some View {
         HStack {
             Button("Cancel") { dismiss() }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .font(StrandFont.body)
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer()

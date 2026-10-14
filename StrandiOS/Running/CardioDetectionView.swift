@@ -100,7 +100,7 @@ struct CardioDetectionView: View {
             Button(review.decision == .pending ? "Not a workout" : "Change to not a workout") {
                 decide(review, .notWorkout)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(NoopButtonStyle(.secondary))
             .frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
     }

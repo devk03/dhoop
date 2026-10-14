@@ -46,7 +46,7 @@ struct CardioHistoryView: View {
                         ForEach(rows) { group in
                             if group.id != rows.first?.id { Divider() }
                             HStack(spacing: NoopMetrics.space2) {
-                                Button { selected = group } label: { row(group) }.buttonStyle(.plain)
+                                Button { selected = group } label: { row(group) }.buttonStyle(NoopFeedbackButtonStyle())
                                 let deletable = group.recordings.filter { canDelete($0) }
                                 if !deletable.isEmpty {
                                     Menu {
@@ -67,7 +67,7 @@ struct CardioHistoryView: View {
             }
             if filtered.count > visibleCount {
                 Button("Load older sessions · \(filtered.count - visibleCount) more") { visibleCount += 40 }
-                    .font(StrandFont.subhead).frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(.bordered)
+                    .font(StrandFont.subhead).frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(NoopButtonStyle(.secondary))
             }
             NoopCard {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
@@ -215,7 +215,7 @@ private struct CardioHistoryDetail: View {
                     Button(role: .destructive) { confirmingDelete = true } label: {
                         Label(deleting ? "Deleting…" : "Delete recording", systemImage: "trash")
                             .font(StrandFont.subhead).frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
-                    }.buttonStyle(.bordered).tint(StrandPalette.statusCritical).disabled(deleting)
+                    }.buttonStyle(NoopButtonStyle(.secondary)).tint(StrandPalette.statusCritical).disabled(deleting)
                 } else {
                     Text("Imported recordings are read-only. Manage the original in its source app.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)

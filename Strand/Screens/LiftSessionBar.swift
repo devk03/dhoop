@@ -82,7 +82,7 @@ struct LiftSessionBar: View {
                             .font(.system(size: 26, weight: .semibold))
                             .foregroundStyle(tint(engine))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NoopFeedbackButtonStyle())
                     .accessibilityLabel("Next")
                 }
                 .padding(.leading, 12)
@@ -92,7 +92,7 @@ struct LiftSessionBar: View {
                 .overlay(Capsule().stroke(tint(engine).opacity(0.35), lineWidth: 1))
                 .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .accessibilityLabel("Open the running session")
         }
     }

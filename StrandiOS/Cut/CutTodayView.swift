@@ -416,7 +416,7 @@ private struct CutTodayDashboard: View, Equatable {
                         Button { plan.removeFood(e.id, day: dayKey) } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(StrandPalette.textTertiary)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(NoopFeedbackButtonStyle())
                         .accessibilityLabel("Remove \(e.name)")
                     }
                 }
@@ -444,7 +444,7 @@ private struct CutTodayDashboard: View, Equatable {
                             .background(Capsule().fill(StrandPalette.accent.opacity(0.15)))
                             .foregroundStyle(StrandPalette.accent)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NoopFeedbackButtonStyle())
                 }
 
                 // 1. What you're aiming for.
@@ -477,7 +477,7 @@ private struct CutTodayDashboard: View, Equatable {
                     Label("Set weight", systemImage: "scalemass")
                         .font(StrandFont.subhead).frame(maxWidth: .infinity).padding(.vertical, NoopMetrics.space1)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(NoopButtonStyle(.secondary))
                 .buttonBorderShape(.capsule)
                 .tint(StrandPalette.accent)
             }

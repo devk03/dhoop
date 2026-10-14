@@ -55,7 +55,7 @@ struct RemoteBuzzSettingsView: View {
                 }
                 if client.paired {
                     Button("Revoke Life connection", role: .destructive) { confirmRevocation = true }
-                        .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
@@ -67,9 +67,9 @@ struct RemoteBuzzSettingsView: View {
                 DisclosureGroup("Troubleshooting") {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Button("Retry pending Life updates") { client.retryPending() }
-                            .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                            .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                         Button("Check for waiting buzzes") { client.checkInbox() }
-                            .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                            .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                         Text("Missed requests are checked on opening, reconnecting and real Bluetooth wakes, with a ten-minute adaptive foreground window. No background keepalive is used. Expired requests never buzz late.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         BuzzDeliveryStatusView(ble: app.ble)
@@ -117,7 +117,7 @@ struct RemoteBuzzSettingsView: View {
                         .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                         .disabled(envelopeText.isEmpty)
                     Button("Choose encrypted response file") { importingFile = true }
-                        .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }
             }
         }
@@ -132,7 +132,7 @@ struct RemoteBuzzSettingsView: View {
         Button("I felt it") { client.confirm(eventId: eventId, felt: true) }
             .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
         Button("I didn’t feel it") { client.confirm(eventId: eventId, felt: false) }
-            .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+            .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
     }
 }
 #endif

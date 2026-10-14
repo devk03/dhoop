@@ -543,7 +543,7 @@ struct RootTabView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .accessibilityLabel(Text(title))
             .accessibilityValue(Text(isOpen ? String(localized: "Expanded") : String(localized: "Collapsed")))
             .accessibilityHint(Text(isOpen ? String(localized: "Double tap to collapse") : String(localized: "Double tap to expand")))
@@ -653,7 +653,7 @@ private struct MoreRow: View {
                     .padding(.leading, 16)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
     }
 }
 
@@ -734,7 +734,7 @@ private struct QuickActionSheet: View {
             .background(NoopPanelSurface(cornerRadius: 14))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
     }
 }
 

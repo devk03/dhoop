@@ -18,7 +18,7 @@ struct MetricRangeControl: View {
                                         .foregroundStyle(selection.preset == preset ? NoopVisualStyle.selectedControlInk : StrandPalette.textSecondary)
                                         .background(selection.preset == preset ? NoopVisualStyle.selectedControlFill : .clear, in: Capsule())
                                 }
-                                .buttonStyle(.plain).id(preset)
+                                .buttonStyle(NoopFeedbackButtonStyle()).id(preset)
                                 .accessibilityLabel(preset.title)
                                 .accessibilityAddTraits(selection.preset == preset ? .isSelected : [])
                             }
@@ -48,7 +48,7 @@ struct MetricRangeControl: View {
                         Button { moveDay(1) } label: { Image(systemName: "chevron.right") }
                             .accessibilityLabel("Next day")
                             .disabled(Calendar.current.isDate(selection.window(now: now).start, inSameDayAs: now))
-                    }.buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    }.buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }
                 if !selection.window(now: now).isSingleDay {
                     Text(selection.window(now: now).label).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)

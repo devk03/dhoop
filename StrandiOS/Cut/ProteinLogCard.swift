@@ -39,7 +39,7 @@ struct ProteinLogCard: View {
                         Text("\(grams.formatted(.number.precision(.fractionLength(0)))) g")
                             .font(StrandFont.number(numberSize, weight: .semibold))
                     }.foregroundStyle(StrandPalette.textPrimary).frame(minHeight: NoopMetrics.minimumTouchTarget).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("Expand protein history").accessibilityValue("\(grams.formatted()) grams logged")
+                }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Expand protein history").accessibilityValue("\(grams.formatted()) grams logged")
                 Text(protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -64,7 +64,7 @@ struct ProteinLogCard: View {
                     Label("Log protein", systemImage: "plus").font(StrandFont.caption)
                         .foregroundStyle(StrandPalette.metricProtein)
                         .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                }.buttonStyle(.plain)
+                }.buttonStyle(NoopFeedbackButtonStyle())
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -169,7 +169,7 @@ private struct ProteinHistoryView: View {
                                     proteinRow(name: entry.name, grams: entry.grams, time: entry.time)
                                     if let id = entry.removableId {
                                         Button { store.remove(id) } label: { Image(systemName: "minus.circle") }
-                                            .buttonStyle(.plain).foregroundStyle(StrandPalette.textSecondary)
+                                            .buttonStyle(NoopFeedbackButtonStyle()).foregroundStyle(StrandPalette.textSecondary)
                                             .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
                                             .accessibilityLabel("Remove \(entry.name), \(entry.grams.formatted()) grams")
                                     }

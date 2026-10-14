@@ -83,7 +83,7 @@ struct HeartMetricsView: View, Equatable {
                 }.foregroundStyle(StrandPalette.textPrimary)
             }
         }
-        .buttonStyle(.plain).frame(minHeight: NoopMetrics.minimumTouchTarget)
+        .buttonStyle(NoopFeedbackButtonStyle()).frame(minHeight: NoopMetrics.minimumTouchTarget)
         .accessibilityElement(children: .combine)
         .accessibilityValue(observation?.connected == true ? "Connected at last check" : "Connection not confirmed at last check")
         .accessibilityHint("Opens device identity, sample freshness and collection evidence")
@@ -116,7 +116,7 @@ struct HeartMetricsView: View, Equatable {
                             Text("Today").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
                     }.foregroundStyle(StrandPalette.textPrimary).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("Expand heart-rate history").accessibilityValue("\(snapshot?.averageHR.map(number) ?? "Unavailable") average bpm")
+                }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Expand heart-rate history").accessibilityValue("\(snapshot?.averageHR.map(number) ?? "Unavailable") average bpm")
                 let lower = snapshot?.fromDay ?? Calendar.current.startOfDay(for: capturedAt)
                 let upper = max(lower.addingTimeInterval(1), snapshot?.through ?? capturedAt)
                 plot(snapshot?.measuredHR ?? [], domain: lower...upper, tint: StrandPalette.liquidHeart,
@@ -191,7 +191,7 @@ struct HeartMetricsView: View, Equatable {
                         }.foregroundStyle(StrandPalette.textPrimary)
                         numeric(value, unit: unit)
                     }.frame(minHeight: NoopMetrics.minimumTouchTarget).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("Expand \(metric.title) history").accessibilityValue("\(value) \(unit)")
+                }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Expand \(metric.title) history").accessibilityValue("\(value) \(unit)")
                 content()
             }.frame(maxWidth: .infinity, alignment: .leading)
         }

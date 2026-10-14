@@ -79,7 +79,7 @@ struct MeditationCard: View {
                 action("Resume", icon: "play.fill", perform: meditation.resume)
             }
             Button("Cancel", action: meditation.cancel)
-                .font(StrandFont.subhead).buttonStyle(.bordered).tint(StrandPalette.textSecondary)
+                .font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.secondary)).tint(StrandPalette.textSecondary)
                 .frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
     }

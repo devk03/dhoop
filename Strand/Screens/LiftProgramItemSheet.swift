@@ -143,7 +143,7 @@ struct LiftProgramItemSheet: View {
                                     } label: {
                                         LiftExerciseSuggestionLabel(row: row)
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(NoopFeedbackButtonStyle())
 
                                     // A typo becomes a permanent picker entry otherwise. Forgetting a
                                     // name is safe by construction: every logged set SNAPSHOTS its
@@ -155,7 +155,7 @@ struct LiftProgramItemSheet: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundStyle(StrandPalette.textTertiary)
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(NoopFeedbackButtonStyle())
                                     .accessibilityLabel("Forget this exercise")
                                 }
                             }
@@ -243,7 +243,7 @@ struct LiftProgramItemSheet: View {
     private var footer: some View {
         HStack {
             Button("Cancel") { dismiss() }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .font(StrandFont.body)
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer()

@@ -59,7 +59,9 @@ public enum NoopButtonMetrics {
 public struct NoopFeedbackButtonStyle: ButtonStyle {
     public init() {}
     public func makeBody(configuration: Configuration) -> some View {
-        configuration.label.modifier(NoopPressFeedback(pressed: configuration.isPressed))
+        configuration.label
+            .frame(minWidth: NoopButtonMetrics.minHitTarget, minHeight: NoopButtonMetrics.minHitTarget)
+            .modifier(NoopPressFeedback(pressed: configuration.isPressed))
     }
 }
 
