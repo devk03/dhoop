@@ -233,6 +233,28 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   failures and clear their selection. Pending input, errors/retry and superseded selection reads
   need review before the all-screen controls requirement can be considered complete.
 
+## Build 488 retained image selections
+
+- Six hostless tests passed (`/private/tmp/dhoop-image-selection-488-tests.log`): superseded read
+  success/failure, retry after read/commit failure, duplicate prevention and cancellation, invalid
+  avatar preservation, background decode/write failure preservation, and unreadable recent presets.
+  Fixtures use isolated preference suites and temporary directories. ImageIO diagnostics come from
+  deliberately unreadable/truncated fixtures; recovered native images are not rejected solely for
+  a warning. Tests do not exercise Photos permission dialogs on the physical phone.
+- Both app builds passed: `/private/tmp/dhoop-image-selection-488-ios-build.log` and
+  `/private/tmp/dhoop-image-selection-488-macos-build.log`. Signed build 488 retains the stable bundle,
+  Loshi team and `com.dhoop.workout-metadata` document type. It is not installed.
+- Shared selection generations prevent stale transfers from replacing a newer choice. Failed reads,
+  decoding and writes preserve the current image and selected input for explicit retry. Settings
+  shows pending, error, retry/cancel and confirmed-success feedback using named design tokens.
+  Explicit removal/preset changes cancel pending import before changing the selection.
+- The built-in ImageGen demo reference is `docs/design/dhoop-image-import-feedback-study.png`, with
+  the exact prompt beside it. Its separate panels illustrate operation states; Settings retains its
+  existing inline sections rather than adopting new photo-editing screens. Physical Dynamic Type,
+  VoiceOver, picker gestures and visual acceptance remain unverified.
+- No migration, owner image import, preference reset, phone launch, strap command or cue occurred.
+  The full goal remains active, including approved storage design and physical collection gates.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

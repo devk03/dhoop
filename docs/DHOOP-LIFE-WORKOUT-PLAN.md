@@ -9,6 +9,8 @@ The follow-up tracker review in Life commit `494b609` specifies native history-o
 completion without changing receiver runtime code.
 Life commit `c98ba65` adds a read-only exact event receipt lookup with focused receiver tests and a
 production build. It remains local and undeployed; native delivery activation is a separate gate.
+Life commit `f751538` makes read-only lookup the first recovery step throughout the contract;
+ingestion retry is a separate write requiring current observations or an explicit reviewed choice.
 
 ## One workout, logged once
 
