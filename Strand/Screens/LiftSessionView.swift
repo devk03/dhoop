@@ -24,6 +24,7 @@ struct LiftSessionView: View {
     @EnvironmentObject var repo: Repository
     @EnvironmentObject var session: LiftSessionController
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Called once the session has been written, so the hub can reload.
     let onFinished: () async -> Void
@@ -72,12 +73,14 @@ struct LiftSessionView: View {
     var body: some View {
         Group {
             if let engine {
-                VStack(spacing: 0) {
+                if dynamicTypeSize.isAccessibilitySize {
+                    sheet(engine)
+                } else { VStack(spacing: 0) {
                     sheet(engine)
                     // The control bar never scrolls away: at the rack the clock and the one action have to
                     // be where your thumb already is.
                     controlBar(engine)
-                }
+                } }
             } else {
                 ComingSoon(what: "No session running", symbol: "dumbbell")
             }
@@ -118,6 +121,7 @@ struct LiftSessionView: View {
                         exerciseCard(engine, index: index, item: item)
                     }
                     addExerciseRow(engine)
+                    if dynamicTypeSize.isAccessibilitySize { controlBar(engine) }
                     Color.clear.frame(height: 8)
                 }
                 .padding(.horizontal, NoopMetrics.screenPadding)
@@ -155,7 +159,7 @@ struct LiftSessionView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(StrandFont.headline.weight(.semibold))
                 Text("Add exercise").font(StrandFont.body)
             }
             .foregroundStyle(canAdd ? StrandPalette.effortColor : StrandPalette.textTertiary)
@@ -245,7 +249,7 @@ struct LiftSessionView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "plus.circle")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(StrandFont.headline.weight(.semibold))
                     Text("Add set").font(StrandFont.caption)
                 }
                 .foregroundStyle(canAdd ? StrandPalette.effortColor : StrandPalette.textTertiary)
@@ -260,7 +264,7 @@ struct LiftSessionView: View {
                 session.removeSet(fromExercise: index)
             } label: {
                 Image(systemName: "minus.circle")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(StrandFont.headline.weight(.semibold))
                     // Dimmed rather than gone: the pair reads as one control, and a minus that
                     // disappears once the last set is done looks like a feature that broke.
                     .foregroundStyle(canRemove ? StrandPalette.textSecondary
@@ -279,18 +283,16 @@ struct LiftSessionView: View {
     /// Width of the set-number column, shared by the heading and every row so the number sits
     /// directly under its label.
     ///
-    /// 34, not 26. `strandOverline` renders ALL-CAPS with +1.4 tracking, and at 26 the heading wrapped
-    /// mid-word — a real session photographed it reading "SE / T" over two lines. The headings are
-    /// also `lineLimit(1)` with a scale floor: this row is four short labels across a phone width in
-    /// ten languages, and a wrapped heading breaks the column alignment for every row beneath it.
-    static let setColumnWidth: CGFloat = 34
+    /// Matches the warm-up button's minimum touch target. Accessibility sizes use labeled inputs
+    /// instead of squeezing the table's headings and fields into these columns.
+    static let setColumnWidth: CGFloat = NoopMetrics.minimumTouchTarget
 
     /// Width of the trailing tick column. Mirrored by a clear spacer in the heading row so the four
     /// labels sit over the four things they name.
-    private static let tickColumnWidth: CGFloat = 30
+    private static let tickColumnWidth: CGFloat = NoopMetrics.minimumTouchTarget
 
     private var columnHeadings: some View {
-        HStack(spacing: 8) {
+        Group { if !dynamicTypeSize.isAccessibilitySize { HStack(spacing: NoopMetrics.space2) {
             Text("Set").strandOverline()
                 .frame(width: Self.setColumnWidth, alignment: .center)
             Text(weightHeading).strandOverline().frame(maxWidth: .infinity, alignment: .leading)
@@ -300,6 +302,7 @@ struct LiftSessionView: View {
         }
         .lineLimit(1)
         .minimumScaleFactor(0.8)
+        } }
     }
 
     private var weightHeading: LocalizedStringKey {
@@ -312,7 +315,10 @@ struct LiftSessionView: View {
         let recorded = engine.recordedSet(for: slot)
         let isWorking = engine.stage == .working(slot)
 
-        return HStack(spacing: 8) {
+        let rowLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
+            : AnyLayout(HStackLayout(spacing: NoopMetrics.space2))
+        return rowLayout {
             // The set number IS the warm-up toggle. Warm-ups are excluded from volume and from the
             // per-muscle counts, so being unable to mark one silently inflates the single figure the
             // whole feature rests on — it has to be reachable in one tap, without leaving the row.
@@ -333,23 +339,17 @@ struct LiftSessionView: View {
                                 ? String(localized: "Warm-up set — tap to make it a working set")
                                 : String(localized: "Set \(slot.setIndex) — tap to mark it a warm-up"))
 
-            numberField(slot: slot, field: .weight(slot),
-                        text: weightBinding(slot),
-                        ghost: ghostWeight(slot))
-            numberField(slot: slot, field: .reps(slot),
-                        text: repsBinding(slot),
-                        ghost: ghostReps(slot))
-            numberField(slot: slot, field: .rpe(slot),
-                        text: rpeBinding(slot),
-                        ghost: ghostRpe(engine, slot: slot))
+            setInput(weightHeading, slot: slot, field: .weight(slot), text: weightBinding(slot), ghost: ghostWeight(slot))
+            setInput("Reps", slot: slot, field: .reps(slot), text: repsBinding(slot), ghost: ghostReps(slot))
+            setInput("RPE", slot: slot, field: .rpe(slot), text: rpeBinding(slot), ghost: ghostRpe(engine, slot: slot))
 
             // The tick both REPORTS and ACTS: filled when the set is done, and tappable to start
             // this set when it is not — which is how you jump to a different exercise.
             Button {
-                if recorded == nil { session.start(slot) } else { session.start(slot) }
+                session.start(slot)
             } label: {
                 Image(systemName: recorded == nil ? "circle" : "checkmark.circle.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(StrandFont.headline.weight(.semibold))
                     .foregroundStyle(recorded == nil
                                      ? StrandPalette.textTertiary
                                      : StrandPalette.statusPositive)
@@ -364,6 +364,18 @@ struct LiftSessionView: View {
         .padding(.horizontal, 8)
         .background(rowBackground(isWorking: isWorking, done: recorded != nil),
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    @ViewBuilder private func setInput(_ title: LocalizedStringKey, slot: LiftSlot, field: FocusTarget,
+                                      text: Binding<String>, ghost: String) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                Text(title).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                numberField(slot: slot, field: field, text: text, ghost: ghost)
+            }
+        } else {
+            numberField(slot: slot, field: field, text: text, ghost: ghost)
+        }
     }
 
     /// Warm-up state lives in the controller, so a mark survives the sheet being minimised and
@@ -429,7 +441,17 @@ struct LiftSessionView: View {
             .foregroundStyle(StrandPalette.textPrimary)
             .numericKeyboard()
             .focused($focused, equals: field)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget, alignment: .leading)
+            .accessibilityLabel(inputLabel(field))
+    }
+
+    private func inputLabel(_ field: FocusTarget) -> Text {
+        switch field {
+        case .weight(let slot): return Text("Weight for set \(slot.setIndex), \(unitSystem == .imperial ? "pounds" : "kilograms")")
+        case .reps(let slot): return Text("Repetitions for set \(slot.setIndex)")
+        case .rpe(let slot): return Text("RPE for set \(slot.setIndex)")
+        case .sessionRpe: return Text("Session RPE")
+        }
     }
 
     // MARK: - Ghost values
@@ -539,15 +561,18 @@ struct LiftSessionView: View {
     // MARK: - The control bar
 
     private func controlBar(_ engine: LiftSessionEngine) -> some View {
-        VStack(spacing: NoopMetrics.rowSpacing) {
-            HStack(spacing: 14) {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
+            : AnyLayout(HStackLayout(spacing: NoopMetrics.space3))
+        return VStack(spacing: NoopMetrics.rowSpacing) {
+            layout {
                 clock(String(localized: "Session"), tint: StrandPalette.textPrimary) { $0 - engine.startTs }
                 stageClock(engine)
                 heartRate()
                 Spacer(minLength: 0)
                 Button { session.undo() } label: {
                     Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(StrandFont.subhead.weight(.semibold))
                 }
                 .buttonStyle(NoopFeedbackButtonStyle())
                 .foregroundStyle(engine.canUndo ? StrandPalette.textSecondary : StrandPalette.textTertiary)
@@ -555,7 +580,7 @@ struct LiftSessionView: View {
                 .accessibilityLabel("Undo")
             }
 
-            HStack(spacing: NoopMetrics.rowSpacing) {
+            layout {
                 Button { session.advance() } label: {
                     Text(actionLabel(engine)).frame(maxWidth: .infinity)
                 }
@@ -569,12 +594,12 @@ struct LiftSessionView: View {
                 } label: {
                     Text("Finish")
                 }
-                .buttonStyle(NoopButtonStyle(.secondary))
+                .buttonStyle(NoopButtonStyle(.secondary, fullWidth: dynamicTypeSize.isAccessibilitySize))
             }
         }
         .padding(.horizontal, NoopMetrics.screenPadding)
-        .padding(.top, 10)
-        .padding(.bottom, 14)
+        .padding(.top, NoopMetrics.space2)
+        .padding(.bottom, NoopMetrics.space3)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) {
             Rectangle().fill(StrandPalette.textTertiary.opacity(0.15)).frame(height: 0.5)
@@ -600,10 +625,10 @@ struct LiftSessionView: View {
     }
 
     private func labelled<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             Text(label).strandOverline()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.7)
             value()
         }
     }

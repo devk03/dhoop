@@ -87,7 +87,7 @@ struct LiftLogView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 HStack(spacing: NoopMetrics.rowSpacing) {
                     Image(systemName: "dumbbell.fill")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(StrandFont.subhead.weight(.semibold))
                         .foregroundStyle(StrandPalette.effortColor)
                         .frame(width: 30, height: 30)
                         .background(StrandPalette.effortColor.opacity(0.14),
@@ -363,7 +363,7 @@ struct LiftLogView: View {
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(StrandFont.caption.weight(.semibold))
                     .foregroundStyle(StrandPalette.textSecondary)
                     .accessibilityHidden(true)
             }
