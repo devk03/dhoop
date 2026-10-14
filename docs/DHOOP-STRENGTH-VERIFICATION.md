@@ -51,6 +51,19 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   `/private/tmp/dhoop-cached-start-479-final-tests.log`,
   `/private/tmp/dhoop-cached-start-479-final-ios-build.log`.
 
+## Build 480 control evidence
+
+- iOS and macOS builds passed. Sixteen selected protein store/export tests passed, including
+  corrupt-source preservation, failed encoding, independent targets and two-instance writes.
+- An isolated probe compiled the previous committed store and demonstrated that adding an entry
+  overwrote unreadable history. The new store blocks that write and retains the original bytes.
+  The probe used its own temporary UserDefaults suite; no user records or production endpoint changed.
+- Pairing/history navigation now uses shared feedback/touch targets. Reduced-motion handling was
+  added for history date changes/reset. No new pairing/Bluetooth behavior was exercised.
+- Logs: `/private/tmp/dhoop-protein-preservation-tests.log`,
+  `/private/tmp/dhoop-controls-480-ios-build.log`, `/private/tmp/dhoop-controls-480-macos-build.log`.
+- Build 480 has not been installed or visually verified on the physical iPhone.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
@@ -66,6 +79,8 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
    separately; no unperformed original sets may be fabricated at finish.
 4. Check native taps, holds, drag-off cancellation, scrolling and chart scrubbing. Check large
    Dynamic Type, VoiceOver labels, Reduce Motion and light/dark contrast on the actual device.
+   Check protein add/remove/target success, retained input after failure, and the unchanged one-screen
+   logging flow. Check pairing back/close/model choices and history previous/next/reset controls.
 5. Separately test background/locked collection and disconnection/reconnection, recording real
    gaps and source identity. Strength pause/resume is still implementation work; it cannot be
    reported as verified from these builds.

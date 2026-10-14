@@ -689,6 +689,21 @@ by this local capture change. No workout is written into the official WHOOP app.
 Software builds and controller/store tests do not establish locked-phone collection reliability,
 wearer-felt vibration, or physiological accuracy. Those require physical-device checks.
 
+### Protein and control feedback
+
+Protein add/remove/target actions use the shared pending/success/error component. Entered grams and
+meal text clear only after a successful local write. Mutations re-read current saved entries before
+encoding/publishing, so another store instance's newer entries are retained. Unreadable saved history
+blocks writes and reports unavailable totals rather than zero; the original bytes remain untouched.
+Retry reading is explicit. A failed encoding retains previous entries. Protein-only entries still
+create no calorie day or weight-goal change; their JSON format and defaults keys are unchanged.
+
+Pairing navigation/model choices and history day/reset buttons use shared pressed/disabled feedback
+and 44-point targets. Native confirmation dialogs remain native. History navigation/reset honors
+Reduce Motion. The [control study](design/dhoop-protein-pairing-control-study.png) and
+[built-in generation/edit prompts](design/dhoop-protein-pairing-control-study.prompt.txt) are demo
+references, not runtime screenshots. Physical interaction/accessibility checks remain outstanding.
+
 ### Optional Life workout connection
 
 The iPhone Strength hub exposes Tracker routines; Settings exposes Workout tracker. The connection
