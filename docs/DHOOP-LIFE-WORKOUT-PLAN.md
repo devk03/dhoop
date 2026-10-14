@@ -5,6 +5,8 @@ This plan extends the active strength/control goal. The wire contract is maintai
 Production activation and physical-device acceptance remain separate from local implementation.
 The tracker thread reviewed this ownership split and recovery algorithm in Life commit `3662f70`;
 its focused receiver tests passed without changing runtime receiver behavior.
+The follow-up tracker review in Life commit `494b609` specifies native history-only and deletion
+completion without changing receiver runtime code.
 
 ## One workout, logged once
 
@@ -17,6 +19,27 @@ The primary flow is Exercises → Strength → routine → workout. An explicitl
 remains usable offline with its real fetch age. Local routines remain available independently.
 Life-backed routine edits use Life's program editor; in-session replacements are actual workout
 observations and do not silently rewrite the reusable program.
+
+### Owner experience
+
+1. Open Exercises → Strength and choose a local routine or a Life routine. Keep both origins
+   visible; an exercise name does not establish a shared identity.
+2. For a Life routine, read the current plan or explicitly choose its validated cached copy.
+   Show prescribed targets beside entry fields, without counting them as completed sets.
+3. Start one physical session. Log working sets, warm-ups, effort and notes there while shared
+   WHOOP collection records actual heart-rate samples across work and rest. Changes made during
+   the session remain observations, not edits to the reusable Life program.
+4. Finish by saving on the phone. If delivery is configured, retain the exact same workout and
+   set identities in the pending delivery. Network failure must leave a usable local history.
+5. In history, distinguish recorded values from current Life values. Show whether Life accepted
+   the observations, applied import-owned fields, preserved a manual edit, or saved history only.
+   Receiver acceptance alone is not evidence that progression finished or all fields applied.
+6. Correct or delete the same physical session through explicit review. Do not create a second
+   workout to resolve a conflict. Keep the original event and start prescription as provenance.
+
+Local exercises and routines continue to work independently. Creating one does not create or
+rename a Life catalog entry. A future optional standalone export must retain a stable custom UUID
+and explicit load mode; it cannot convert a Life-backed capture into another standalone workout.
 
 On completion, local storage succeeds first. Optional configured delivery uses the same physical
 workout, occurrence and set UUIDs. History distinguishes local storage, receiver acceptance,
@@ -84,6 +107,36 @@ features, and rest cues must use the shared buzz system without changing wake al
 - [ ] Physical iPhone routine with two exercises and three timed sets, two successive incoming and
       persisted sample observations, pause/lock/reconnect/relaunch, edits/deletion and gesture checks.
 - [ ] Separately approved receiver deployment, dedicated credentials and production activation.
+
+## Delivery order
+
+The receiver contract already describes accepted-capture history-only corrections and historical
+deletion. Finish and test the native reviewed paths against that contract before proposing another
+receiver API. History-only correction is an explicit upsert for an already accepted capture with
+verified bindings, no deletion arrays and no canonical projection. Deletion uses the default apply
+policy and preserves manual canonical values, prescriptions and raw historical provenance.
+
+Both remaining paths need capture-centered coherent reads and a recheck before preparation.
+Do not reuse the apply-recovery helper's requirement for a current valid manifest: a previously
+accepted programmed capture can support history-only correction or full deletion after its targets
+retire. History-only retains the original bindings and start provenance and requires a new event and
+higher source revision. Full deletion retains the physical UUID, uses empty observation/deletion
+arrays and may keep the original/null manifest reference. Partial deletions remain apply upserts
+and still require valid current bindings. Uncertain receipts, foreign installations, tombstones,
+newer source revisions and changed local recordings require explicit resolution, not automatic rebase.
+
+Life's detailed eligibility and receipt rules remain authoritative in its contract. In particular,
+history-only is currently for already accepted programmed captures; it is not a fallback for a
+never-accepted invalid plan or a standalone session. A full-delete receipt preserving manual values
+can still accompany a successful source tombstone; verify the resulting source state.
+
+Complete true pause/rest interval storage, supersets and exercise variation relationships only
+after approval of the additive native schema changes. Approval of integration design does not
+authorize a database migration. Test native behavior before production activation, then verify
+the full session and two successive incoming/persisted sample observations on the physical phone.
+
+Production deployment, dedicated workout credentials and end-to-end acceptance are separate gates.
+Existing buzz or sleep/protein credentials must not be reused for workout delivery.
 
 The native recovery path passed 46 selected manifest/client/delivery/transport tests, including
 unchanged observations, retained provenance, explicit separate send, changed local/remote data,
