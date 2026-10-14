@@ -98,6 +98,14 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
         try receipt.validate(eventId: event, sourceWorkoutId: binding.sourceWorkoutId, revision: 1)
         try receipt.validate(binding: binding, sets: [set])
         XCTAssertTrue(receipt.reconciliation.pending)
+        XCTAssertFalse(receipt.needsSourceReview(revision: 1, deleting: false))
+        object["currentSourceRevision"] = 2
+        XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: false), "A recovered old receipt is not evidence that its values are still current")
+        object["currentSourceRevision"] = 1
+        object["currentTombstone"] = true
+        XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: false))
+        XCTAssertFalse(try decode().needsSourceReview(revision: 1, deleting: true))
+        object["currentTombstone"] = false
         object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [setID: 99]]
         XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]), "A response for another set is not a delivery receipt")
         object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 99], "sets": [setID: 1]]

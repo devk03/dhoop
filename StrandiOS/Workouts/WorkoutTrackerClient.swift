@@ -193,7 +193,7 @@ final class WorkoutTrackerClient: ObservableObject {
                 let ack = try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: response)
                 try ack.validate(eventId: item.id, sourceWorkoutId: item.sourceWorkoutId, revision: item.revision)
                 guard currentGeneration == generation, state.enabled else { return }
-                if ack.outcome == "stale" || ack.acceptedSourceRevision != item.revision {
+                if ack.needsSourceReview(revision: item.revision, deleting: item.operation == .delete) {
                     try updateDelivery(item.id, status: .review, message: "Tracker has a newer capture revision; review before retrying", acknowledgement: response)
                 } else {
                     try ack.validate(binding: item.binding, sets: item.operation == .delete ? [] : item.sets)

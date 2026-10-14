@@ -160,10 +160,20 @@ struct WorkoutCaptureAcknowledgement: Decodable {
     let preservedFields: [String]
     let mappings: Mappings
     let reconciliation: Reconciliation
+    let currentSourceRevision: Int?
+    let currentTombstone: Bool?
+    let projectionState: String?
+
+    func needsSourceReview(revision: Int, deleting: Bool) -> Bool {
+        outcome == "stale" || acceptedSourceRevision != revision ||
+            (currentSourceRevision ?? revision) > revision || (currentTombstone == true && !deleting)
+    }
 
     func validate(eventId: UUID, sourceWorkoutId: UUID, revision: Int) throws {
         guard schemaVersion == 1, self.eventId == eventId, self.sourceWorkoutId == sourceWorkoutId,
               acceptedSourceRevision >= revision, lifeRevision >= receiptLifeRevision, receiptLifeRevision >= 0,
+              currentSourceRevision.map({ $0 >= acceptedSourceRevision }) ?? true,
+              projectionState.map({ ["current", "retired"].contains($0) }) ?? true,
               ["done", "pending", "not_pending", "not_applicable"].contains(reconciliation.state),
               ["applied", "duplicate", "stale", "manual_preserved", "deleted"].contains(outcome) else {
             throw WorkoutSyncTransportError.invalidResponse
