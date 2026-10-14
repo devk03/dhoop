@@ -1,4 +1,4 @@
-#if os(iOS)
+#if canImport(Security)
 import Foundation
 import Security
 

@@ -1,11 +1,12 @@
 import Foundation
 
 enum WorkoutTrackerContractError: LocalizedError {
-    case invalidSnapshot, unavailableCapture
+    case invalidSnapshot, unavailableCapture, deliveryInProgress
     var errorDescription: String? {
         switch self {
         case .invalidSnapshot: return "The tracker returned an inconsistent workout snapshot. Refresh before starting."
         case .unavailableCapture: return "This tracker workout already has observations. Review it before starting another capture."
+        case .deliveryInProgress: return "This workout's tracker delivery is in progress. Your edits are kept; try again after it finishes."
         }
     }
 }

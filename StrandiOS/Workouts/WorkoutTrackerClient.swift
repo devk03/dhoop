@@ -1,4 +1,4 @@
-#if os(iOS)
+#if canImport(Combine) && canImport(Security)
 import Foundation
 import Combine
 import WhoopStore
@@ -11,18 +11,31 @@ final class WorkoutTrackerClient: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var storageUnavailable = false
     private let store: WorkoutTrackerFileStore
-    private let transport = WorkoutSyncTransport()
+    private let send: (WorkoutSyncEndpoint, Data?, WorkoutSyncConfiguration) async throws -> Data
+    private let readCredential: () throws -> WorkoutSyncConfiguration?
+    private let saveCredential: (WorkoutSyncConfiguration) throws -> Void
     private var generation = 0
+    private var preparingCaptures: Set<UUID> = []
+    private var transmittingCaptures: Set<UUID> = []
 
-    private init() {
+    private convenience init() {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        store = WorkoutTrackerFileStore(url: root.appendingPathComponent("WorkoutTracker/state.json"))
+        self.init(store: WorkoutTrackerFileStore(url: root.appendingPathComponent("WorkoutTracker/state.json")))
+    }
+
+    init(store: WorkoutTrackerFileStore,
+         send: @escaping (WorkoutSyncEndpoint, Data?, WorkoutSyncConfiguration) async throws -> Data = { endpoint, body, config in
+             try await WorkoutSyncTransport().send(to: endpoint, body: body, credentials: config)
+         },
+         readCredential: @escaping () throws -> WorkoutSyncConfiguration? = WorkoutTrackerKeychain.read,
+         saveCredential: @escaping (WorkoutSyncConfiguration) throws -> Void = WorkoutTrackerKeychain.save) {
+        self.store = store; self.send = send; self.readCredential = readCredential; self.saveCredential = saveCredential
         do { state = try store.load() }
         catch { storageUnavailable = true; state.message = "Tracker state could not be read. Connection is paused; local workouts are preserved." }
     }
     var configured: Bool { (try? credentials()) != nil }
     private func credentials() throws -> WorkoutSyncConfiguration {
-        guard let value = try WorkoutTrackerKeychain.read(), value.valid,
+        guard let value = try readCredential(), value.valid,
               value.origin == state.origin, value.installationId == state.installationId else { throw WorkoutSyncTransportError.configuration }
         var config = value; config.enabled = state.enabled
         return config
@@ -46,7 +59,7 @@ final class WorkoutTrackerClient: ObservableObject {
         next.index = nil; next.manifests = [:]; next.capturedAt = nil
         next.message = "Connection saved. Tracker remains off until you enable it."
         try commit(next)
-        try WorkoutTrackerKeychain.save(value)
+        try saveCredential(value)
         generation += 1
     }
     func setEnabled(_ value: Bool) throws {
@@ -65,7 +78,7 @@ final class WorkoutTrackerClient: ObservableObject {
         var result: WorkoutTrackerIndex?
         // Six pages is a hard execution bound. No recurring monitor or background timer.
         for _ in 0..<6 {
-            let bytes = try await transport.send(to: .sessionIndex(cursor: cursor, limit: 100), credentials: config)
+            let bytes = try await send(.sessionIndex(cursor: cursor, limit: 100), nil, config)
             let page = try JSONDecoder().decode(WorkoutTrackerIndex.self, from: bytes)
             try page.validate()
             guard page.sessions.count <= 100 else { throw WorkoutTrackerContractError.invalidSnapshot }
@@ -91,7 +104,7 @@ final class WorkoutTrackerClient: ObservableObject {
         guard config.enabled else { throw WorkoutSyncTransportError.disabled }
         busy = true; defer { busy = false }
         let currentGeneration = generation
-        let bytes = try await transport.send(to: .manifest(sessionId), credentials: config)
+        let bytes = try await send(.manifest(sessionId), nil, config)
         let manifest = try JSONDecoder().decode(WorkoutTrackerManifest.self, from: bytes)
         try manifest.validate()
         guard manifest.sessionId == sessionId, !Task.isCancelled, currentGeneration == generation, state.enabled else {
@@ -112,6 +125,10 @@ final class WorkoutTrackerClient: ObservableObject {
     /// Persist the complete local intent before SQLite. Unsupported bindings remain reviewable.
     func prepare(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding, store: WhoopStore,
                  deleting: Bool = false, isHistoricalChange: Bool = false) async throws -> UUID {
+        guard !transmittingCaptures.contains(binding.sourceWorkoutId), preparingCaptures.insert(binding.sourceWorkoutId).inserted else {
+            throw WorkoutTrackerContractError.deliveryInProgress
+        }
+        defer { preparingCaptures.remove(binding.sourceWorkoutId) }
         // Saving does not require the Keychain or an enabled connection. The destination belongs
         // to the capture, so changing settings cannot redirect an existing workout's observations.
         let destination = binding.connection ?? state.origin.flatMap { origin in
@@ -122,7 +139,9 @@ final class WorkoutTrackerClient: ObservableObject {
         if let retry = state.deliveries.last(where: { $0.sourceWorkoutId == binding.sourceWorkoutId && $0.status == .prepared && $0.record == record && $0.sets == sets && ($0.operation ?? .upsert) == operation }) {
             return retry.id
         }
-        let revision = (state.deliveries.filter { $0.sourceWorkoutId == binding.sourceWorkoutId }.map(\.revision).max() ?? 0) + 1
+        let previousRevision = state.deliveries.filter { $0.sourceWorkoutId == binding.sourceWorkoutId }.map(\.revision).max() ?? 0
+        guard previousRevision < 9_007_199_254_740_991 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        let revision = previousRevision + 1
         let event = UUID()
         var bytes: Data?
         var message = "Waiting for verified local persistence"
@@ -178,6 +197,9 @@ final class WorkoutTrackerClient: ObservableObject {
         let currentGeneration = generation
         for item in state.deliveries.filter({ [.prepared, .ready, .failed].contains($0.status) || $0.needsReconciliation }).prefix(10) {
             guard currentGeneration == generation, state.enabled, !Task.isCancelled else { return }
+            guard !preparingCaptures.contains(item.sourceWorkoutId) else { throw WorkoutTrackerContractError.deliveryInProgress }
+            transmittingCaptures.insert(item.sourceWorkoutId)
+            defer { transmittingCaptures.remove(item.sourceWorkoutId) }
             guard item.origin == config.origin, item.installationId == config.installationId,
                   try await item.matches(store: store) else {
                 try updateDelivery(item.id, status: .review, message: "Local recording or connection changed; review before upload")
@@ -189,7 +211,7 @@ final class WorkoutTrackerClient: ObservableObject {
             }
             try item.validateBody()
             do {
-                let response = try await transport.send(to: .observations, body: body, credentials: config)
+                let response = try await send(.observations, body, config)
                 let ack = try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: response)
                 try ack.validate(eventId: item.id, sourceWorkoutId: item.sourceWorkoutId, revision: item.revision)
                 guard currentGeneration == generation, state.enabled else { return }

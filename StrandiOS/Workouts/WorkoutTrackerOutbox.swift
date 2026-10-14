@@ -23,7 +23,7 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
         }?.reconciliation.pending == true
     }
     var valid: Bool {
-        (bytes?.count ?? 0) <= WorkoutSyncTransport.bodyLimit && revision > 0 && record.id.lowercased() == sourceWorkoutId.uuidString.lowercased()
+        (bytes?.count ?? 0) <= WorkoutSyncTransport.bodyLimit && revision > 0 && revision <= 9_007_199_254_740_991 && record.id.lowercased() == sourceWorkoutId.uuidString.lowercased()
             && sets.allSatisfy { $0.sessionId == record.id && $0.deviceId == record.deviceId }
             && (try? WorkoutSyncEndpoint.observations.url(origin: origin)) != nil
             && (try? binding.validate()) != nil && binding.sourceWorkoutId == sourceWorkoutId
