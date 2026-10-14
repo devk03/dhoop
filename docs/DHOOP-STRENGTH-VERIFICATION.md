@@ -3,6 +3,8 @@
 ## Software evidence — October 14, 2026
 
 - Build 477: iOS and macOS builds passed. No physical installation of this build has been verified.
+- The final iOS artifact was regenerated/built and checked for the stable bundle ID, build number
+  and exported `.dhoopworkouts` file type. Generated plist/project files are not committed.
 - 66 selected engine and session-recovery tests passed, including session-only exercise order,
   unchanged recorded slots/current timing, undo, notes, source identities and relaunch recovery.
 - 18 selected tracker client/transport tests passed, including immutable retries, conflict retention,
@@ -17,6 +19,7 @@ Evidence logs are local development artifacts, not product data:
 `/private/tmp/dhoop-tracker-archive-consistency-tests.log`,
 `/private/tmp/dhoop-strength-477-ios-build.log`,
 `/private/tmp/dhoop-strength-477-macos-build.log`.
+The final iOS metadata rebuild is `/private/tmp/dhoop-strength-477-final-metadata-ios-build.log`.
 
 ## Physical checks still required
 
