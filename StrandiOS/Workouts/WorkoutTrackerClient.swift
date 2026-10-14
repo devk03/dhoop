@@ -268,7 +268,8 @@ final class WorkoutTrackerClient: ObservableObject {
                 installationId: destination.installationId, revision: revision, eventId: event, heartRateEvidence: evidence,
                 baseLifeRevision: receipt?.lifeRevision, deletedSetIds: removed.compactMap(UUID.init(uuidString:)), deleting: deleting).bytes()
         }
-        catch { message = "Saved intent needs binding review before upload. Local values are retained." }
+        catch let error as WorkoutObservationError { message = "Tracker payload could not be prepared. " + error.localizedDescription }
+        catch { message = "Tracker payload needs review before upload. Local values are retained." }
         var next = state
         next.deliveries.append(WorkoutTrackerDelivery(id: event, sourceWorkoutId: binding.sourceWorkoutId,
             installationId: destination.installationId, origin: destination.origin, revision: revision, bytes: bytes,
@@ -292,7 +293,7 @@ final class WorkoutTrackerClient: ObservableObject {
         guard let index = next.deliveries.firstIndex(where: { $0.id == id }) else { return }
         next.deliveries[index].status = item.bytes == nil ? .review : .ready
         next.deliveries[index].localPersistenceConfirmed = true
-        next.deliveries[index].message = item.bytes == nil ? "Saved locally · review capture bindings or an earlier unverified receipt" : (item.operation == .delete ? "Deleted locally · waiting for tracker tombstone receipt" : "Saved locally · waiting for tracker receipt")
+        next.deliveries[index].message = item.bytes == nil ? "Saved locally · \(item.message)" : (item.operation == .delete ? "Deleted locally · waiting for tracker tombstone receipt" : "Saved locally · waiting for tracker receipt")
         if item.paused == true { next.deliveries[index].status = .review; next.deliveries[index].message = "Kept locally · automatic tracker delivery is paused" }
         next.message = "Workout saved locally. Tracker delivery is separate."
         try commit(next)
@@ -338,7 +339,7 @@ final class WorkoutTrackerClient: ObservableObject {
                 continue
             }
             guard let body = item.bytes else {
-                try updateDelivery(item.id, status: .review, message: "Review extra exercise/set bindings before upload")
+                try updateDelivery(item.id, status: .review, message: item.message)
                 if deliveryId != nil { throw WorkoutTrackerContractError.invalidSnapshot }
                 continue
             }

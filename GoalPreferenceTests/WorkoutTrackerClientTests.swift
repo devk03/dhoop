@@ -170,6 +170,25 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(restored.state.deliveries.first?.status, .accepted)
         XCTAssertEqual(restored.state.deliveries.first?.bytes, original.bytes)
     }
+    func testUnsupportedNoteIsSavedLocallyWithItsActualValidationReasonAndCannotUpload() async throws {
+        let f = try await fixture()
+        var rows = f.sets; rows[0].note = String(repeating: "x", count: 2001)
+        var sends = 0
+        let client = WorkoutTrackerClient(store: f.file, send: { _, _, _ in sends += 1; return Data() }, readCredential: { f.config })
+        let event = try await client.prepare(record: f.record, sets: rows, binding: f.binding, store: f.db)
+        XCTAssertNil(client.state.deliveries.first?.bytes)
+        XCTAssertTrue(client.state.deliveries.first?.message.contains("set notes") == true)
+        try await f.db.saveLiftRecording(session: f.record, sets: rows, workout: WorkoutRow(startTs: 1000, endTs: 1600, sport: "Strength Training", source: "manual", durationS: 600,
+            energyKcal: nil, avgHr: nil, maxHr: nil, strain: nil, distanceM: nil, zonesJSON: nil, notes: nil, steps: nil))
+        try await client.confirmPersistence(event, store: f.db)
+        XCTAssertEqual(client.state.deliveries.first?.status, .review)
+        XCTAssertTrue(client.state.deliveries.first?.message.contains("set notes") == true)
+        do { try await client.synchronize(store: f.db, deliveryId: event); XCTFail("An invalid payload cannot be sent or reported as a success") }
+        catch WorkoutTrackerContractError.invalidSnapshot {}
+        XCTAssertEqual(sends, 0)
+        let saved = try await f.db.liftSets(sessionId: f.record.id)
+        XCTAssertEqual(saved.first?.note, rows[0].note, "Failed preparation must not truncate or discard entered notes")
+    }
 
     func testSelectedRecoveryRefusesStaleLocalValuesBeforeSending() async throws {
         let f = try await fixture()
