@@ -188,4 +188,121 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(restored.state.deliveries[0].status, .accepted)
         XCTAssertEqual(restored.state.deliveries[0].paused, true)
     }
+
+    func testArchiveKeepsOriginalBytesAndCorrectionsContinueFromAcceptedRevision() async throws {
+        let f = try await fixture()
+        var state = try f.file.load()
+        for revision in 1...90 {
+            let event = UUID()
+            let body = try WorkoutCapturePayload.make(record: f.record, sets: f.sets, binding: f.binding, installationId: f.config.installationId,
+                revision: revision, eventId: event).bytes()
+            state.deliveries.append(WorkoutTrackerDelivery(id: event, sourceWorkoutId: f.binding.sourceWorkoutId, installationId: f.config.installationId,
+                origin: f.config.origin, revision: revision, bytes: body, record: f.record, sets: f.sets, binding: f.binding,
+                status: .accepted, acknowledgement: try receipt(body, fixture: f), localPersistenceConfirmed: true))
+        }
+        let oldest = try XCTUnwrap(state.deliveries.first)
+        let compacted = try f.file.compact(state, protecting: [])
+        XCTAssertEqual(compacted.deliveries.count, 80)
+        XCTAssertEqual(compacted.archives.count, 10)
+        try f.file.save(compacted)
+        let reference = try XCTUnwrap(compacted.archives[oldest.id.uuidString.lowercased()])
+        XCTAssertEqual(try f.file.archived(reference), oldest)
+        let package = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".dhoopworkouts", isDirectory: true)
+        try f.file.prepareBackup(state: compacted, destination: package)
+        let restoredFile = WorkoutTrackerFileStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json"))
+        let merged = try restoredFile.mergedBackup(from: package, current: WorkoutTrackerState())
+        try restoredFile.save(merged)
+        let restoredReference = try XCTUnwrap(merged.archives[oldest.id.uuidString.lowercased()])
+        XCTAssertEqual(try restoredFile.archived(restoredReference).bytes, oldest.bytes)
+        XCTAssertFalse(merged.enabled)
+        var sends: [Data] = []
+        let client = WorkoutTrackerClient(store: f.file, send: { _, body, _ in
+            let body = try XCTUnwrap(body); sends.append(body); return try self.receipt(body, fixture: f)
+        }, readCredential: { f.config })
+        // Restore the matching local recording so the archived event can be explicitly recovered.
+        try await f.db.saveLiftRecording(session: f.record, sets: f.sets, workout: WorkoutRow(startTs: 1000, endTs: 1600, sport: "Strength Training", source: "manual", durationS: 600,
+            energyKcal: nil, avgHr: nil, maxHr: nil, strain: nil, distanceM: nil, zonesJSON: nil, notes: nil, steps: nil))
+        XCTAssertEqual(try client.delivery(oldest.id)?.bytes, oldest.bytes)
+        try await client.synchronize(store: f.db, deliveryId: oldest.id)
+        XCTAssertEqual(sends, [try XCTUnwrap(oldest.bytes)])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: f.file.archiveURL(reference.fileId).path), "Recovery never removes the original snapshot")
+        let correction = try await client.prepareHistoryChange(record: f.record, sets: f.sets, store: f.db)
+        XCTAssertNotNil(correction)
+        XCTAssertEqual(client.state.deliveries.last?.revision, 91)
+    }
+
+    func testPendingAndUnverifiedIntentsCannotBeArchivedAndFailuresKeepStateFile() async throws {
+        let f = try await fixture()
+        var state = try f.file.load()
+        for revision in 1...81 {
+            let event = UUID()
+            let body = try WorkoutCapturePayload.make(record: f.record, sets: f.sets, binding: f.binding, installationId: f.config.installationId,
+                revision: revision, eventId: event).bytes()
+            state.deliveries.append(WorkoutTrackerDelivery(id: event, sourceWorkoutId: f.binding.sourceWorkoutId, installationId: f.config.installationId,
+                origin: f.config.origin, revision: revision, bytes: body, record: f.record, sets: f.sets, binding: f.binding,
+                status: .accepted, acknowledgement: try receipt(body, fixture: f, reconciliation: "pending")))
+        }
+        let kept = try f.file.compact(state, protecting: [])
+        XCTAssertEqual(kept.deliveries.count, 81)
+        XCTAssertTrue(kept.archives.isEmpty)
+        try f.file.save(state)
+        let before = try Data(contentsOf: f.file.url)
+        var completed = state
+        let item = completed.deliveries[0]
+        completed.deliveries[0].acknowledgement = try receipt(try XCTUnwrap(item.bytes), fixture: f)
+        // A file at the archive-directory path makes archive creation fail without deleting anything.
+        try Data("preserve-this-file".utf8).write(to: f.file.archiveDirectory)
+        XCTAssertThrowsError(try f.file.compact(completed, protecting: []))
+        XCTAssertEqual(try Data(contentsOf: f.file.url), before)
+        XCTAssertEqual(try Data(contentsOf: f.file.archiveDirectory), Data("preserve-this-file".utf8))
+    }
+
+    func testMetadataBackupRestoresOfflineWithOriginalIdsAndNoCredentialsOrSQLiteWrites() async throws {
+        let f = try await fixture()
+        let source = WorkoutTrackerClient(store: f.file, readCredential: { f.config })
+        try await ready(source, fixture: f)
+        let original = source.state.deliveries[0]
+        try source.keepLocally(deliveryId: original.id)
+        let package = try await source.prepareMetadataBackup()
+        let bytes = try Data(contentsOf: package.appendingPathComponent("manifest.json"))
+        XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains(f.config.credential))
+        let backup = try JSONDecoder().decode(WorkoutTrackerBackupManifest.self, from: bytes)
+        XCTAssertFalse(backup.state.enabled)
+        let targetFile = WorkoutTrackerFileStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json"))
+        let restored = WorkoutTrackerClient(store: targetFile, readCredential: { nil })
+        try await restored.restoreMetadataBackup(from: package)
+        XCTAssertFalse(restored.state.enabled)
+        XCTAssertEqual(restored.state.deliveries[0].id, original.id)
+        XCTAssertEqual(restored.state.deliveries[0].bytes, original.bytes)
+        XCTAssertEqual(restored.state.deliveries[0].binding, original.binding)
+        XCTAssertTrue(restored.state.locallyKeptSources.contains(original.sourceWorkoutId))
+        let db = try await WhoopStore.inMemory()
+        let rows = try await db.liftSessions(deviceId: "strap", fromTs: 0, toTs: 2000)
+        XCTAssertTrue(rows.isEmpty, "Metadata restoration is not a database restore")
+    }
+
+    func testBackupConflictDoesNotReplaceLocalStateAndMissingArchivedFilesAreRejected() async throws {
+        let f = try await fixture(), source = WorkoutTrackerClient(store: f.file, readCredential: { nil })
+        try await ready(source, fixture: f)
+        let original = source.state.deliveries[0], package = try await source.prepareMetadataBackup()
+        var backup = try JSONDecoder().decode(WorkoutTrackerBackupManifest.self, from: Data(contentsOf: package.appendingPathComponent("manifest.json")))
+        var changed = original.record; changed.note = "Conflicting copy"
+        backup.state.deliveries[0] = WorkoutTrackerDelivery(id: original.id, sourceWorkoutId: original.sourceWorkoutId,
+            installationId: original.installationId, origin: original.origin, revision: original.revision, bytes: original.bytes,
+            record: changed, sets: original.sets, binding: original.binding)
+        try JSONEncoder().encode(backup).write(to: package.appendingPathComponent("manifest.json"))
+        let before = try Data(contentsOf: f.file.url)
+        do { try await source.restoreMetadataBackup(from: package); XCTFail("Conflicting events cannot replace current data") }
+        catch WorkoutTrackerContractError.backupConflict {}
+        XCTAssertEqual(try Data(contentsOf: f.file.url), before)
+        XCTAssertEqual(source.state.deliveries[0], original)
+        let missing = UUID()
+        backup.state = source.state
+        backup.state.archives[original.id.uuidString.lowercased()] = WorkoutTrackerArchiveReference(delivery: original, fileId: missing)
+        backup = WorkoutTrackerBackupManifest(createdAt: Date(), state: backup.state, archiveFiles: [missing])
+        try JSONEncoder().encode(backup).write(to: package.appendingPathComponent("manifest.json"))
+        do { try await source.restoreMetadataBackup(from: package); XCTFail("Missing archive files cannot produce a successful restore") }
+        catch {}
+        XCTAssertEqual(try Data(contentsOf: f.file.url), before)
+    }
 }

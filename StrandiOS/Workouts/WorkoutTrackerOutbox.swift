@@ -18,6 +18,20 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var message = "Waiting for verified local persistence"
     var acknowledgement: Data?
     var paused: Bool? = nil
+    var localPersistenceConfirmed: Bool? = nil
+    var createdAt: Date? = nil
+    var canArchive: Bool {
+        if paused == true && localPersistenceConfirmed == true { return true }
+        guard status == .accepted, !needsReconciliation, let acknowledgement,
+              let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
+              (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil else { return false }
+        return !ack.needsSourceReview(revision: revision, deleting: operation == .delete)
+    }
+    func sameIntent(as other: WorkoutTrackerDelivery) -> Bool {
+        id == other.id && sourceWorkoutId == other.sourceWorkoutId && installationId == other.installationId && origin == other.origin &&
+            revision == other.revision && bytes == other.bytes && record == other.record && sets == other.sets && binding == other.binding &&
+            (operation ?? .upsert) == (other.operation ?? .upsert)
+    }
     var needsReconciliation: Bool {
         status == .accepted && acknowledgement.flatMap {
             try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0)

@@ -17,6 +17,9 @@ final class WorkoutTrackerClient: ObservableObject {
     private var generation = 0
     private var preparingCaptures: Set<UUID> = []
     private var transmittingCaptures: Set<UUID> = []
+    private var archiveCache: [UUID: WorkoutTrackerDelivery] = [:]
+    private var stateRevision = 0
+    private var metadataRestoring = false
 
     private convenience init() {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -40,9 +43,46 @@ final class WorkoutTrackerClient: ObservableObject {
         var config = value; config.enabled = state.enabled
         return config
     }
-    private func commit(_ next: WorkoutTrackerState) throws {
+    private func commit(_ next: WorkoutTrackerState, protecting extra: Set<UUID> = []) throws {
         guard !storageUnavailable else { throw WorkoutTrackerContractError.invalidSnapshot }
-        try store.save(next); state = next
+        let compacted = try store.compact(next, protecting: preparingCaptures.union(transmittingCaptures).union(extra))
+        try store.save(compacted); state = compacted
+        stateRevision += 1
+        archiveCache = [:]
+    }
+
+    var historyReferences: [WorkoutTrackerArchiveReference] {
+        let active = Set(state.deliveries.map(\.id))
+        return (state.deliveries.map { WorkoutTrackerArchiveReference(delivery: $0, fileId: $0.id) } + state.archives.values.filter { !active.contains($0.id) })
+            .sorted { ($0.startedAt, $0.createdAt ?? .distantPast, $0.revision) > ($1.startedAt, $1.createdAt ?? .distantPast, $1.revision) }
+    }
+    func delivery(_ id: UUID) throws -> WorkoutTrackerDelivery? {
+        var result: WorkoutTrackerDelivery?
+        if let active = state.deliveries.first(where: { $0.id == id }) { result = active }
+        else if let reference = state.archives[id.uuidString.lowercased()] {
+            if let cached = archiveCache[id] { result = cached }
+            else {
+                result = try store.archived(reference)
+                if archiveCache.count >= 25 { archiveCache = [:] }
+                archiveCache[id] = result
+            }
+        }
+        if let source = result?.sourceWorkoutId, state.locallyKeptSources.contains(source) {
+            result?.paused = true
+            result?.message = "Kept locally · automatic tracker delivery is paused. Earlier tracker data stays unchanged."
+        }
+        return result
+    }
+    private func history(for source: UUID) throws -> [WorkoutTrackerDelivery] {
+        let active = state.deliveries.filter { $0.sourceWorkoutId == source }
+        let ids = Set(active.map(\.id))
+        let archived = try state.archives.values.filter { $0.sourceWorkoutId == source && !ids.contains($0.id) }.map { try store.archived($0) }
+        return (active + archived).sorted { ($0.revision, $0.createdAt ?? .distantPast) < ($1.revision, $1.createdAt ?? .distantPast) }
+    }
+    private func activateDelivery(_ id: UUID) throws {
+        guard !state.deliveries.contains(where: { $0.id == id }), let item = try delivery(id) else { return }
+        var next = state; next.deliveries.append(item)
+        try commit(next, protecting: [item.sourceWorkoutId])
     }
     func createInstallationId() throws {
         guard state.installationId == nil else { return }
@@ -80,6 +120,28 @@ final class WorkoutTrackerClient: ObservableObject {
         var next = state; next.enabled = value
         next.message = value ? "Tracker enabled. Refresh routines to check the connection." : "Tracker is off. Local workouts are kept."
         try commit(next); generation += 1
+    }
+    func prepareMetadataBackup() async throws -> URL {
+        guard !busy, !storageUnavailable, preparingCaptures.isEmpty, transmittingCaptures.isEmpty else { throw WorkoutTrackerContractError.deliveryInProgress }
+        busy = true; defer { busy = false }
+        let target = FileManager.default.temporaryDirectory.appendingPathComponent("Dhoop-workout-metadata-" + UUID().uuidString.lowercased() + ".dhoopworkouts", isDirectory: true)
+        let fileStore = store, snapshot = state
+        try await Task.detached(priority: .utility) { try fileStore.prepareBackup(state: snapshot, destination: target) }.value
+        try Task.checkCancellation()
+        return target
+    }
+    func restoreMetadataBackup(from package: URL) async throws {
+        guard !busy, !storageUnavailable, preparingCaptures.isEmpty, transmittingCaptures.isEmpty else { throw WorkoutTrackerContractError.deliveryInProgress }
+        busy = true; metadataRestoring = true
+        defer { busy = false; metadataRestoring = false }
+        let fileStore = store, current = state, revision = stateRevision
+        let merged = try await Task.detached(priority: .utility) { try fileStore.mergedBackup(from: package, current: current) }.value
+        guard revision == stateRevision, !Task.isCancelled else { throw WorkoutTrackerContractError.deliveryInProgress }
+        try commit(merged); generation += 1
+    }
+    func metadataBackupSummary(at package: URL) async throws -> WorkoutTrackerBackupManifest {
+        let fileStore = store
+        return try await Task.detached(priority: .utility) { try fileStore.backupManifest(at: package) }.value
     }
     func refreshIndex() async throws {
         guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
@@ -130,7 +192,7 @@ final class WorkoutTrackerClient: ObservableObject {
 
     func captureSnapshot(deliveryId: UUID) async throws -> WorkoutTrackerCaptureSnapshot {
         guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
-        guard let item = state.deliveries.first(where: { $0.id == deliveryId }) else { throw WorkoutTrackerContractError.invalidSnapshot }
+        guard let item = try delivery(deliveryId) else { throw WorkoutTrackerContractError.invalidSnapshot }
         let config = try credentials()
         guard config.enabled else { throw WorkoutSyncTransportError.disabled }
         guard config.origin == item.origin, config.installationId == item.installationId else { throw WorkoutSyncTransportError.configuration }
@@ -169,6 +231,7 @@ final class WorkoutTrackerClient: ObservableObject {
     /// Persist the complete local intent before SQLite. Unsupported bindings remain reviewable.
     func prepare(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding, store: WhoopStore,
                  deleting: Bool = false, isHistoricalChange: Bool = false) async throws -> UUID {
+        guard !metadataRestoring else { throw WorkoutTrackerContractError.deliveryInProgress }
         guard !transmittingCaptures.contains(binding.sourceWorkoutId), preparingCaptures.insert(binding.sourceWorkoutId).inserted else {
             throw WorkoutTrackerContractError.deliveryInProgress
         }
@@ -183,7 +246,8 @@ final class WorkoutTrackerClient: ObservableObject {
         if let retry = state.deliveries.last(where: { $0.sourceWorkoutId == binding.sourceWorkoutId && $0.status == .prepared && $0.record == record && $0.sets == sets && ($0.operation ?? .upsert) == operation }) {
             return retry.id
         }
-        let previousRevision = state.deliveries.filter { $0.sourceWorkoutId == binding.sourceWorkoutId }.map(\.revision).max() ?? 0
+        let previous = try history(for: binding.sourceWorkoutId)
+        let previousRevision = previous.map(\.revision).max() ?? 0
         guard previousRevision < 9_007_199_254_740_991 else { throw WorkoutTrackerContractError.invalidSnapshot }
         let revision = previousRevision + 1
         let event = UUID()
@@ -191,7 +255,6 @@ final class WorkoutTrackerClient: ObservableObject {
         var message = "Waiting for verified local persistence"
         do {
             guard binding.connection != nil else { throw WorkoutTrackerContractError.invalidSnapshot }
-            let previous = state.deliveries.filter { $0.sourceWorkoutId == binding.sourceWorkoutId }
             let verifiedRevision = previous.filter { $0.status == .accepted }.map(\.revision).max() ?? 0
             // A local correction cannot resolve an unknown previous server outcome by replaying it.
             if isHistoricalChange, previous.contains(where: { $0.status != .accepted && $0.revision > verifiedRevision }) {
@@ -210,14 +273,14 @@ final class WorkoutTrackerClient: ObservableObject {
         next.deliveries.append(WorkoutTrackerDelivery(id: event, sourceWorkoutId: binding.sourceWorkoutId,
             installationId: destination.installationId, origin: destination.origin, revision: revision, bytes: bytes,
             record: record, sets: sets, binding: binding, operation: operation, message: message,
-            paused: state.deliveries.last(where: { $0.sourceWorkoutId == binding.sourceWorkoutId })?.paused))
+            paused: state.locallyKeptSources.contains(binding.sourceWorkoutId) ? true : previous.last?.paused, createdAt: Date()))
         try commit(next)
         return event
     }
 
     /// History changes retain the same capture IDs. An unknown earlier receipt requires review.
     func prepareHistoryChange(record: LiftSessionRow, sets: [LiftSetRow], store: WhoopStore, deleting: Bool = false) async throws -> UUID? {
-        guard let previous = state.deliveries.last(where: { $0.sourceWorkoutId.uuidString.lowercased() == record.id.lowercased() }) else { return nil }
+        guard let source = UUID(uuidString: record.id), let previous = try history(for: source).last else { return nil }
         return try await prepare(record: record, sets: sets, binding: previous.binding, store: store, deleting: deleting, isHistoricalChange: true)
     }
 
@@ -228,6 +291,7 @@ final class WorkoutTrackerClient: ObservableObject {
         var next = state
         guard let index = next.deliveries.firstIndex(where: { $0.id == id }) else { return }
         next.deliveries[index].status = item.bytes == nil ? .review : .ready
+        next.deliveries[index].localPersistenceConfirmed = true
         next.deliveries[index].message = item.bytes == nil ? "Saved locally · review capture bindings or an earlier unverified receipt" : (item.operation == .delete ? "Deleted locally · waiting for tracker tombstone receipt" : "Saved locally · waiting for tracker receipt")
         if item.paused == true { next.deliveries[index].status = .review; next.deliveries[index].message = "Kept locally · automatic tracker delivery is paused" }
         next.message = "Workout saved locally. Tracker delivery is separate."
@@ -235,11 +299,12 @@ final class WorkoutTrackerClient: ObservableObject {
     }
 
     func keepLocally(deliveryId: UUID) throws {
-        guard !busy, let item = state.deliveries.first(where: { $0.id == deliveryId }),
+        guard !busy, let item = try delivery(deliveryId),
               !preparingCaptures.contains(item.sourceWorkoutId), !transmittingCaptures.contains(item.sourceWorkoutId) else {
             throw WorkoutTrackerContractError.deliveryInProgress
         }
         var next = state
+        next.locallyKeptSources.insert(item.sourceWorkoutId)
         for index in next.deliveries.indices where next.deliveries[index].sourceWorkoutId == item.sourceWorkoutId {
             next.deliveries[index].paused = true
             if next.deliveries[index].status != .accepted { next.deliveries[index].status = .review }
@@ -251,13 +316,14 @@ final class WorkoutTrackerClient: ObservableObject {
     /// One bounded pass; callers can retry the same immutable event after a timeout or relaunch.
     func synchronize(store: WhoopStore, deliveryId: UUID? = nil) async throws {
         guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
+        if let deliveryId { try activateDelivery(deliveryId) }
         let config = try credentials()
         guard config.enabled else { throw WorkoutSyncTransportError.disabled }
         busy = true; defer { busy = false }
         let currentGeneration = generation
         let candidates = state.deliveries.filter { item in
             if let deliveryId { return item.id == deliveryId }
-            return item.paused != true && ([.prepared, .ready, .failed].contains(item.status) || item.needsReconciliation)
+            return item.paused != true && !state.locallyKeptSources.contains(item.sourceWorkoutId) && ([.prepared, .ready, .failed].contains(item.status) || item.needsReconciliation)
         }
         if deliveryId != nil && candidates.isEmpty { throw WorkoutTrackerContractError.invalidSnapshot }
         for item in candidates.prefix(10) {

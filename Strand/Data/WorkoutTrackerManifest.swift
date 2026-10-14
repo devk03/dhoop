@@ -1,13 +1,14 @@
 import Foundation
 
 enum WorkoutTrackerContractError: LocalizedError {
-    case invalidSnapshot, unavailableCapture, deliveryInProgress, sessionChanged
+    case invalidSnapshot, unavailableCapture, deliveryInProgress, sessionChanged, backupConflict
     var errorDescription: String? {
         switch self {
         case .invalidSnapshot: return "Workout data could not be validated. Local entries are kept; review or refresh before continuing."
         case .unavailableCapture: return "This tracker workout already has observations. Review it before starting another capture."
         case .deliveryInProgress: return "Another workout tracker operation is in progress. Your edits are kept; try again after it finishes."
         case .sessionChanged: return "The active workout changed before the exercise could be added. Your input is kept."
+        case .backupConflict: return "Backup metadata conflicts with an existing event or exercise identity. Nothing was replaced."
         }
     }
 }
