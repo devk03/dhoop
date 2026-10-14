@@ -7,6 +7,8 @@ The tracker thread reviewed this ownership split and recovery algorithm in Life 
 its focused receiver tests passed without changing runtime receiver behavior.
 The follow-up tracker review in Life commit `494b609` specifies native history-only and deletion
 completion without changing receiver runtime code.
+Life commit `c98ba65` adds a read-only exact event receipt lookup with focused receiver tests and a
+production build. It remains local and undeployed; native delivery activation is a separate gate.
 
 ## One workout, logged once
 
@@ -63,8 +65,11 @@ features, and rest cues must use the shared buzz system without changing wake al
 
 ## Reviewed recovery
 
-1. For an uncertain delivery outcome, recover the exact original event first. Preserve its bytes
+1. For an uncertain delivery outcome, look up its exact original receipt first. Preserve its bytes
    and IDs; neither a missing capture nor a newer global revision authorizes replacement.
+   Lookup submits the stored body to the dedicated read-only route, not to ingestion. A recorded
+   receipt can be recovered after local edits/deletion without replaying older observations.
+   `not_observed` remains unknown and cannot authorize replacement or a second physical UUID.
 2. For a confirmed revision rejection, read the exact current manifest and bounded capture, with
    matching Life/source revisions across pages. Bracket the capture read with matching manifests.
    Show status, schedule, prescription changes, actual values, ownership and tombstones for review.
@@ -98,7 +103,8 @@ features, and rest cues must use the shared buzz system without changing wake al
 - [x] Immutable outbox, exact receipt retries, paused local retention and metadata backup.
 - [x] Read-only source/canonical comparison and coherent manifest/capture comparison foundation.
 - [x] Reviewed upsert/apply-recovery proposal, differences UI and immutable replacement-intent writer.
-- [ ] Reviewed historical deletion recovery when its original receipt needs new preconditions.
+- [x] Reviewed full historical deletion recovery (native software tests passed; activation and
+      physical acceptance remain pending). Partial deletion still needs current valid bindings.
 - [x] Explicit accepted-capture history-only correction and accurate receipt labels (native software
       path tested; production and physical acceptance remain pending).
 - [ ] Complete pause/resume with durable active intervals and measured-window attribution.
@@ -144,6 +150,21 @@ Submission evidence is stored before POST. Legacy or imported unaccepted backup 
 prove that a submission never happened, so receipt recovery precedes preparing another correction.
 Backup import retains original archive snapshots and immutable event bytes. These changes affect
 the iOS integration metadata only, not SQLite, Android schema or physiological calculations.
+
+Build 486 implements full-delete review against coherent source reads, including retired targets,
+known set/occurrence tombstones and explicitly reviewed newer observations with unchanged bindings.
+A minimal cancellation/timezone patch leaves accepted values, notes, timing and start provenance
+untouched beneath the tombstone. Preparation rechecks exact local deletion and remote evidence,
+retains original intents, and creates a paused event; sending is separate. Already tombstoned sources
+cannot generate another reviewed deletion. Deletion receipts require matching current tombstone
+evidence; `manual_preserved` can still represent successful source deletion.
+
+Exact receipt lookup retains the original receipt separately from current source hints and marks
+derived progress unknown. It can resolve a committed earlier event after local data changes, then
+permit explicit review of an unprepared deletion under the same physical UUID. A missing result
+pauses replay and retains earlier positive evidence. Lookup performs no ingestion, reconciliation,
+SQLite restoration or data deletion. Definitive cancellation of an unobserved in-flight request
+requires a separate receiver fence and is not implemented or inferred from a negative read.
 
 Complete true pause/rest interval storage, supersets and exercise variation relationships only
 after approval of the additive native schema changes. Approval of integration design does not

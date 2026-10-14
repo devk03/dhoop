@@ -169,6 +169,38 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   WHOOP command or physiological verification was performed for this pass. Full/set/occurrence
   tombstones remain review gates; historical deletion recovery is still separate implementation work.
 
+## Build 486 historical deletion and exact receipt lookup
+
+- Fifty-eight selected native client, delivery and transport tests passed:
+  `/private/tmp/dhoop-receipt-lookup-486-final-tests.log`. Full-delete review covers retired routines,
+  explicit newer-source review, unchanged physical IDs, minimal patches retaining newer raw data,
+  preserved manual fields, current tombstone evidence, missing/foreign source rejection,
+  uncertain/legacy attempts, already-tombstoned gating, duplicate preparation, changed remote
+  evidence, restored local rows, relaunch and retention of unrelated workouts/sensor samples.
+- Read-only lookup tests recover an original receipt after local edits/deletion without ingestion,
+  restoring old rows or creating another physical workout. They retain immutable bytes, distinguish
+  original/current revisions, keep missing results unknown, reject wrong identity/mappings and false
+  reconciliation, preserve earlier positive receipts, and distinguish missing source metadata and
+  processed stale events from current acceptance. A recovered positive receipt can unblock a
+  previously unprepared local deletion under the same physical UUID. URLSession interception checks
+  the actual dedicated POST lookup route and exact body. These are synthetic receiver boundaries.
+- Life added the corresponding read-only route locally in `c98ba65`. Its focused route tests forbid
+  database writes/lease/reconciliation operations and cover auth, installation, host, size,
+  fingerprint conflicts, foreign masking, archived/deleted source, missing metadata and manual
+  ownership. Its production Worker build passed; full TypeScript checks retain pre-existing errors.
+  No receiver deployment, dedicated credentials or live route call was performed.
+- The generated study is `docs/design/dhoop-deletion-receipt-review-study.png`; adjacent `.prompt.txt`
+  retains its built-in generation/edit prompts. It contains demo states, not actual device UI/data.
+  Controls use shared action tokens and explicit preparation/sending/lookup states. Physical gesture,
+  Dynamic Type, VoiceOver, contrast and lifecycle acceptance remain outstanding.
+- Signed generic-device iOS build and macOS app build passed:
+  `/private/tmp/dhoop-deletion-lookup-486-ios-build.log` and
+  `/private/tmp/dhoop-deletion-lookup-486-macos-build.log`. Build 486 retains the stable bundle,
+  Loshi team and workout backup document type. It has not been installed on the physical iPhone.
+- No SQLite migration, owner-data deletion, WHOOP command, motor cue, physiological validation or
+  physical app installation occurred in this pass. Definitive cancellation of an unobserved
+  in-flight event is not implemented; a negative lookup cannot authorize superseding that event.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

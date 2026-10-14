@@ -879,6 +879,21 @@ metadata cannot establish that an intent was never submitted after the backup wa
 The [history-only study](design/dhoop-history-only-review-study.png) and
 [built-in prompt](design/dhoop-history-only-review-study.prompt.txt) are demo references only.
 
+Full historical tracker deletion now reviews accepted source data without a replacement routine.
+Newer observations are shown before explicitly preparing a higher-revision deletion. Its minimal
+patch retains raw values, notes, timing and start provenance; manual canonical edits remain protected.
+An already tombstoned source does not prepare another deletion. Current tombstone evidence and the
+original event receipt are separate facts.
+
+Find original receipt uses the dedicated read-only lookup route with the exact stored event body.
+It remains available when SQLite records changed or were deleted; it never replays an old upsert.
+Recorded receipts retain original revisions/mappings independently of current source hints.
+A missing lookup remains unknown and pauses replay rather than asserting rejection or cancellation.
+Derived progress remains explicitly unverified. The Life route is implemented locally; deployment
+and dedicated credential activation are still separate approvals.
+The [deletion/receipt study](design/dhoop-deletion-receipt-review-study.png) and
+[built-in prompts](design/dhoop-deletion-receipt-review-study.prompt.txt) contain demo states only.
+
 Alarm editing uses the shared asynchronous Save control. The editor remains open with its current
 draft after permission, validation or storage failure; editing/dismissal is held only while saving.
 Local save completion means the definition was persisted. Strap storage and felt vibration remain
