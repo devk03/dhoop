@@ -637,3 +637,40 @@ How PR #42's port was brought onto current `main` — useful the next time a scr
 *NOOP keeps everything on-device. The iOS plan changes the front door (menu bar →
 widgets, AppKit → UIKit, file import → HealthKit) but not the principle: your strap,
 your data, no cloud.*
+
+
+## Dhoop strength capture
+
+Exercises exposes Strength alongside Zone run, HIIT, Intervals and Meditation. Strength reuses the
+existing routine, session and set tables; it does not create a second lifting log. The generated
+[interaction and workout study](design/dhoop-strength-interactions-study.png) and its
+[built-in ImageGen prompt](design/dhoop-strength-interactions-study.prompt.txt) are visual references.
+Every number in that board is demonstration data, not an app fixture.
+
+A strength session claims one shared realtime-HR reference and the `strength-workout` buzz owner.
+Minimizing or reopening its sheet does not release or duplicate that claim. Save and discard release
+it. A restored session retains its original registry device ID; a different active strap cannot advance
+its sets or receive its cues. Legacy snapshots without that field display an unverified capture source.
+The small collection readout distinguishes readable receipts from measured readings persisted since
+workout start. Its last checked timestamp describes the stored count. The live number uses the common
+freshness gate; connection alone never proves collection or persistence.
+
+Routine metadata and ordered targets save together. A finished recording saves its session, exact
+set list, paired manual workout and approved routine-target updates in one SQLite transaction.
+Corrections and deletion are scoped to that recording and transactional. Failed storage operations
+retain entered data and report the failure; they do not dismiss the editor as a successful save.
+Preparing a save does not end the durable session. Pending saves suppress session edits and strap
+advance gestures. Sets logged retrospectively still carry no invented timing.
+
+These Apple capture APIs change no database schema, backup row shape, physiology formula or unit
+representation. Weight remains kg in storage. Android's existing import/CRUD contract is unchanged;
+the iPhone capture controller and its private active-session snapshot are Apple-specific.
+
+Life integration is separate from local capture. The agreed direction is for Life to own prescriptions,
+progression and canonical history while Dhoop owns offline observations, actual set times and WHOOP
+collection. Integration must bind exact Life IDs, retain raw kg and RPE, preserve manual corrections,
+and deduplicate revisions and deletions. Proposed receiver endpoints and credentials are not activated
+by this local capture change. No workout is written into the official WHOOP app.
+
+Software builds and controller/store tests do not establish locked-phone collection reliability,
+wearer-felt vibration, or physiological accuracy. Those require physical-device checks.
