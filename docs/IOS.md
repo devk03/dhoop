@@ -735,7 +735,22 @@ Selected receipt recovery replays the original body only after verifying its cur
 Keep locally retains the event and its data, pauses automatic delivery for that capture across relaunch,
 and leaves previously accepted website data unchanged. Explicit selected recovery remains available.
 
+Verified completed receipts and deliberately paused, locally persisted intents can leave the active
+queue after a complete file snapshot is written and read back. Pending reconciliation stays active.
+Archived deliveries remain reviewable from Settings and workout history; receipt recovery retains the
+original event body. Earlier archive snapshots are preserved rather than overwritten or removed.
+
+Settings provides a separate `.dhoopworkouts` companion package for tracker manifests, original
+capture IDs, delivery intents, receipts, archive snapshots and paused choices. It excludes Keychain
+credentials and active unsaved sessions. Restore validates identifiers and immutable event conflicts
+before merging, preserves existing metadata and leaves the connection off. It changes no SQLite rows.
+Saved routines, sets, notes and sensor data still require the existing `.noopbak` database backup.
+The [backup design study](design/dhoop-workout-metadata-backup-study.png) and
+[built-in ImageGen prompt](design/dhoop-workout-metadata-backup-study.prompt.txt) contain demo data.
+Package preparation/merge and archive recovery have local tests; the native Files export/import
+workflow has not yet been verified on the physical iPhone.
+
 The native integration and matching Life receiver are local development work. Production deployment,
 dedicated credentials and any Cloudflare path activation require separate authorization. Additional
-occurrence reordering/replacement, reviewed conflict rebinding, archival of the bounded delivery queue and backup
-coverage require further work before this integration is considered complete.
+occurrence reordering/replacement and reviewed conflict rebinding require further work before this
+integration is considered complete. Physical-device verification remains outstanding.
