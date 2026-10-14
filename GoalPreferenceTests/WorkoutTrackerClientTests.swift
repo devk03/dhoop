@@ -917,6 +917,179 @@ final class WorkoutTrackerClientTests: XCTestCase {
         }
     }
 
+    private func lookupResponse(_ body: Data, fixture f: Fixture, observed: Bool = true) throws -> [String: Any] {
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        var result: [String: Any] = ["schemaVersion": 1, "eventId": payload["eventId"]!, "sourceWorkoutId": f.record.id,
+            "installationId": f.config.installationId.uuidString, "status": observed ? "recorded" : "not_observed",
+            "receipt": NSNull(), "current": NSNull(), "reconciliation": ["state": "unknown"]]
+        if observed {
+            var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: receipt(body, fixture: f)) as? [String: Any])
+            ack.removeValue(forKey: "reconciliation")
+            ack["projectionPolicy"] = "apply"; ack["projectionState"] = "current"
+            result["receipt"] = ack
+            result["current"] = ["lifeRevision": 3, "sourcePresent": true, "sourceRevision": 1,
+                "tombstone": false, "projectionState": "current"]
+        }
+        return result
+    }
+
+    func testExactReceiptLookupResolvesAnEditedOrDeletedWorkoutWithoutReplayingOrRestoringIt() async throws {
+        for deleting in [false, true] {
+            let f = try await fixture()
+            var posted: Data?, lookups = 0, ingestions = 0
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                if endpoint == .observations { ingestions += 1; posted = body; throw URLError(.timedOut) }
+                guard endpoint == .receiptLookup else { throw WorkoutSyncTransportError.invalidResponse }
+                lookups += 1; XCTAssertEqual(body, posted, "Only the immutable original payload identifies the stored receipt")
+                return try JSONSerialization.data(withJSONObject: self.lookupResponse(try XCTUnwrap(body), fixture: f))
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            let original = client.state.deliveries[0]
+            do { try await client.synchronize(store: f.db); XCTFail("Synthetic lost ACK") }
+            catch let error as URLError { XCTAssertEqual(error.code, .timedOut) }
+            var edited = f.sets; edited[0].reps = 11
+            if deleting { _ = try await f.db.deleteLiftRecording(f.record) }
+            else { try await f.db.upsertLiftSets(edited) }
+            let result = try await client.lookupReceipt(deliveryId: original.id)
+            XCTAssertEqual(result, .recorded); XCTAssertEqual(lookups, 1); XCTAssertEqual(ingestions, 1)
+            let found = try XCTUnwrap(client.delivery(original.id))
+            XCTAssertEqual(found.bytes, original.bytes); XCTAssertEqual(found.status, .accepted)
+            XCTAssertTrue(found.reconciliationUnknown); XCTAssertFalse(found.needsReconciliation)
+            XCTAssertEqual(found.receiptLookup?.receipt?.receiptLifeRevision, 1)
+            XCTAssertEqual(found.receiptLookup?.current?.lifeRevision, 3)
+            let currentRows = try await f.db.liftSets(sessionId: f.record.id)
+            XCTAssertEqual(currentRows, deleting ? [] : edited)
+            let matches = try await found.matches(store: f.db); XCTAssertFalse(matches)
+            let restored = WorkoutTrackerClient(store: f.file, readCredential: { f.config })
+            XCTAssertEqual(try restored.delivery(original.id)?.receiptLookup?.status, .recorded)
+            XCTAssertTrue(try XCTUnwrap(restored.delivery(original.id)).reconciliationUnknown)
+        }
+    }
+
+    func testMissingReadOnlyReceiptRemainsUnknownAndNeverTriggersReplayOrNewEvent() async throws {
+        let f = try await fixture()
+        var ingestions = 0
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            if endpoint == .observations { ingestions += 1; throw URLError(.timedOut) }
+            guard endpoint == .receiptLookup else { throw WorkoutSyncTransportError.invalidResponse }
+            return try JSONSerialization.data(withJSONObject: self.lookupResponse(try XCTUnwrap(body), fixture: f, observed: false))
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let original = client.state.deliveries[0]
+        do { try await client.synchronize(store: f.db); XCTFail("Synthetic lost ACK") }
+        catch let error as URLError { XCTAssertEqual(error.code, .timedOut) }
+        _ = try await f.db.deleteLiftRecording(f.record)
+        let result = try await client.lookupReceipt(deliveryId: original.id)
+        XCTAssertEqual(result, .notObserved); XCTAssertEqual(ingestions, 1)
+        XCTAssertEqual(client.state.deliveries.count, 1)
+        let held = try XCTUnwrap(client.delivery(original.id))
+        XCTAssertNil(held.acknowledgement); XCTAssertEqual(held.status, .review); XCTAssertTrue(held.paused == true)
+        XCTAssertEqual(held.bytes, original.bytes)
+        try await client.synchronize(store: f.db)
+        XCTAssertEqual(ingestions, 1, "A missing receipt is not permission to send obsolete values")
+    }
+
+    func testReceiptLookupRejectsWrongIdentityMappingAndFalseReconciliationWithoutChangingEvidence() async throws {
+        for scenario in ["event", "installation", "mapping", "progress", "absentSource"] {
+            let f = try await fixture()
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                guard endpoint == .receiptLookup else { throw WorkoutSyncTransportError.invalidResponse }
+                var object = try self.lookupResponse(try XCTUnwrap(body), fixture: f)
+                if scenario == "event" { object["eventId"] = UUID().uuidString }
+                if scenario == "installation" { object["installationId"] = UUID().uuidString }
+                if scenario == "mapping" {
+                    var receipt = try XCTUnwrap(object["receipt"] as? [String: Any])
+                    receipt["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [f.sets[0].id: 99]]
+                    object["receipt"] = receipt
+                }
+                if scenario == "progress" { object["reconciliation"] = ["state": "done"] }
+                if scenario == "absentSource" { object["current"] = ["lifeRevision": 3, "sourcePresent": false, "sourceRevision": 1, "tombstone": false, "projectionState": "unknown"] }
+                return try JSONSerialization.data(withJSONObject: object)
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            let original = client.state
+            do { _ = try await client.lookupReceipt(deliveryId: original.deliveries[0].id); XCTFail("Invalid lookup must fail \(scenario)") }
+            catch WorkoutSyncTransportError.invalidResponse {}
+            XCTAssertEqual(client.state, original)
+        }
+    }
+
+    func testRecordedLookupKeepsMissingSourceAndStaleOutcomeSeparateFromAcceptance() async throws {
+        for stale in [false, true] {
+            let f = try await fixture()
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                guard endpoint == .receiptLookup else { throw WorkoutSyncTransportError.invalidResponse }
+                var object = try self.lookupResponse(try XCTUnwrap(body), fixture: f)
+                if stale {
+                    var receipt = try XCTUnwrap(object["receipt"] as? [String: Any])
+                    receipt["outcome"] = "stale"; receipt["acceptedSourceRevision"] = 3
+                    receipt["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [:]]
+                    object["receipt"] = receipt
+                    object["current"] = ["lifeRevision": 3, "sourcePresent": true, "sourceRevision": 3, "tombstone": false, "projectionState": "current"]
+                } else {
+                    object["current"] = ["lifeRevision": 3, "sourcePresent": false, "sourceRevision": NSNull(), "tombstone": NSNull(), "projectionState": "unknown"]
+                }
+                return try JSONSerialization.data(withJSONObject: object)
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            let event = client.state.deliveries[0].id
+            let outcome = try await client.lookupReceipt(deliveryId: event)
+            XCTAssertEqual(outcome, .recorded)
+            let found = try XCTUnwrap(client.delivery(event))
+            XCTAssertEqual(found.revision, 1, "A current-state hint cannot advance the local event's revision")
+            XCTAssertTrue(found.reconciliationUnknown)
+            XCTAssertEqual(found.status, stale ? .review : .accepted)
+            XCTAssertEqual(found.hasVerifiedSourceAcceptance, !stale)
+            XCTAssertFalse(found.hasVerifiedSourceReceipt, "Missing or newer source metadata is not current source proof")
+            XCTAssertEqual(found.hasKnownStaleReceipt, stale)
+        }
+    }
+
+    func testPositiveLookupUnblocksReviewOfUnpreparedLocalDeletionWithoutRestoringOldRows() async throws {
+        let f = try await fixture()
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            switch endpoint {
+            case .observations: throw URLError(.timedOut)
+            case .receiptLookup: return try JSONSerialization.data(withJSONObject: self.lookupResponse(try XCTUnwrap(body), fixture: f))
+            case .captures: return try JSONSerialization.data(withJSONObject: self.historyCapture(f))
+            default: throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let originalId = client.state.deliveries[0].id
+        do { try await client.synchronize(store: f.db); XCTFail("Synthetic uncertain original request") }
+        catch let error as URLError { XCTAssertEqual(error.code, .timedOut) }
+        let intent = try await client.prepareHistoryChange(record: f.record, sets: f.sets, store: f.db, deleting: true)
+        let deletionId = try XCTUnwrap(intent)
+        _ = try await f.db.deleteLiftRecording(f.record)
+        try await client.confirmPersistence(deletionId, store: f.db)
+        XCTAssertNil(try client.delivery(deletionId)?.bytes, "An unresolved earlier submission cannot prepare a mutation")
+        _ = try await client.lookupReceipt(deliveryId: originalId)
+        let review = try await client.reviewDeletion(deliveryId: deletionId)
+        let prepared = try await client.prepareReviewedDeletion(reviewId: review.id, store: f.db)
+        XCTAssertEqual(try client.delivery(prepared)?.sourceWorkoutId, f.binding.sourceWorkoutId)
+        XCTAssertEqual(try client.delivery(prepared)?.revision, 3)
+        let rows = try await f.db.liftSets(sessionId: f.record.id)
+        XCTAssertTrue(rows.isEmpty)
+        XCTAssertEqual(client.state.deliveries.count, 3, "Retain both original intents and a separately reviewed same-workout deletion")
+    }
+
+    func testUnobservedLookupCannotEraseEarlierVerifiedReceipt() async throws {
+        let f = try await fixture()
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            if endpoint == .observations { return try self.receipt(try XCTUnwrap(body), fixture: f) }
+            guard endpoint == .receiptLookup else { throw WorkoutSyncTransportError.invalidResponse }
+            return try JSONSerialization.data(withJSONObject: self.lookupResponse(try XCTUnwrap(body), fixture: f, observed: false))
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f); try await client.synchronize(store: f.db)
+        let original = client.state.deliveries[0]
+        _ = try await client.lookupReceipt(deliveryId: original.id)
+        let found = try XCTUnwrap(client.delivery(original.id))
+        XCTAssertEqual(found.acknowledgement, original.acknowledgement)
+        XCTAssertEqual(found.status, .accepted); XCTAssertTrue(found.hasVerifiedSourceAcceptance)
+        XCTAssertTrue(found.paused == true)
+    }
+
     func testUnsupportedNoteIsSavedLocallyWithItsActualValidationReasonAndCannotUpload() async throws {
         let f = try await fixture()
         var rows = f.sets; rows[0].note = String(repeating: "x", count: 2001)

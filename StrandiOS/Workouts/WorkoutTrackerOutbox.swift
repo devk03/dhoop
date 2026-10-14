@@ -26,6 +26,11 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     // Nil is legacy/unknown. Persist true before starting a POST so relaunch cannot mistake
     // an interrupted submission for a never-sent correction.
     var submissionAttempted: Bool? = nil
+    var receiptLookupEvidence: Data? = nil
+    var receiptLookupCheckedAt: Date? = nil
+    var receiptLookup: WorkoutTrackerReceiptLookup? {
+        receiptLookupEvidence.flatMap { try? JSONDecoder().decode(WorkoutTrackerReceiptLookup.self, from: $0) }
+    }
     var isHistoryOnly: Bool {
         guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return false }
         return object["projectionPolicy"] as? String == "capture_only"
@@ -43,19 +48,33 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var hasVerifiedSourceAcceptance: Bool { sourceAcceptanceReceipt != nil }
     var hasVerifiedSourceReceipt: Bool {
         guard let ack = sourceAcceptanceReceipt else { return false }
+        if receiptLookup != nil && receiptLookup?.current?.sourcePresent != true { return false }
         return (ack.currentSourceRevision ?? revision) == revision && ack.currentTombstone != true
     }
-    var hasVerifiedDeletionReceipt: Bool {
+    private var deletionAcceptanceReceipt: WorkoutCaptureAcknowledgement? {
         guard valid, operation == .delete, let acknowledgement,
               let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
               (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil,
-              (try? ack.validate(binding: binding, sets: [])) != nil else { return false }
+              (try? ack.validate(binding: binding, sets: [])) != nil,
+              ack.acceptedSourceRevision == revision,
+              ["deleted", "manual_preserved", "duplicate"].contains(ack.outcome) else { return nil }
+        return ack
+    }
+    var hasVerifiedDeletionAcceptance: Bool { deletionAcceptanceReceipt != nil }
+    var hasVerifiedDeletionReceipt: Bool {
+        guard let ack = deletionAcceptanceReceipt else { return false }
         return !ack.needsSourceReview(revision: revision, deleting: true)
     }
+    var hasKnownStaleReceipt: Bool {
+        guard let acknowledgement, let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
+              ack.outcome == "stale", (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil,
+              (try? ack.validate(binding: binding, sets: [])) != nil else { return false }
+        return true
+    }
     var submissionOutcomeResolvedForReview: Bool {
-        if hasVerifiedSourceAcceptance || hasVerifiedDeletionReceipt { return true }
+        if hasVerifiedSourceAcceptance || hasVerifiedDeletionAcceptance || hasKnownStaleReceipt { return true }
         let rejected = status == .review && acknowledgement == nil &&
-            [.lifeRevisionConflict, .manifestConflict, .sessionRetired, .setRetired, .prescriptionInconsistent].contains(rejection)
+            [.lifeRevisionConflict, .manifestConflict, .revisionConflict, .sessionRetired, .setRetired, .prescriptionInconsistent].contains(rejection)
         let neverSubmitted = [.ready, .review].contains(status) && submissionAttempted == false && acknowledgement == nil && rejection == nil
         return rejected || neverSubmitted
     }
@@ -81,8 +100,14 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
             try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0)
         }?.reconciliation.pending == true
     }
+    var reconciliationUnknown: Bool {
+        acknowledgement.flatMap { try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0) }?.reconciliation.state == "unknown"
+    }
     var valid: Bool {
         (bytes?.count ?? 0) <= WorkoutSyncTransport.bodyLimit && revision > 0 && revision <= 9_007_199_254_740_991 && record.id.lowercased() == sourceWorkoutId.uuidString.lowercased()
+            && (receiptLookupEvidence?.count ?? 0) <= WorkoutSyncTransport.responseLimit
+            && (receiptLookupEvidence == nil || receiptLookup.map { (try? $0.validate(for: self)) != nil } == true)
+            && (receiptLookupCheckedAt.map { $0.timeIntervalSince1970.isFinite && (0...253402300799).contains($0.timeIntervalSince1970) } ?? true)
             && recoveryOf != id
             && (reviewedManifest.map { (try? $0.validate()) != nil && $0.cycleId == binding.manifest.cycleId && $0.sessionId == binding.manifest.sessionId && $0.manifestRevision == writeManifestRevision } ?? true)
             && sets.allSatisfy { $0.sessionId == record.id && $0.deviceId == record.deviceId }
@@ -131,7 +156,8 @@ struct WorkoutTrackerDeletionReview: Identifiable {
 
     static func validate(original: WorkoutTrackerDelivery, accepted: WorkoutTrackerDelivery,
                          capture: WorkoutTrackerCaptureSnapshot) throws {
-        try original.validateBody(); try accepted.validateBody()
+        if original.bytes != nil { try original.validateBody() }
+        try accepted.validateBody()
         guard original.valid, original.operation == .delete, !original.isHistoryOnly,
               original.localPersistenceConfirmed == true, accepted.hasVerifiedSourceAcceptance,
               original.sourceWorkoutId == accepted.sourceWorkoutId, original.origin == accepted.origin,
@@ -153,9 +179,15 @@ struct WorkoutTrackerDeletionReview: Identifiable {
     /// Minimal deletion patch retains newer measurements, notes and start provenance by omission.
     func replacement(eventId: UUID = UUID()) throws -> WorkoutTrackerDelivery {
         try Self.validate(original: original, accepted: accepted, capture: capture)
-        guard canPrepare, let bytes = original.bytes,
-              var object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
-              eventId != original.id else { throw WorkoutTrackerContractError.invalidSnapshot }
+        guard canPrepare, eventId != original.id else { throw WorkoutTrackerContractError.invalidSnapshot }
+        var object: [String: Any]
+        if let bytes = original.bytes, let decoded = try JSONSerialization.jsonObject(with: bytes) as? [String: Any] { object = decoded }
+        else {
+            object = ["schemaVersion": 1, "kind": "strength_workout", "sourceWorkoutId": original.sourceWorkoutId.uuidString.lowercased(),
+                "installationId": original.installationId.uuidString.lowercased(), "operation": "delete",
+                "manifestRevision": original.reviewedManifest?.manifestRevision ?? original.binding.manifest.manifestRevision,
+                "binding": ["kind": "programmed", "cycleId": original.binding.manifest.cycleId, "sessionId": original.binding.manifest.sessionId]]
+        }
         var priorContent = object
         object["projectionPolicy"] = "apply"
         object["session"] = ["status": "cancelled", "timeZone": capture.session.timeZone]
@@ -163,7 +195,7 @@ struct WorkoutTrackerDeletionReview: Identifiable {
         for key in ["deletedOccurrenceIds", "planAtStart", "collectionSessionId", "heartRateSummary"] { object.removeValue(forKey: key) }
         var newContent = object
         for key in ["eventId", "baseLifeRevision", "sourceRevision"] { priorContent.removeValue(forKey: key); newContent.removeValue(forKey: key) }
-        let unchanged = NSDictionary(dictionary: priorContent).isEqual(to: newContent)
+        let unchanged = original.bytes != nil && NSDictionary(dictionary: priorContent).isEqual(to: newContent)
         let highest = max(original.revision, capture.sourceRevision)
         guard highest < 9_007_199_254_740_991 else { throw WorkoutTrackerContractError.invalidSnapshot }
         let revision = unchanged && original.revision > capture.sourceRevision ? original.revision : highest + 1

@@ -237,6 +237,48 @@ final class WorkoutTrackerClient: ObservableObject {
         return result
     }
 
+    /// Read-only even though the lookup route accepts POST. Exact bytes are never sent to ingestion.
+    func lookupReceipt(deliveryId: UUID) async throws -> WorkoutTrackerReceiptLookup.Status {
+        guard !busy, !metadataRestoring else { throw WorkoutTrackerContractError.deliveryInProgress }
+        try activateDelivery(deliveryId)
+        guard let item = try delivery(deliveryId), !transmittingCaptures.contains(item.sourceWorkoutId),
+              preparingCaptures.insert(item.sourceWorkoutId).inserted else { throw WorkoutTrackerContractError.deliveryInProgress }
+        defer { preparingCaptures.remove(item.sourceWorkoutId) }
+        try item.validateBody()
+        let config = try credentials()
+        guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        guard config.origin == item.origin, config.installationId == item.installationId else { throw WorkoutSyncTransportError.configuration }
+        busy = true; defer { busy = false }
+        let initialGeneration = generation, initialRevision = stateRevision
+        let response = try await send(.receiptLookup, item.bytes, config)
+        let lookup = try JSONDecoder().decode(WorkoutTrackerReceiptLookup.self, from: response)
+        try lookup.validate(for: item)
+        guard initialGeneration == generation, initialRevision == stateRevision, state.enabled, !Task.isCancelled,
+              try delivery(item.id)?.sameIntent(as: item) == true else { throw WorkoutTrackerContractError.sessionChanged }
+        var next = state
+        guard let index = next.deliveries.firstIndex(where: { $0.id == item.id }) else { throw WorkoutTrackerContractError.sessionChanged }
+        next.deliveries[index].receiptLookupEvidence = try JSONEncoder().encode(lookup)
+        next.deliveries[index].receiptLookupCheckedAt = Date()
+        if lookup.status == .recorded {
+            let ack = try lookup.acknowledgement()
+            next.deliveries[index].acknowledgement = try JSONEncoder().encode(ack)
+            next.deliveries[index].rejection = nil
+            let needsReview = ack.needsSourceReview(revision: item.revision, deleting: item.operation == .delete, expectingHistoryOnly: item.isHistoryOnly)
+            next.deliveries[index].status = needsReview ? .review : .accepted
+            next.deliveries[index].message = needsReview ? "Original event receipt found. Current source or projection differs; no event was replayed. Derived progress is unverified." :
+                item.operation == .delete ? "Original deletion receipt found; current tombstone verified. Derived progress is unverified." :
+                item.isHistoryOnly ? "Original history-only receipt found. Website sets were not changed by that event; derived work was not checked." :
+                "Original event receipt verified. Local records were not restored or replaced; derived progress is unverified."
+        } else {
+            if item.acknowledgement == nil { next.deliveries[index].status = .review }
+            next.deliveries[index].paused = true
+            next.deliveries[index].message = item.acknowledgement == nil ? "No receipt was observed. Outcome remains unknown; no event was replayed or replaced." :
+                "Lookup did not observe a receipt. Earlier stored evidence is retained; this is not proof of rejection or cancellation."
+        }
+        try commit(next, protecting: [item.sourceWorkoutId])
+        return lookup.status
+    }
+
     /// Bracket the capture read with exact manifest reads. Absence is not receipt recovery.
     func reviewComparison(deliveryId: UUID) async throws -> WorkoutTrackerReviewComparison {
         guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
@@ -516,12 +558,12 @@ final class WorkoutTrackerClient: ObservableObject {
         var message = "Waiting for verified local persistence"
         do {
             guard binding.connection != nil else { throw WorkoutTrackerContractError.invalidSnapshot }
-            let verifiedRevision = previous.filter { $0.status == .accepted }.map(\.revision).max() ?? 0
+            let verifiedRevision = previous.filter(\.hasVerifiedSourceAcceptance).map(\.revision).max() ?? 0
             // A local correction cannot resolve an unknown previous server outcome by replaying it.
-            if isHistoricalChange, previous.contains(where: { $0.status != .accepted && $0.revision > verifiedRevision }) {
+            if isHistoricalChange, previous.contains(where: { !$0.submissionOutcomeResolvedForReview && $0.revision > verifiedRevision }) {
                 throw WorkoutTrackerContractError.unavailableCapture
             }
-            let acknowledged = previous.last(where: { $0.status == .accepted })
+            let acknowledged = previous.last(where: \.hasVerifiedSourceAcceptance)
             writeManifest = acknowledged?.reviewedManifest
             let receipt = acknowledged?.acknowledgement.flatMap { try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0) }
             let removed = Set(previous.filter { $0.status == .accepted }.flatMap(\.sets).map(\.id)).subtracting(sets.map(\.id))

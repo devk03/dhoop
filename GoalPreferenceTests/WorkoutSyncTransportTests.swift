@@ -44,6 +44,32 @@ final class WorkoutSyncTransportTests: XCTestCase {
         XCTAssertEqual(body, Data("{}".utf8))
         await fulfillment(of: [observed], timeout: 2)
     }
+    func testReceiptLookupPostsOriginalBodyToReadOnlyRouteWithDedicatedHeaders() async throws {
+        let credential = credentials(), original = Data("{\"eventId\":\"unchanged\"}".utf8)
+        let observed = expectation(description: "Exact lookup route")
+        WorkoutMockProtocol.handler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/integrations/dhoop/workouts/receipts/lookup")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + credential.credential)
+            XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+            var sent = request.httpBody ?? Data()
+            if let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var buffer = [UInt8](repeating: 0, count: 1024)
+                while stream.hasBytesAvailable {
+                    let count = stream.read(&buffer, maxLength: buffer.count)
+                    guard count > 0 else { break }
+                    sent.append(contentsOf: buffer.prefix(count))
+                }
+            }
+            XCTAssertEqual(sent, original)
+            observed.fulfill()
+            return (200, ["Content-Type": "application/json"], Data("{}".utf8))
+        }
+        _ = try await WorkoutSyncTransport().send(to: .receiptLookup, body: original, credentials: credential, configuration: config())
+        await fulfillment(of: [observed], timeout: 2)
+    }
+
     func testConflictIsNotAcceptedAsSuccessOrExposedWithResponseBody() async {
         WorkoutMockProtocol.handler = { _ in (409, ["Content-Type": "application/json"], Data("private response text".utf8)) }
         do {

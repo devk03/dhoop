@@ -171,17 +171,17 @@ struct WorkoutCapturePayload: Encodable {
     }
 }
 
-struct WorkoutCaptureAcknowledgement: Decodable {
-    struct Mappings: Decodable {
-        struct Session: Decodable { let kind: String; let cycleId: Int?; let sessionId: Int? }
-        struct SetTarget: Decodable {
+struct WorkoutCaptureAcknowledgement: Codable {
+    struct Mappings: Codable {
+        struct Session: Codable { let kind: String; let cycleId: Int?; let sessionId: Int? }
+        struct SetTarget: Codable {
             let kind: String
             let lifeSetId: Int?
             let sessionExerciseId: Int?
             let sourceWorkoutId: UUID?
             let sourceSetId: UUID?
         }
-        struct OccurrenceTarget: Decodable {
+        struct OccurrenceTarget: Codable {
             let kind: String
             let sessionExerciseId: Int?
             let programSlotId: Int?
@@ -195,7 +195,7 @@ struct WorkoutCaptureAcknowledgement: Decodable {
         let setTargets: [String: SetTarget]?
         let occurrenceTargets: [String: OccurrenceTarget]?
     }
-    struct Reconciliation: Decodable {
+    struct Reconciliation: Codable {
         let state: String
         var pending: Bool { state == "pending" }
     }
@@ -218,7 +218,7 @@ struct WorkoutCaptureAcknowledgement: Decodable {
     func needsSourceReview(revision: Int, deleting: Bool, expectingHistoryOnly: Bool = false) -> Bool {
         let mismatchedPolicy = expectingHistoryOnly
             ? deleting || projectionPolicy != "capture_only" || !["capture_only", "retired"].contains(projectionState ?? "") ||
-                !["captured_only", "duplicate"].contains(outcome) || reconciliation.state != "not_requested"
+                !["captured_only", "duplicate"].contains(outcome) || !["not_requested", "unknown"].contains(reconciliation.state)
             : outcome == "captured_only" || projectionPolicy == "capture_only" || projectionState == "capture_only" ||
                 (!deleting && (projectionState == "retired" || currentProjectionState == "retired"))
         return outcome == "stale" || acceptedSourceRevision != revision ||
@@ -234,7 +234,7 @@ struct WorkoutCaptureAcknowledgement: Decodable {
               projectionState.map({ ["current", "retired", "capture_only"].contains($0) }) ?? true,
               currentProjectionState.map({ ["current", "retired", "capture_only"].contains($0) }) ?? true,
               projectionPolicy.map({ ["apply", "capture_only"].contains($0) }) ?? true,
-              ["done", "pending", "not_pending", "not_applicable", "not_requested"].contains(reconciliation.state),
+              ["done", "pending", "not_pending", "not_applicable", "not_requested", "unknown"].contains(reconciliation.state),
               ["applied", "captured_only", "duplicate", "stale", "manual_preserved", "deleted"].contains(outcome) else {
             throw WorkoutSyncTransportError.invalidResponse
         }

@@ -7,10 +7,11 @@ enum WorkoutSyncEndpoint: Equatable {
     case changes(cursor: Int, limit: Int)
     case captures(UUID, cursor: Int, limit: Int)
     case observations
+    case receiptLookup
     case reconcile
 
     var method: String {
-        switch self { case .observations, .reconcile: return "POST"; default: return "GET" }
+        switch self { case .observations, .reconcile, .receiptLookup: return "POST"; default: return "GET" }
     }
 
     /// This integration has one reviewed owner origin. No default configuration is implied.
@@ -37,6 +38,7 @@ enum WorkoutSyncEndpoint: Equatable {
             parts.path = prefix + "captures"
             items = [URLQueryItem(name: "sourceWorkoutId", value: id.uuidString.lowercased())] + pagination(cursor, limit)
         case .observations: parts.path = "/api/webhooks/workouts"
+        case .receiptLookup: parts.path = prefix + "receipts/lookup"
         case .reconcile: parts.path = prefix + "reconcile"
         }
         parts.queryItems = items.isEmpty ? nil : items
@@ -53,6 +55,7 @@ enum WorkoutSyncEndpoint: Equatable {
 enum WorkoutSyncRejection: String, Codable {
     case lifeRevisionConflict = "life_revision_conflict"
     case manifestConflict = "manifest_conflict"
+    case revisionConflict = "revision_conflict"
     case prescriptionInconsistent = "prescription_inconsistent"
     case sessionRetired = "session_retired"
     case setRetired = "set_retired"
@@ -68,6 +71,7 @@ enum WorkoutSyncRejection: String, Codable {
         switch self {
         case .lifeRevisionConflict: return "The website revision changed. Compare the current tracker before reviewing a new delivery."
         case .manifestConflict: return "The prescription changed. Original workout IDs are retained; targets will not be guessed."
+        case .revisionConflict: return "The tracker has different content for this source revision. Review current observations before preparing another event."
         case .prescriptionInconsistent: return "The tracker prescription is inconsistent. Review it in Life before starting."
         case .sessionRetired, .setRetired: return "The original workout target has retired. Compare its history before deciding how to correct it."
         case .sourceWorkoutDeleted: return "The tracker capture was deleted. An earlier delivery cannot restore it."
