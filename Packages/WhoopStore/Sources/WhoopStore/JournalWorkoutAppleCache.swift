@@ -241,14 +241,15 @@ extension WhoopStore {
                 WHERE deviceId = ? AND startTs >= ? AND startTs <= ?
                 ORDER BY startTs ASC LIMIT ?
                 """, arguments: [deviceId, from, to, limit])
-                .map {
-                    WorkoutRow(startTs: $0["startTs"], endTs: $0["endTs"], sport: $0["sport"],
-                               source: $0["source"], durationS: $0["durationS"],
-                               energyKcal: $0["energyKcal"], avgHr: $0["avgHr"], maxHr: $0["maxHr"],
-                               strain: $0["strain"], distanceM: $0["distanceM"],
-                               zonesJSON: $0["zonesJSON"], notes: $0["notes"], steps: $0["steps"])
-                }
+                .map(Self.decodeWorkout)
         }
+    }
+
+    static func decodeWorkout(_ row: Row) -> WorkoutRow {
+        WorkoutRow(startTs: row["startTs"], endTs: row["endTs"], sport: row["sport"],
+                   source: row["source"], durationS: row["durationS"], energyKcal: row["energyKcal"],
+                   avgHr: row["avgHr"], maxHr: row["maxHr"], strain: row["strain"],
+                   distanceM: row["distanceM"], zonesJSON: row["zonesJSON"], notes: row["notes"], steps: row["steps"])
     }
 
     /// #1058: sum per-session `steps` over one source's workouts whose startTs is in [from, to). Used to
