@@ -16,6 +16,28 @@ import UniformTypeIdentifiers
 ///   to Files, AirDrop it, or send it on — the idiomatic iOS way to get a file out of the sandbox.
 enum FileExport {
 
+    static func copyVerifiedFile(from source: URL, to destination: URL) throws {
+        try VerifiedFileCopy.copy(from: source, to: destination)
+    }
+
+    /// Returns only after the native save picker completes, or throws cancellation/failure.
+    @MainActor
+    static func saveCopyVerified(at source: URL) async throws -> URL {
+        #if os(macOS)
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = source.lastPathComponent
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let destination = panel.url else { throw CancellationError() }
+        let access = destination.startAccessingSecurityScopedResource()
+        defer { if access { destination.stopAccessingSecurityScopedResource() } }
+        try await Task.detached(priority: .utility) { try copyVerifiedFile(from: source, to: destination) }.value
+        return destination
+        #else
+        guard let destination = await DocumentPicker.export(source) else { throw CancellationError() }
+        return destination
+        #endif
+    }
+
     /// A short `yyMMdd-HHmm` wall-clock stamp for export filenames (#510 — maddognik's protocol RE),
     /// so a reporter who saves several strap logs / raw captures in a row gets sortable, non-colliding
     /// files (e.g. `noop-strap-log-260617-1042.txt`) instead of repeatedly overwriting one name.
