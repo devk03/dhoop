@@ -40,7 +40,7 @@ private struct AlarmsContent: View, Equatable {
                     Button { editor = DhoopAlarmDefinition() } label: {
                         Image(systemName: "plus").font(StrandFont.title2)
                             .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
-                    }.foregroundStyle(StrandPalette.alarmAccent).accessibilityLabel("Add alarm")
+                    }.buttonStyle(NoopFeedbackButtonStyle()).foregroundStyle(StrandPalette.alarmAccent).accessibilityLabel("Add alarm")
                 }
                 NavigationLink(value: AlarmRoute.slots) {
                     NoopCard(padding: NoopMetrics.space4) {
@@ -56,7 +56,7 @@ private struct AlarmsContent: View, Equatable {
                             Image(systemName: "chevron.right").foregroundStyle(StrandPalette.textTertiary)
                         }
                     }
-                }.buttonStyle(.plain)
+                }.buttonStyle(NoopFeedbackButtonStyle())
                 let removalRisks = manager.pendingRemovalRisks(now: capturedAt)
                 if !removalRisks.isEmpty {
                     NoopCard(padding: NoopMetrics.space4) {
@@ -69,8 +69,9 @@ private struct AlarmsContent: View, Equatable {
                                 Text("Slot \(risk.slot) · \(risk.epochs.map { Date(timeIntervalSince1970: Double($0)).formatted(date: .abbreviated, time: .shortened) }.joined(separator: "; "))")
                                     .font(StrandFont.caption).fixedSize(horizontal: false, vertical: true)
                             }
-                            Button("Retry WHOOP sync") { manager.requestSync() }
-                                .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true)).disabled(manager.busy)
+                            NoopAsyncButton("Retry WHOOP sync", systemImage: "arrow.clockwise", kind: .secondary, fullWidth: true) {
+                                try await manager.synchronizeReviewed()
+                            }.disabled(manager.busy)
                             NavigationLink("Review WHOOP slots", value: AlarmRoute.slots).font(StrandFont.caption)
                                 .frame(minHeight: NoopMetrics.minimumTouchTarget)
                         }
@@ -113,7 +114,7 @@ private struct AlarmsContent: View, Equatable {
                                             Text(manager.status(alarm, now: capturedAt)).font(StrandFont.caption)
                                                 .foregroundStyle(StrandPalette.alarmAccent).fixedSize(horizontal: false, vertical: true)
                                         }.frame(maxWidth: .infinity, alignment: .leading)
-                                    }.buttonStyle(.plain)
+                                    }.buttonStyle(NoopFeedbackButtonStyle())
                                     Toggle("Enable \(alarm.label)", isOn: Binding(get: { alarm.enabled }, set: { manager.toggle(alarm.id, enabled: $0) }))
                                         .labelsHidden().toggleStyle(NoopSwitchStyle())
                                 }
@@ -212,7 +213,6 @@ private struct AlarmEditorView: View {
     @State private var draft: DhoopAlarmDefinition
     @State private var time: Date
     @State private var day: Date
-    @State private var message: String?
     @State private var saving = false
     init(manager: DhoopAlarmManager, original: DhoopAlarmDefinition) {
         self.manager = manager; self.original = original
@@ -265,19 +265,21 @@ private struct AlarmEditorView: View {
                     Text("Automatic WHOOP verification").font(StrandFont.headline)
                     Text("Dhoop checks the strap after saving. Pending changes stay visible. No existing slot is used without your approval.")
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                    if let message { Text(message).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
                 }
             }
+            .disabled(saving)
             .navigationTitle(manager.definitions.contains(where: { $0.id == original.id }) ? "Edit alarm" : "New alarm")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }.disabled(saving || draft.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    NoopAsyncButton("Save", systemImage: "checkmark") { try await save() }
+                        .disabled(saving || draft.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .tint(StrandPalette.alarmAccent)
             .environment(\.timeZone, TimeZone(identifier: draft.rule.timeZoneID ?? TimeZone.current.identifier) ?? .current)
         }
+        .interactiveDismissDisabled(saving)
         #if os(iOS)
         .noopSheetPresentation(largeFirst: true)
         #else
@@ -295,7 +297,12 @@ private struct AlarmEditorView: View {
             }
         })
     }
-    private func save() {
+    private struct SaveFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+    @MainActor private func save() async throws {
+        guard !saving else { throw DhoopAlarmManager.Failure.busy }
         var value = draft, cal = Calendar.current
         if let id = value.rule.timeZoneID, let zone = TimeZone(identifier: id) { cal.timeZone = zone }
         let parts = cal.dateComponents([.hour,.minute], from: time)
@@ -304,23 +311,21 @@ private struct AlarmEditorView: View {
         if value.rule.weekdays.isEmpty {
             guard let due = cal.date(bySettingHour: value.rule.minute / 60, minute: value.rule.minute % 60, second: 0,
                                      of: day, matchingPolicy: .nextTime, repeatedTimePolicy: .first), due > Date() else {
-                message = "Choose a future date and time."; return
+                throw SaveFailure(message: "Choose a future date and time. Your draft is retained.")
             }
             value.rule.oneTimeEpoch = Int(due.timeIntervalSince1970)
         } else { value.rule.oneTimeEpoch = nil }
-        guard value.valid else { message = "The label is limited to 100 characters. Check the time and repeat days."; return }
+        guard value.valid else { throw SaveFailure(message: "The label is limited to 100 characters. Check the time and repeat days. Your draft is retained.") }
         saving = true
-        Task {
-            if value.phoneBackup && !original.phoneBackup {
-                let authorized = await manager.authorizeBackup()
-                if !authorized {
-                    saving = false; message = "Phone permission was not granted. Turn off Phone backup to save the WHOOP alarm alone."; return
-                }
+        defer { saving = false }
+        if value.phoneBackup && !original.phoneBackup {
+            guard await manager.authorizeBackup() else {
+                throw SaveFailure(message: "Phone permission was not granted. Turn off Phone backup to save the WHOOP alarm alone. Your draft is retained.")
             }
-            manager.save(value)
-            saving = false
-            if manager.storageError == nil { dismiss() } else { message = manager.storageError }
         }
+        try Task.checkCancellation()
+        guard manager.save(value) else { throw SaveFailure(message: manager.storageError ?? manager.error ?? "The alarm could not be saved. Your draft is retained.") }
+        dismiss()
     }
 }
 
@@ -332,8 +337,9 @@ private struct AlarmSlotsView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
                 Text("Existing and unreadable slots are protected. Zero time can also mean a read failure; it is not proof of an empty slot.")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                Button("Read WHOOP slots") { Task { await manager.refresh() } }
-                    .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true)).disabled(manager.busy)
+                NoopAsyncButton("Read WHOOP slots", systemImage: "arrow.clockwise", kind: .secondary, fullWidth: true) {
+                    try await manager.readSlotsReviewed()
+                }.disabled(manager.busy)
                 ForEach(manager.readings) { reading in
                     NoopCard(padding: NoopMetrics.space4) {
                         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
