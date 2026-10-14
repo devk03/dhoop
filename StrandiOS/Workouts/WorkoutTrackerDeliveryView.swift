@@ -13,6 +13,8 @@ struct WorkoutTrackerDeliveryView: View {
     @State private var localCheckedAt: Date?
     @State private var remote: WorkoutTrackerCaptureSnapshot?
     @State private var remoteCheckedAt: Date?
+    @State private var recoveryReview: WorkoutTrackerRecoveryReview?
+    @State private var preparedDeliveryId: UUID?
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
     private var delivery: WorkoutTrackerDelivery? { try? client.delivery(deliveryId) }
@@ -42,15 +44,32 @@ struct WorkoutTrackerDeliveryView: View {
                             Text("Tracker receipt").font(StrandFont.headline)
                             Text("A local save, a received capture, and applied website values are separate states.")
                                 .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                            NoopAsyncButton("Recover original receipt", systemImage: "arrow.clockwise") {
+                            NoopAsyncButton(delivery.recoveryOf != nil && delivery.status == .ready ? "Send prepared delivery" : "Recover original receipt", systemImage: "arrow.clockwise") {
                                 guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
                                 try await client.synchronize(store: store, deliveryId: delivery.id)
                                 try await checkLocal(delivery)
                             }.disabled(!client.state.enabled || client.busy || delivery.bytes == nil || localVerified != true)
+                            if let originalId = delivery.recoveryOf {
+                                let original = try? client.delivery(originalId)
+                                Text(original?.sourceWorkoutId == delivery.sourceWorkoutId ? "Original event retained" : "Original event retention could not be verified")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                Text("Sending uses this exact reviewed event. It does not create another workout.")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
                             NoopAsyncButton("Compare tracker data", systemImage: "rectangle.split.2x1", kind: .secondary) {
                                 let snapshot = try await client.captureSnapshot(deliveryId: delivery.id)
                                 remote = snapshot; remoteCheckedAt = Date()
                             }.disabled(!client.state.enabled || client.busy)
+                            if [.lifeRevisionConflict, .manifestConflict].contains(delivery.rejection), delivery.acknowledgement == nil, delivery.operation != .delete {
+                                NoopAsyncButton("Review a new delivery", systemImage: "doc.text.magnifyingglass", kind: .secondary) {
+                                    recoveryReview = nil; preparedDeliveryId = nil
+                                    let review = try await client.reviewRecovery(deliveryId: delivery.id)
+                                    remote = review.comparison.capture; remoteCheckedAt = review.comparison.checkedAt
+                                    recoveryReview = review
+                                }.disabled(!client.state.enabled || client.busy || localVerified != true)
+                                Text("Review is available only for a definite revision rejection. Uncertain receipts must be recovered with the original event first.")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
                             NoopAsyncButton("Keep locally", systemImage: "pause.circle", kind: .tertiary) {
                                 try client.keepLocally(deliveryId: delivery.id)
                             }.disabled(client.busy || delivery.paused == true)
@@ -63,6 +82,17 @@ struct WorkoutTrackerDeliveryView: View {
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
                         }
+                    }
+                    if let recoveryReview {
+                        recoveryCard(recoveryReview)
+                    }
+                    if let preparedDeliveryId {
+                        NavigationLink {
+                            WorkoutTrackerDeliveryView(deliveryId: preparedDeliveryId)
+                        } label: {
+                            Label("Open prepared delivery", systemImage: "doc.badge.arrow.up")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }.buttonStyle(NoopSecondaryButtonStyle())
                     }
                     if let remote {
                         NoopCard {
@@ -116,6 +146,8 @@ struct WorkoutTrackerDeliveryView: View {
         switch delivery.status { case .accepted: return StrandPalette.metricSteps; case .review: return StrandPalette.metricHRV; case .failed: return StrandPalette.statusCritical; default: return StrandPalette.textPrimary }
     }
     private func statusTitle(_ delivery: WorkoutTrackerDelivery) -> String {
+        if delivery.status == .accepted { return delivery.needsReconciliation ? "Progress pending" : "Receipt verified" }
+        if delivery.recoveryOf != nil, delivery.paused == true, delivery.status == .ready { return "Prepared · not sent" }
         if delivery.paused == true { return "Kept locally" }
         switch delivery.status {
         case .accepted: return delivery.needsReconciliation ? "Progress pending" : "Receipt verified"
@@ -124,6 +156,80 @@ struct WorkoutTrackerDeliveryView: View {
         case .prepared: return "Awaiting local confirmation"
         case .ready: return "Ready to send"
         }
+    }
+    private func recoveryCard(_ review: WorkoutTrackerRecoveryReview) -> some View {
+        let manualCount = review.comparison.manifest.ownership?.values.filter { $0.origin == "manual" }.count
+        return NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Label("Review changed tracker data", systemImage: "arrow.triangle.branch").font(StrandFont.headline)
+                Text(review.prescriptionChanged ? "The prescription changed. Your recorded sets and original start plan will be retained." : "The tracker revision changed. Your recorded sets and prescription are unchanged.")
+                    .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                Text("Current status: \(review.comparison.manifest.status.replacingOccurrences(of: "_", with: " "))")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Text("Scheduled: \(review.comparison.manifest.scheduledDate ?? "Not scheduled")")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                if review.comparison.capture == nil {
+                    Text("No readable capture for this installation. This is not proof of global absence; Life still checks ownership when receiving the delivery.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.metricAmber)
+                }
+                Text(manualCount.map { "\($0) manually owned fields" } ?? "Manual ownership unavailable")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Group {
+                    ForEach(review.priorManifest.exerciseOccurrences, id: \.sessionExerciseId) { old in
+                        if let current = review.comparison.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == old.sessionExerciseId }) {
+                            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                                Divider()
+                                Text(current.name).font(StrandFont.subhead)
+                                if old.name != current.name { Text("Originally: \(old.name)").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+                                Text("\(current.loadMode.title) · targets only").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                ForEach(old.sets, id: \.lifeSetId) { oldSet in
+                                    if let newSet = current.sets.first(where: { $0.lifeSetId == oldSet.lifeSetId }) {
+                                        Text("Set \(oldSet.setNumber)").font(StrandFont.subhead)
+                                        if review.prescriptionChanged {
+                                            Text("Target: \(targetDescription(oldSet, occurrence: old)) → \(targetDescription(newSet, occurrence: current))")
+                                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                                        }
+                                        canonicalComparison(newSet, occurrence: old, delivery: review.original)
+                                        Text(newSet.completed ? "Website: completed" : "Website: not completed")
+                                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                        if let rir = newSet.rir { Text("Website RIR: \(rir)").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+                                    }
+                                }
+                                if review.prescriptionChanged {
+                                    Text("Rest target: \(old.restTargetSeconds.map { "\($0)s" } ?? "—") → \(current.restTargetSeconds.map { "\($0)s" } ?? "—")")
+                                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                    Text("Target RIR: \(old.targetRir.map(String.init) ?? "—") → \(current.targetRir.map(String.init) ?? "—")")
+                                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                Text("Manual website edits stay authoritative. Preparing retains the original rejected event and creates a separate, paused delivery. Nothing is sent by this action.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                NoopAsyncButton("Prepare reviewed delivery", systemImage: "doc.badge.plus") {
+                    guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
+                    let id = try await client.prepareReviewedRecovery(reviewId: review.id, store: store)
+                    preparedDeliveryId = id; recoveryReview = nil
+                }.disabled(!client.state.enabled || client.busy)
+            }
+        }
+    }
+    private func canonicalComparison(_ target: WorkoutTrackerManifest.PlannedSet, occurrence: WorkoutTrackerManifest.Occurrence,
+                                     delivery: WorkoutTrackerDelivery) -> some View {
+        let identity = delivery.binding.occurrences.first { $0.sessionExerciseId == occurrence.sessionExerciseId }?.sets.first { $0.lifeSetId == target.lifeSetId }
+        let row = delivery.sets.first { UUID(uuidString: $0.id) == identity?.sourceSetId }
+        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2)) : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.space4))
+        return layout {
+            column("Recorded", weightKg: row?.weightKg, reps: row?.reps)
+            // Life canonical actual loads are pounds even when prescription display units differ.
+            column("Website", weightKg: target.actualLoad.map { $0 * 0.45359237 }, reps: target.actualReps)
+        }
+    }
+    private func targetDescription(_ set: WorkoutTrackerManifest.PlannedSet, occurrence: WorkoutTrackerManifest.Occurrence) -> String {
+        let kg = try? occurrence.kilograms(for: set)
+        let weight = kg.map { LiftFormat.weight($0, system: unitSystem) } ?? "—"
+        return "\(weight) × \(set.plannedReps.map(String.init) ?? "—") reps\(set.loadOverride || set.repsOverride ? " · override" : "")"
     }
     private func comparison(_ observed: WorkoutTrackerCaptureSnapshot.SetObservation, delivery: WorkoutTrackerDelivery) -> some View {
         let local = delivery.sets.first { UUID(uuidString: $0.id) == observed.sourceSetId }
