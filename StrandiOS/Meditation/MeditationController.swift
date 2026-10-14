@@ -68,56 +68,62 @@ final class MeditationController: ObservableObject {
         updateScreenAwake()
     }
 
-    func retryStorage() {
-        if !loaded { load() } else if !commit(session) { return }
+    @discardableResult func retryStorage() -> Bool {
+        if !loaded { load() } else if !commit(session) { return false }
+        guard loaded else { return false }
         reconcile()
         if loaded && session.phase == .running { scheduleNotification(requestPermission: false) }
         startTicker()
         updateScreenAwake()
+        return storageError == nil
     }
 
-    func start() {
-        guard loaded, !session.isInProgress, model?.ble.buzzDelivery.claim(buzzOwner) == true else { return }
+    @discardableResult func start() -> Bool {
+        guard loaded, !session.isInProgress, model?.ble.buzzDelivery.claim(buzzOwner) == true else { return false }
         var next = session
-        guard next.start(at: Date(), deviceId: model?.deviceRegistry?.activeDeviceId), commit(next) else { model?.ble.buzzDelivery.release(buzzOwner); return }
+        guard next.start(at: Date(), deviceId: model?.deviceRegistry?.activeDeviceId), commit(next) else { model?.ble.buzzDelivery.release(buzzOwner); return false }
         scheduleBuzz()
         log("started; app-side cue scheduled; wake alarm untouched; background delivery best-effort")
         scheduleNotification(requestPermission: true)
         startTicker()
         updateScreenAwake()
+        return true
     }
 
-    func pause() {
+    @discardableResult func pause() -> Bool {
         reconcile()
         let oldId = session.notificationId
         var next = session
-        guard next.pause(at: Date()), commit(next) else { return }
+        guard next.pause(at: Date()), commit(next) else { return false }
         model?.ble.buzzDelivery.release(buzzOwner)
         clearNotification(oldId)
         notificationStatus = .none
         timerTask?.cancel()
         updateScreenAwake()
+        return true
     }
 
-    func resume() {
-        guard model?.ble.buzzDelivery.claim(buzzOwner) == true else { return }
+    @discardableResult func resume() -> Bool {
+        guard model?.ble.buzzDelivery.claim(buzzOwner) == true else { return false }
         var next = session
-        guard next.resume(at: Date()), commit(next) else { model?.ble.buzzDelivery.release(buzzOwner); return }
+        guard next.resume(at: Date()), commit(next) else { model?.ble.buzzDelivery.release(buzzOwner); return false }
         scheduleBuzz()
         scheduleNotification(requestPermission: false)
         startTicker()
         updateScreenAwake()
+        return true
     }
 
-    func cancel() {
+    @discardableResult func cancel() -> Bool {
         let oldId = session.notificationId
         var next = session
-        guard next.cancel(), commit(next) else { return }
+        guard next.cancel(), commit(next) else { return false }
         model?.ble.buzzDelivery.release(buzzOwner)
         clearNotification(oldId)
         notificationStatus = .none
         timerTask?.cancel()
         updateScreenAwake()
+        return true
     }
 
     private func reconcile() {

@@ -37,8 +37,7 @@ struct MeditationCard: View {
                 if let error = meditation.storageError {
                     Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Button("Retry storage", action: meditation.retryStorage)
-                        .font(StrandFont.caption).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    action("Retry storage", icon: "arrow.clockwise", perform: meditation.retryStorage)
                 }
                 DisclosureGroup {
                     Text(alertDetails)
@@ -78,16 +77,18 @@ struct MeditationCard: View {
             } else {
                 action("Resume", icon: "play.fill", perform: meditation.resume)
             }
-            Button("Cancel", action: meditation.cancel)
-                .font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.secondary)).tint(StrandPalette.textSecondary)
-                .frame(minHeight: NoopMetrics.minimumTouchTarget)
+            action("Cancel", icon: "xmark", kind: .secondary, perform: meditation.cancel)
         }
     }
 
-    private func action(_ title: LocalizedStringKey, icon: String, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) { Label(title, systemImage: icon) }
-            .font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricHRV)
-            .frame(minHeight: NoopMetrics.minimumTouchTarget)
+    private struct ActionFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+    private func action(_ title: LocalizedStringKey, icon: String, kind: NoopButtonKind = .primary, perform: @escaping () -> Bool) -> some View {
+        NoopAsyncButton(title, systemImage: icon, kind: kind) {
+            guard perform() else { throw ActionFailure(message: meditation.storageError ?? "The requested timer change was not applied. Review the current timer and WHOOP alert status before retrying.") }
+        }
     }
 
     private var completionMessage: String? {
