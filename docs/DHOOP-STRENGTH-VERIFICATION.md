@@ -346,6 +346,40 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   with independent hardcoded press motion and plain Back/disclosure buttons. The notification-step
   permission callback needs a pending/navigation gate so repeated taps cannot advance twice.
 
+## Build 492 onboarding controls and permission navigation
+
+- Three hostless gate tests passed (`/private/tmp/dhoop-onboarding-controls-492-tests.log`): duplicate
+  requests/completions advance one page only, changed-page completion does not advance, and a stale
+  callback cannot consume a newer request after invalidation. These exercise the pure gate, not an
+  actual system permission prompt or the complete SwiftUI onboarding runtime.
+- Signed generic-device iOS and macOS builds passed:
+  `/private/tmp/dhoop-onboarding-controls-492-ios-verified-build.log` and
+  `/private/tmp/dhoop-onboarding-controls-492-macos-verified-build.log`. Bundle/team/document type
+  remain stable. Diff/comment hygiene passed. Build 492 has not been installed.
+- Notification continuation is gated by original page/request ID; Back and repeated Continue are
+  disabled while pending. Disappearance invalidates the request, and Finish cannot invoke its owner
+  twice. Existing consent behavior is preserved: denial does not prevent onboarding completion,
+  and per-feature switches still handle permission denial.
+- Primary, secondary, scan/import, Back and disclosure controls use shared StrandDesign feedback.
+  Labels retain their footprint while pending; Back/disclosure hit areas are at least 44 points.
+  Onboarding page/disclosure transitions respect system/in-app reduced-motion preferences.
+- Import selection retains its URL/type for explicit retry after failure. Picker failures are shown;
+  cancelling another-source chooser preserves the earlier retry context. An active chooser/import
+  blocks competing imports and navigation, without observing fast HR updates at the wizard root.
+  Failed optional imports may still be skipped. File permissions on a real device and late native
+  picker callbacks remain unverified; a retained URL is not proof that access will remain available.
+- Import completion is separate from metric availability. Importers, stored rows, units and their
+  existing typed outcome reporting are unchanged. No import/permission request was run by tooling.
+- Built-in ImageGen reference `docs/design/dhoop-onboarding-operation-controls-study.png` and all
+  prompts beside it contain fictional states. Corrections keep Continue enabled after optional
+  failure, hide retry during import and disable the competing source. The existing scrollable
+  onboarding shell remains; this is not a new layout or an actual permission/data screenshot.
+- Read-only availability again reports `0A-Homeboy` unavailable
+  (`/private/tmp/dhoop-492-device-availability.json`). No installation, phone launch, strap command,
+  motor cue, owner-data mutation or migration occurred. The full goal remains active.
+- Next scoped review: alarm-detail custom navigation/destructive controls and root tab transition
+  motion. The add-device wizard already uses shared primary/row feedback in the inspected paths.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
