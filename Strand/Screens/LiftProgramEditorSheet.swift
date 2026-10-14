@@ -25,6 +25,10 @@ struct LiftProgramEditorSheet: View {
     /// reordering is just moving an element.
     @State private var items: [LiftProgramItemRow] = []
     @State private var loaded = false
+    @State private var itemsReadable = false
+    @State private var loadError: String?
+    @State private var sourceDeviceId: String?
+    private var deviceID: String { program?.deviceId ?? sourceDeviceId ?? repo.deviceId }
     @State private var saving = false
     @State private var saveError: String?
 
@@ -40,7 +44,7 @@ struct LiftProgramEditorSheet: View {
 
     private var isNew: Bool { program == nil }
     private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !saving
+        itemsReadable && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !saving
     }
 
     var body: some View {
@@ -49,8 +53,12 @@ struct LiftProgramEditorSheet: View {
             subtitle: "Your targets for each exercise. What you actually lift is recorded when you run it."
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                detailsSection
-                exercisesSection
+                detailsSection.disabled(saving)
+                if let loadError {
+                    Text(loadError).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical)
+                    NoopAsyncButton("Retry reading routine", systemImage: "arrow.clockwise", kind: .secondary) { try await readItems() }
+                } else if !itemsReadable { ProgressView("Reading routine…").font(StrandFont.caption) }
+                exercisesSection.disabled(!itemsReadable || saving)
                 if !isNew { deleteSection }
                 footer
             }
@@ -60,14 +68,15 @@ struct LiftProgramEditorSheet: View {
         #else
         // A fixed frame, for the reason the other editor sheets document: a macOS sheet hosting a
         // ScrollView needs a definite height or every row collapses to the top.
-        .frame(width: 520, height: 720)
+        .frame(minWidth: NoopMetrics.editorSheetMinWidth, minHeight: NoopMetrics.editorSheetMinHeight)
         #endif
         .background(StrandPalette.surfaceBase)
         .keyboardDoneToolbar($focused)
         .dismissesKeyboardOnTap($focused)
+        .interactiveDismissDisabled(saving)
         .task { await loadIfNeeded() }
         .sheet(item: $editingItem) { target in
-            LiftProgramItemSheet(item: target.item) { saved in
+            LiftProgramItemSheet(item: target.item, sourceDeviceId: deviceID) { saved in
                 apply(saved, replacing: target.item)
             }
         }
@@ -283,11 +292,25 @@ struct LiftProgramEditorSheet: View {
     private func loadIfNeeded() async {
         guard !loaded else { return }
         loaded = true
-        guard let program else { return }
+        sourceDeviceId = deviceID
+        guard let program else { itemsReadable = true; return }
         name = program.name
         note = program.note ?? ""
-        guard let store = await repo.storeHandle() else { return }
-        items = (try? await store.liftProgramItems(programId: program.id)) ?? []
+        try? await readItems()
+    }
+    @MainActor private func readItems() async throws {
+        guard let program else { itemsReadable = true; return }
+        itemsReadable = false; loadError = nil
+        do {
+            guard let store = await repo.storeHandle() else { throw LiftExerciseCatalogModel.Failure.unavailable }
+            let rows = try await store.liftProgramItems(programId: program.id)
+            try Task.checkCancellation()
+            guard rows.allSatisfy({ $0.deviceId == deviceID && $0.programId == program.id }) else { throw LiftExerciseCatalogModel.Failure.changedSource }
+            items = rows; itemsReadable = true
+        } catch {
+            loadError = "Routine exercises could not be read. Saving is paused so existing lines cannot be replaced with an empty list. Your name and note are retained."
+            throw error
+        }
     }
 
     private func save() async {
@@ -305,7 +328,7 @@ struct LiftProgramEditorSheet: View {
 
         let row = LiftProgramRow(
             id: id,
-            deviceId: repo.deviceId,
+            deviceId: deviceID,
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             note: trimmedNote.isEmpty ? nil : trimmedNote,
             createdAt: program?.createdAt ?? now,
@@ -317,7 +340,7 @@ struct LiftProgramEditorSheet: View {
         let ordered = items.enumerated().map { index, item in
             LiftProgramItemRow(
                 id: item.id,
-                deviceId: repo.deviceId,
+                deviceId: deviceID,
                 programId: id,
                 ord: index,
                 exercise: item.exercise,
@@ -338,8 +361,11 @@ struct LiftProgramEditorSheet: View {
     }
 
     private func deleteProgram() async {
-        guard let program, let store = await repo.storeHandle() else { return }
-        _ = try? await store.deleteLiftProgram(id: program.id)
+        guard !saving, let program else { return }
+        saving = true; defer { saving = false }
+        guard let store = await repo.storeHandle() else { saveError = "Routine storage is unavailable. Nothing was deleted."; return }
+        do { _ = try await store.deleteLiftProgram(id: program.id) }
+        catch { saveError = "Routine deletion failed. Your routine remains available."; return }
         await onSaved()
         dismiss()
     }
