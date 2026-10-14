@@ -20,6 +20,7 @@ final class WorkoutTrackerClient: ObservableObject {
     private var archiveCache: [UUID: WorkoutTrackerDelivery] = [:]
     private var stateRevision = 0
     private var metadataRestoring = false
+    private var recoveryReview: WorkoutTrackerRecoveryReview?
 
     private convenience init() {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -284,6 +285,55 @@ final class WorkoutTrackerClient: ObservableObject {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         return result
+    }
+
+    func reviewRecovery(deliveryId: UUID) async throws -> WorkoutTrackerRecoveryReview {
+        recoveryReview = nil
+        guard let item = try delivery(deliveryId), !preparingCaptures.contains(item.sourceWorkoutId) else {
+            throw WorkoutTrackerContractError.deliveryInProgress
+        }
+        guard item.status == .review, [.lifeRevisionConflict, .manifestConflict].contains(item.rejection),
+              item.acknowledgement == nil else { throw WorkoutTrackerContractError.invalidSnapshot }
+        let initialRevision = stateRevision
+        let comparison = try await reviewComparison(deliveryId: deliveryId)
+        guard initialRevision == stateRevision, try history(for: item.sourceWorkoutId).last?.id == item.id else {
+            throw WorkoutTrackerContractError.sessionChanged
+        }
+        try WorkoutTrackerRecoveryReview.validate(original: item, comparison: comparison)
+        let review = WorkoutTrackerRecoveryReview(id: UUID(), original: item, comparison: comparison)
+        recoveryReview = review
+        return review
+    }
+
+    /// Preparation is explicit and local. Sending remains a separate exact-event action.
+    func prepareReviewedRecovery(reviewId: UUID, store: WhoopStore) async throws -> UUID {
+        guard !busy, !metadataRestoring, let review = recoveryReview, review.id == reviewId,
+              preparingCaptures.insert(review.original.sourceWorkoutId).inserted else {
+            throw WorkoutTrackerContractError.sessionChanged
+        }
+        defer { preparingCaptures.remove(review.original.sourceWorkoutId) }
+        let initialRevision = stateRevision
+        let original = review.original
+        guard try delivery(original.id)?.sameIntent(as: original) == true,
+              try history(for: original.sourceWorkoutId).last?.id == original.id,
+              try await original.matches(store: store) else { throw WorkoutTrackerContractError.sessionChanged }
+        let refreshed = try await reviewComparison(deliveryId: original.id)
+        guard refreshed.manifest == review.comparison.manifest, refreshed.capture == review.comparison.capture,
+              initialRevision == stateRevision, recoveryReview?.id == reviewId,
+              try delivery(original.id)?.rejection == original.rejection else {
+            recoveryReview = nil
+            throw WorkoutTrackerContractError.sessionChanged
+        }
+        let replacement = try review.replacement()
+        var next = state
+        if let index = next.deliveries.firstIndex(where: { $0.id == original.id }) {
+            next.deliveries[index].paused = true
+            next.deliveries[index].message = "Original rejected delivery retained. A separately reviewed replacement was prepared."
+        }
+        next.deliveries.append(replacement)
+        try commit(next, protecting: [original.sourceWorkoutId])
+        recoveryReview = nil
+        return replacement.id
     }
 
     func captureBinding(manifest: WorkoutTrackerManifest) throws -> WorkoutTrackerCaptureBinding {

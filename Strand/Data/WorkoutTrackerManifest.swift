@@ -71,6 +71,7 @@ struct WorkoutTrackerIndex: Codable, Equatable {
 }
 
 struct WorkoutTrackerManifest: Codable, Equatable {
+    struct Owner: Codable, Equatable { let origin: String; let sourceWorkoutId: UUID? }
     struct PlannedSet: Codable, Equatable {
         let lifeSetId: Int
         let setNumber: Int
@@ -122,6 +123,7 @@ struct WorkoutTrackerManifest: Codable, Equatable {
     let lifeRevision: Int
     let exerciseOccurrences: [Occurrence]
     let sourceWorkoutId: String?
+    var ownership: [String: Owner]? = nil
 
     var hasObservations: Bool {
         sourceWorkoutId != nil || exerciseOccurrences.contains { $0.sets.contains { $0.completed || $0.actualLoad != nil || $0.actualReps != nil || $0.rir != nil } }

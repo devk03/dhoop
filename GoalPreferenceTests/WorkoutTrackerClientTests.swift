@@ -305,6 +305,243 @@ final class WorkoutTrackerClientTests: XCTestCase {
             XCTAssertEqual(client.state, before)
         }
     }
+
+    func testReviewedGlobalConflictPreparesANewPausedEventAndPreservesOriginalObservations() async throws {
+        let f = try await fixture()
+        var submitted: [Data] = []
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            switch endpoint {
+            case .observations:
+                let body = try XCTUnwrap(body); submitted.append(body)
+                if submitted.count == 1 { throw WorkoutSyncTransportError.rejected(.lifeRevisionConflict) }
+                return try self.receipt(body, fixture: f)
+            case .manifest:
+                XCTAssertNil(body)
+                var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(f.binding.manifest)) as? [String: Any])
+                object["lifeRevision"] = 1
+                return try JSONSerialization.data(withJSONObject: object)
+            case .captures: XCTAssertNil(body); throw WorkoutSyncTransportError.captureNotFound
+            default: XCTFail("Unexpected request"); throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let original = client.state.deliveries[0]
+        do { try await client.synchronize(store: f.db); XCTFail("First attempt must report its conflict") }
+        catch WorkoutSyncTransportError.rejected {}
+        let review = try await client.reviewRecovery(deliveryId: original.id)
+        let replacementId = try await client.prepareReviewedRecovery(reviewId: review.id, store: f.db)
+        let replacement = try XCTUnwrap(client.state.deliveries.first { $0.id == replacementId })
+        XCTAssertNotEqual(replacement.id, original.id)
+        XCTAssertEqual(replacement.sourceWorkoutId, original.sourceWorkoutId)
+        XCTAssertEqual(replacement.revision, original.revision)
+        XCTAssertEqual(replacement.binding, original.binding)
+        XCTAssertEqual(replacement.sets, original.sets)
+        XCTAssertEqual(replacement.paused, true)
+        XCTAssertEqual(replacement.recoveryOf, original.id)
+        XCTAssertEqual(try client.delivery(original.id)?.bytes, original.bytes)
+        XCTAssertEqual(submitted.count, 1, "Review and preparation must not send observations")
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(original.bytes)) as? [String: Any])
+        var new = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(replacement.bytes)) as? [String: Any])
+        XCTAssertEqual(new["baseLifeRevision"] as? Int, 1)
+        for key in ["eventId", "baseLifeRevision"] { old[key] = nil; new[key] = nil }
+        XCTAssertEqual(old as NSDictionary, new as NSDictionary)
+        let restored = WorkoutTrackerClient(store: f.file, send: { _, body, _ in
+            submitted.append(try XCTUnwrap(body)); return try self.receipt(try XCTUnwrap(body), fixture: f)
+        }, readCredential: { f.config })
+        try await restored.synchronize(store: f.db)
+        XCTAssertEqual(submitted.count, 1, "The replacement stays paused after relaunch")
+        try await restored.synchronize(store: f.db, deliveryId: replacementId)
+        XCTAssertEqual(submitted.last, replacement.bytes)
+        XCTAssertEqual(try restored.delivery(replacementId)?.status, .accepted)
+    }
+
+    func testChangedPrescriptionRebaseKeepsPerformedValuesAndOriginalStartProvenance() async throws {
+        let base = try await fixture()
+        var binding = base.binding
+        binding.planAtStart = .init(manifest: binding.manifest, provenance: .cached, fetchedAt: Date(timeIntervalSince1970: 1700000000))
+        let f = Fixture(file: base.file, config: base.config, binding: binding, record: base.record, sets: base.sets, db: base.db)
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, _, _ in
+            switch endpoint {
+            case .observations: throw WorkoutSyncTransportError.rejected(.manifestConflict)
+            case .captures: throw WorkoutSyncTransportError.captureNotFound
+            case .manifest:
+                var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(f.binding.manifest)) as? [String: Any])
+                object["lifeRevision"] = 2; object["manifestRevision"] = "new-prescription"
+                var occurrences = try XCTUnwrap(object["exerciseOccurrences"] as? [[String: Any]])
+                var targets = try XCTUnwrap(occurrences[0]["sets"] as? [[String: Any]])
+                targets[0]["plannedLoad"] = 45; occurrences[0]["sets"] = targets; object["exerciseOccurrences"] = occurrences
+                return try JSONSerialization.data(withJSONObject: object)
+            default: throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let original = client.state.deliveries[0]
+        do { try await client.synchronize(store: f.db); XCTFail("Conflict must be explicit") }
+        catch WorkoutSyncTransportError.rejected {}
+        let review = try await client.reviewRecovery(deliveryId: original.id)
+        XCTAssertTrue(review.prescriptionChanged)
+        let id = try await client.prepareReviewedRecovery(reviewId: review.id, store: f.db)
+        let replacement = try XCTUnwrap(try client.delivery(id))
+        XCTAssertEqual(replacement.revision, original.revision + 1)
+        XCTAssertEqual(replacement.binding.planAtStart, binding.planAtStart)
+        let old = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(original.bytes)) as? [String: Any])
+        let new = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(replacement.bytes)) as? [String: Any])
+        XCTAssertEqual(new["manifestRevision"] as? String, "new-prescription")
+        XCTAssertEqual(new["exerciseOccurrences"] as? NSArray, old["exerciseOccurrences"] as? NSArray)
+        XCTAssertEqual(new["planAtStart"] as? NSDictionary, old["planAtStart"] as? NSDictionary)
+        XCTAssertEqual(replacement.sets[0].weightKg, 60, "Current targets never replace performed load")
+    }
+
+    func testReviewCannotRebaseUnknownReceiptOrChangedLocalRecording() async throws {
+        for timeout in [true, false] {
+            let f = try await fixture()
+            var reads = 0
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, _, _ in
+                switch endpoint {
+                case .observations:
+                    if timeout { throw URLError(.timedOut) }
+                    throw WorkoutSyncTransportError.rejected(.lifeRevisionConflict)
+                case .manifest: reads += 1; return try JSONEncoder().encode(f.binding.manifest)
+                case .captures: reads += 1; throw WorkoutSyncTransportError.captureNotFound
+                default: throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            do { try await client.synchronize(store: f.db); XCTFail("Submission must fail") } catch {}
+            let original = client.state.deliveries[0]
+            if timeout {
+                do { _ = try await client.reviewRecovery(deliveryId: original.id); XCTFail("Unknown outcomes must recover the original event") }
+                catch WorkoutTrackerContractError.invalidSnapshot {}
+                XCTAssertEqual(reads, 0)
+            } else {
+                let review = try await client.reviewRecovery(deliveryId: original.id)
+                var changed = f.sets[0]; changed.reps = 12
+                try await f.db.upsertLiftSets([changed])
+                do { _ = try await client.prepareReviewedRecovery(reviewId: review.id, store: f.db); XCTFail("A stale local snapshot cannot be prepared") }
+                catch WorkoutTrackerContractError.sessionChanged {}
+            }
+            XCTAssertEqual(client.state.deliveries.count, 1)
+            XCTAssertEqual(client.state.deliveries[0].bytes, original.bytes)
+        }
+    }
+
+    func testReviewedRecoveryRejectsChangedIdentitiesTombstonesAndEqualOrNewerServerSource() async throws {
+        for scenario in ["set", "exercise", "loadMode", "tombstone", "equal", "newer"] {
+            let f = try await fixture()
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, _, _ in
+                switch endpoint {
+                case .observations: throw WorkoutSyncTransportError.rejected(.lifeRevisionConflict)
+                case .manifest:
+                    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(f.binding.manifest)) as? [String: Any])
+                    var occurrences = try XCTUnwrap(object["exerciseOccurrences"] as? [[String: Any]])
+                    if scenario == "set" {
+                        var sets = try XCTUnwrap(occurrences[0]["sets"] as? [[String: Any]])
+                        sets[0]["lifeSetId"] = 999; occurrences[0]["sets"] = sets
+                    }
+                    if scenario == "exercise" { occurrences[0]["exerciseKey"] = "different-exercise" }
+                    if scenario == "loadMode" { occurrences[0]["loadMode"] = "machine" }
+                    object["exerciseOccurrences"] = occurrences
+                    return try JSONSerialization.data(withJSONObject: object)
+                case .captures:
+                    if ["set", "exercise", "loadMode"].contains(scenario) { throw WorkoutSyncTransportError.captureNotFound }
+                    return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "sourceWorkoutId": f.record.id,
+                        "sourceRevision": scenario == "newer" ? 2 : 1, "lifeRevision": 0,
+                        "binding": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "tombstone": scenario == "tombstone",
+                        "session": ["timeZone": "Europe/London"], "ownership": [:], "projectionPolicy": "apply",
+                        "projectionState": "current", "sets": [], "nextCursor": NSNull()])
+                default: throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            do { try await client.synchronize(store: f.db); XCTFail("Original rejection must remain explicit") }
+            catch WorkoutSyncTransportError.rejected {}
+            let original = client.state.deliveries[0]
+            do { _ = try await client.reviewRecovery(deliveryId: original.id); XCTFail("Unsafe \(scenario) must not produce an applicable review") }
+            catch WorkoutTrackerContractError.invalidSnapshot {}
+            XCTAssertEqual(client.state.deliveries, [original])
+        }
+    }
+
+    func testPreparedReviewRejectsAChangedTrackerSnapshotAndRepeatedPreparation() async throws {
+        let f = try await fixture()
+        var manifestReads = 0, changed = false
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, _, _ in
+            switch endpoint {
+            case .observations: throw WorkoutSyncTransportError.rejected(.lifeRevisionConflict)
+            case .captures: throw WorkoutSyncTransportError.captureNotFound
+            case .manifest:
+                manifestReads += 1
+                var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(f.binding.manifest)) as? [String: Any])
+                object["lifeRevision"] = changed ? 2 : 1
+                return try JSONSerialization.data(withJSONObject: object)
+            default: throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        do { try await client.synchronize(store: f.db) } catch WorkoutSyncTransportError.rejected {}
+        let original = client.state.deliveries[0]
+        let review = try await client.reviewRecovery(deliveryId: original.id)
+        changed = true
+        do { _ = try await client.prepareReviewedRecovery(reviewId: review.id, store: f.db); XCTFail("Old review must not be applied to new tracker data") }
+        catch WorkoutTrackerContractError.sessionChanged {}
+        XCTAssertEqual(client.state.deliveries.count, 1)
+        changed = false
+        let refreshed = try await client.reviewRecovery(deliveryId: original.id)
+        _ = try await client.prepareReviewedRecovery(reviewId: refreshed.id, store: f.db)
+        do { _ = try await client.prepareReviewedRecovery(reviewId: refreshed.id, store: f.db); XCTFail("Preparation cannot submit twice") }
+        catch WorkoutTrackerContractError.sessionChanged {}
+        XCTAssertEqual(client.state.deliveries.count, 2)
+        XCTAssertEqual(manifestReads, 8)
+    }
+
+    func testExistingCaptureRebaseUsesVerifiedOriginalOccurrenceAndRejectsItsTombstone() async throws {
+        for occurrenceDeleted in [false, true] {
+            let f = try await fixture()
+            var posts = 0
+            let sourceOccurrence = f.binding.occurrences[0].sourceOccurrenceId.uuidString.lowercased()
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                switch endpoint {
+                case .observations:
+                    posts += 1
+                    if posts == 1 { return try self.receipt(try XCTUnwrap(body), fixture: f) }
+                    throw WorkoutSyncTransportError.rejected(.lifeRevisionConflict)
+                case .manifest:
+                    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(f.binding.manifest)) as? [String: Any])
+                    object["lifeRevision"] = 2; object["sourceWorkoutId"] = f.record.id
+                    object["ownership"] = ["set:1:actualLoad": ["origin": "manual"]]
+                    return try JSONSerialization.data(withJSONObject: object)
+                case .captures:
+                    return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "sourceWorkoutId": f.record.id,
+                        "sourceRevision": 1, "lifeRevision": 2, "binding": ["kind": "programmed", "cycleId": 4, "sessionId": 5],
+                        "tombstone": false, "session": ["timeZone": "Europe/London"], "ownership": [:],
+                        "projectionPolicy": "apply", "projectionState": "current", "nextCursor": NSNull(),
+                        "occurrences": [sourceOccurrence: ["kind": "prescribed", "sessionExerciseId": 2, "programSlotId": 3,
+                            "slotKey": "push", "exerciseKey": "bench", "loadMode": "barbell", "raw": ["deleted": occurrenceDeleted]]],
+                        "sets": [["sourceSetId": f.sets[0].id, "sourceOccurrenceId": sourceOccurrence, "sessionExerciseId": 2,
+                            "lifeSetId": 1, "exerciseKey": "bench", "setType": "work", "raw": ["loadKg": 60, "loadBasis": "total", "reps": 8]]]])
+                default: throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            try await client.synchronize(store: f.db)
+            var changed = f.sets; changed[0].reps = 10
+            let prepared = try await client.prepareHistoryChange(record: f.record, sets: changed, store: f.db)
+            let event = try XCTUnwrap(prepared)
+            try await f.db.upsertLiftSets(changed)
+            try await client.confirmPersistence(event, store: f.db)
+            do { try await client.synchronize(store: f.db); XCTFail("Correction should encounter the test conflict") }
+            catch WorkoutSyncTransportError.rejected {}
+            do {
+                let review = try await client.reviewRecovery(deliveryId: event)
+                XCTAssertFalse(occurrenceDeleted)
+                XCTAssertEqual(review.comparison.manifest.ownership?["set:1:actualLoad"]?.origin, "manual")
+                let replacementId = try await client.prepareReviewedRecovery(reviewId: review.id, store: f.db)
+                XCTAssertEqual(try client.delivery(replacementId)?.sets[0].reps, 10)
+                XCTAssertEqual(try client.delivery(replacementId)?.revision, 2)
+            } catch WorkoutTrackerContractError.invalidSnapshot { XCTAssertTrue(occurrenceDeleted) }
+            XCTAssertEqual(posts, 2, "Neither review nor preparation may apply manual website values")
+        }
+    }
     func testUnsupportedNoteIsSavedLocallyWithItsActualValidationReasonAndCannotUpload() async throws {
         let f = try await fixture()
         var rows = f.sets; rows[0].note = String(repeating: "x", count: 2001)
