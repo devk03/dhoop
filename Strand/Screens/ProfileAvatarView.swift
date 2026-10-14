@@ -56,7 +56,7 @@ struct ProfileAvatarView: View {
     /// Decode the stored bytes through the platform bitmap type (`NSImage`/`UIImage`) into a
     /// SwiftUI `Image` via the shared `Image(platformImage:)` bridge. nil on no data / bad bytes.
     private var decodedImage: Image? {
-        guard let imageData, let platform = PlatformImage(data: imageData) else { return nil }
+        guard let imageData, let platform = AvatarImage.displayableImage(from: imageData) else { return nil }
         return Image(platformImage: platform)
     }
 }
@@ -68,6 +68,31 @@ struct ProfileAvatarView: View {
 // identical across macOS and iOS — no UIKit/AppKit divergence in the resize path.
 
 enum AvatarImage {
+    /// A recognized raster must decode through ImageIO; retain native-format fallback only when
+    /// ImageIO has no decoder. A lazy platform object cannot rescue a failed raster decode.
+    static func importData(from data: Data, maxDimension: CGFloat, quality: CGFloat = 0.8) -> Data? {
+        if let jpeg = downscaledJPEG(from: data, maxDimension: maxDimension, quality: quality) { return jpeg }
+        if let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetType(source) != nil { return nil }
+        guard displayableImage(from: data) != nil else { return nil }
+        return data
+    }
+
+    /// Platform construction can accept only a header; require renderable pixels before commit.
+    static func displayableImage(from data: Data) -> PlatformImage? {
+        guard let image = PlatformImage(data: data) else { return nil }
+        if let source = CGImageSourceCreateWithData(data as CFData, nil) {
+            let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                          kCGImageSourceThumbnailMaxPixelSize: 256]
+            guard CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) != nil else { return nil }
+        }
+        #if canImport(AppKit)
+        guard image.isValid, image.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil else { return nil }
+        #elseif canImport(UIKit)
+        guard image.cgImage != nil || image.ciImage != nil else { return nil }
+        #endif
+        return image
+    }
+
     /// Downscale `data` so its longest side is at most `maxDimension` points and re-encode as JPEG.
     /// Returns nil if the bytes can't be decoded (caller may fall back to the raw bytes).
     /// - `maxDimension`: the cap on the longest edge (default 256 — plenty for a circle-cropped avatar).
@@ -82,6 +107,8 @@ enum AvatarImage {
         guard let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             return nil
         }
+        guard CGImageSourceGetStatus(source) == .statusComplete,
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete else { return nil }
         let out = NSMutableData()
         let type = UTType.jpeg.identifier as CFString
         guard let dest = CGImageDestinationCreateWithData(out, type, 1, nil) else { return nil }

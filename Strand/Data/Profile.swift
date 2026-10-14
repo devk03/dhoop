@@ -79,7 +79,7 @@ final class ProfileStore: ObservableObject {
         }
     }
 
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
     private enum K {
         static let dateOfBirth = "profile.dateOfBirth"
         /// Pre-#146 age key. No longer the source of truth; kept mirrored from `dateOfBirth` so the
@@ -99,7 +99,8 @@ final class ProfileStore: ObservableObject {
         static let avatar = "profile.avatarImageData"
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        d = defaults
         // #146 age migration. `dateOfBirth` is authoritative whenever it exists, so age advances on
         // its own. A pre-#146 install — or a `.noopbak` restore, which writes only the legacy Int age
         // and clears any stale DOB (see `BackupSettings.apply`) — has no DOB yet, so derive one from
@@ -145,7 +146,7 @@ final class ProfileStore: ObservableObject {
     /// `person.crop.circle` SF Symbol). Bridges the stored JPEG bytes through the platform bitmap
     /// type (`NSImage`/`UIImage`) via the shared `Image(platformImage:)` initializer.
     var avatarImage: Image? {
-        guard let data = avatarImageData, let img = PlatformImage(data: data) else { return nil }
+        guard let data = avatarImageData, let img = AvatarImage.displayableImage(from: data) else { return nil }
         return Image(platformImage: img)
     }
 
@@ -154,13 +155,13 @@ final class ProfileStore: ObservableObject {
 
     /// Set the profile photo from raw image bytes (e.g. from a `PhotosPicker` / `NSOpenPanel`),
     /// downscaling to a small square so the persisted UserDefaults blob stays tiny. Passing nil
-    /// clears it. If downscaling can't decode the bytes, the originals are stored as-is rather than
-    /// dropping the user's pick. To remove a photo, pass nil or call ``clearAvatar()``.
-    func setAvatar(_ data: Data?) {
-        guard let data else { avatarImageData = nil; return }
-        // Downscale to ~256px before persisting; fall back to the raw bytes if decoding fails so a
-        // valid-but-unusual image still saves rather than silently dropping.
-        avatarImageData = AvatarImage.downscaledJPEG(from: data, maxDimension: 256) ?? data
+    /// clears it. Decodable formats retain the original-byte fallback; invalid input keeps the
+    /// current avatar and reports failure. To remove a photo, pass nil or call ``clearAvatar()``.
+    @discardableResult func setAvatar(_ data: Data?) -> Bool {
+        guard let data else { avatarImageData = nil; return true }
+        guard let prepared = AvatarImage.importData(from: data, maxDimension: 256) else { return false }
+        avatarImageData = prepared
+        return true
     }
 
     /// Remove the profile photo (reverts the header / Settings to the default icon).

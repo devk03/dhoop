@@ -42,7 +42,8 @@ final class BackgroundImageStore: ObservableObject {
         didSet { d.set(enabled, forKey: BackgroundImagePrefs.enabledKey) }
     }
 
-    private let d = UserDefaults.standard
+    private let d: UserDefaults
+    private let storageDirectory: URL?
 
     /// How the ACTIVE image is scaled — the fill mode of the most-recent entry. Backed by `recents`
     /// (`@Published`), so the backdrop re-reads it whenever the list changes.
@@ -54,13 +55,14 @@ final class BackgroundImageStore: ObservableObject {
     /// Whether a photo is stored — drives the Remove affordance in Settings.
     var hasImage: Bool { image != nil }
 
-    private init() {
+    init(defaults: UserDefaults = .standard, directory: URL? = nil) {
+        d = defaults; storageDirectory = directory
         enabled = d.bool(forKey: BackgroundImagePrefs.enabledKey)                       // default false
         var list = Self.parse(d.string(forKey: BackgroundImagePrefs.recentsKey) ?? "")
-            .filter { Self.fileExists($0.id) }
+            .filter { Self.fileExists($0.id, directory: storageDirectory) }
         // Migration: pre-recents installs stored ONE `background.jpg`; adopt it as the sole recent so an
         // upgrading user keeps their background.
-        if list.isEmpty, d.bool(forKey: BackgroundImagePrefs.presentKey), Self.fileExists("background.jpg") {
+        if list.isEmpty, d.bool(forKey: BackgroundImagePrefs.presentKey), Self.fileExists("background.jpg", directory: storageDirectory) {
             list = [Recent(id: "background.jpg",
                            fillMode: BackgroundFillMode.resolve(d.string(forKey: BackgroundImagePrefs.fillModeKey) ?? ""))]
         }
@@ -69,39 +71,48 @@ final class BackgroundImageStore: ObservableObject {
         // GC orphan background files not referenced by the list — e.g. one left by a crash between writing
         // a pick and persisting the list. (iOS writes atomically, so a partial file never appears; this
         // catches only the crash-before-persist case.)
-        Self.gcOrphans(keeping: Set(capped.map(\.id)))
-        image = capped.first.flatMap { Self.fullImage(id: $0.id) }
-        thumbnails = capped.map { Self.thumbnail(id: $0.id) }
+        Self.gcOrphans(keeping: Set(capped.map(\.id)), directory: storageDirectory)
+        image = capped.first.flatMap { Self.fullImage(id: $0.id, directory: storageDirectory) }
+        thumbnails = capped.map { Self.thumbnail(id: $0.id, directory: storageDirectory) }
         persist()
     }
 
-    /// Store a picked image: downscale + re-encode to a new app-private JPEG, push it to the FRONT of the
-    /// recent list (deleting any dropped beyond ``maxRecents``), and refresh the decoded image/thumbnails.
-    /// Silently no-ops if the bytes can't be decoded/written. Reuses the avatar's ImageIO downscale path.
-    func setImage(from data: Data) {
-        let jpeg = AvatarImage.downscaledJPEG(from: data, maxDimension: Self.maxDimension, quality: 0.9) ?? data
-        guard PlatformImage(data: jpeg) != nil else { return }
-        let id = "bg-\(Int(Date().timeIntervalSince1970 * 1000)).jpg"
-        guard let url = try? Self.fileURL(id: id, create: true) else { return }
-        do { try jpeg.write(to: url, options: .atomic) } catch { return }
-        // A fresh pick inherits the current fill mode. Prepend, cap, delete any dropped file.
-        let next = Array(([Recent(id: id, fillMode: fillMode)] + recents).prefix(Self.maxRecents))
-        for r in recents where !next.contains(r) {
-            if let u = try? Self.fileURL(id: r.id, create: false) { try? FileManager.default.removeItem(at: u) }
+    enum ImportFailure: LocalizedError {
+        case invalidImage, unavailableRecent
+        var errorDescription: String? {
+            switch self {
+            case .invalidImage: return "The image could not be decoded. The current background and selection are retained."
+            case .unavailableRecent: return "That recent image could not be read. The current background is unchanged."
+            }
         }
+    }
+
+    /// Publish only after validation and atomic file write; failures retain image, preferences and MRU.
+    func setImage(from data: Data) throws {
+        guard let jpeg = AvatarImage.importData(from: data, maxDimension: Self.maxDimension, quality: 0.9),
+              let decoded = AvatarImage.displayableImage(from: jpeg) else { throw ImportFailure.invalidImage }
+        let id = "bg-\(UUID().uuidString).jpg"
+        let url = try Self.fileURL(id: id, create: true, directory: storageDirectory)
+        try jpeg.write(to: url, options: .atomic)
+        let next = Array(([Recent(id: id, fillMode: fillMode)] + recents).prefix(Self.maxRecents))
         recents = next
-        refresh()
-        // Actively picking an image means the user wants to SEE it — turn the background on now.
+        image = Image(platformImage: decoded)
+        thumbnails = next.map { Self.thumbnail(id: $0.id, directory: storageDirectory) }
         if !enabled { enabled = true }
         persist()
+        // Old orphan cleanup remains a startup operation; no old image is removed before commit.
     }
 
-    /// Re-apply a recent preset: move it to the front (so it becomes the ACTIVE image + its fill mode).
-    func applyRecent(_ index: Int) {
-        guard recents.indices.contains(index), index != 0 else { return }
+    /// Resolve and decode the selected preset before changing the active image or its fill mode.
+    func applyRecent(_ index: Int) throws {
+        guard recents.indices.contains(index),
+              let decoded = Self.fullImage(id: recents[index].id, directory: storageDirectory) else {
+            throw ImportFailure.unavailableRecent
+        }
         let chosen = recents[index]
         recents = [chosen] + recents.enumerated().filter { $0.offset != index }.map { $0.element }
-        refresh()
+        image = decoded
+        thumbnails = recents.map { Self.thumbnail(id: $0.id, directory: storageDirectory) }
         if !enabled { enabled = true }
         persist()
     }
@@ -119,7 +130,7 @@ final class BackgroundImageStore: ObservableObject {
     /// Remove the ACTIVE image (recents[0]); the next recent becomes active, or the background clears.
     func clearImage() {
         guard let removed = recents.first else { return }
-        if let u = try? Self.fileURL(id: removed.id, create: false) { try? FileManager.default.removeItem(at: u) }
+        if let u = try? Self.fileURL(id: removed.id, create: false, directory: storageDirectory) { try? FileManager.default.removeItem(at: u) }
         recents = Array(recents.dropFirst())
         refresh()
         persist()
@@ -127,8 +138,8 @@ final class BackgroundImageStore: ObservableObject {
 
     /// Decode the active image + every recent's thumbnail.
     private func refresh() {
-        image = recents.first.flatMap { Self.fullImage(id: $0.id) }
-        thumbnails = recents.map { Self.thumbnail(id: $0.id) }
+        image = recents.first.flatMap { Self.fullImage(id: $0.id, directory: storageDirectory) }
+        thumbnails = recents.map { Self.thumbnail(id: $0.id, directory: storageDirectory) }
     }
 
     private func persist() {
@@ -156,45 +167,44 @@ final class BackgroundImageStore: ObservableObject {
         }
     }
 
-    private static func fullImage(id: String) -> Image? {
-        guard let url = try? fileURL(id: id, create: false),
+    private static func fullImage(id: String, directory: URL?) -> Image? {
+        guard let url = try? fileURL(id: id, create: false, directory: directory),
               let data = try? Data(contentsOf: url),
-              let platform = PlatformImage(data: data) else { return nil }
+              let platform = AvatarImage.displayableImage(from: data) else { return nil }
         return Image(platformImage: platform)
     }
 
-    private static func thumbnail(id: String) -> Image? {
-        guard let url = try? fileURL(id: id, create: false),
+    private static func thumbnail(id: String, directory: URL?) -> Image? {
+        guard let url = try? fileURL(id: id, create: false, directory: directory),
               let data = try? Data(contentsOf: url),
               let jpeg = AvatarImage.downscaledJPEG(from: data, maxDimension: 256, quality: 0.85),
               let platform = PlatformImage(data: jpeg) else { return nil }
         return Image(platformImage: platform)
     }
 
-    private static func fileExists(_ id: String) -> Bool {
-        guard let url = try? fileURL(id: id, create: false) else { return false }
+    private static func fileExists(_ id: String, directory: URL?) -> Bool {
+        guard let url = try? fileURL(id: id, create: false, directory: directory) else { return false }
         return FileManager.default.fileExists(atPath: url.path)
     }
 
     /// `<AppSupport>/OpenWhoop/<id>` (the same base folder the capture recorder uses).
-    private static func fileURL(id: String, create: Bool) throws -> URL {
-        let dir = try dirURL(create: create)
+    private static func fileURL(id: String, create: Bool, directory: URL?) throws -> URL {
+        let dir = try dirURL(create: create, directory: directory)
         return dir.appendingPathComponent(id, isDirectory: false)
     }
 
-    private static func dirURL(create: Bool = false) throws -> URL {
+    private static func dirURL(create: Bool = false, directory: URL?) throws -> URL {
         let fm = FileManager.default
-        let dir = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                             appropriateFor: nil, create: create)
-            .appendingPathComponent("OpenWhoop", isDirectory: true)
+        let dir = try directory ?? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                         appropriateFor: nil, create: create).appendingPathComponent("OpenWhoop", isDirectory: true)
         if create { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
         return dir
     }
 
     /// Delete background files (`bg-*.jpg` / legacy `background.jpg`) NOT referenced by `keeping` — only
     /// OUR files are matched, so the avatar and capture files are untouched.
-    private static func gcOrphans(keeping kept: Set<String>) {
-        guard let dir = try? dirURL(create: false),
+    private static func gcOrphans(keeping kept: Set<String>, directory: URL?) {
+        guard let dir = try? dirURL(create: false, directory: directory),
               let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else { return }
         for name in names where (name.hasPrefix("bg-") || name == "background.jpg") && !kept.contains(name) {
             try? FileManager.default.removeItem(at: dir.appendingPathComponent(name))
