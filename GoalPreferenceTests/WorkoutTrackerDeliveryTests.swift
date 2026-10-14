@@ -106,6 +106,16 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
         XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: false))
         XCTAssertFalse(try decode().needsSourceReview(revision: 1, deleting: true))
         object["currentTombstone"] = false
+        object["currentProjectionState"] = "retired"
+        XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: false))
+        XCTAssertFalse(try decode().needsSourceReview(revision: 1, deleting: true))
+        object["outcome"] = "captured_only"
+        object["projectionPolicy"] = "capture_only"
+        object["projectionState"] = "capture_only"
+        object["reconciliation"] = ["state": "not_requested"]
+        let historyOnly = try decode()
+        try historyOnly.validate(eventId: event, sourceWorkoutId: binding.sourceWorkoutId, revision: 1)
+        XCTAssertTrue(historyOnly.needsSourceReview(revision: 1, deleting: false), "A history-only receipt never implies prescribed values or progression were applied")
         object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [setID: 99]]
         XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]), "A response for another set is not a delivery receipt")
         object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 99], "sets": [setID: 1]]

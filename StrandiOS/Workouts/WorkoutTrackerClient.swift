@@ -216,7 +216,7 @@ final class WorkoutTrackerClient: ObservableObject {
                 try ack.validate(eventId: item.id, sourceWorkoutId: item.sourceWorkoutId, revision: item.revision)
                 guard currentGeneration == generation, state.enabled else { return }
                 if ack.needsSourceReview(revision: item.revision, deleting: item.operation == .delete) {
-                    try updateDelivery(item.id, status: .review, message: "Tracker has a newer capture revision; review before retrying", acknowledgement: response)
+                    try updateDelivery(item.id, status: .review, message: "Tracker capture or projection state differs; review before retrying", acknowledgement: response)
                 } else {
                     try ack.validate(binding: item.binding, sets: item.operation == .delete ? [] : item.sets)
                     let receipt = !ack.preservedFields.isEmpty || ack.outcome == "manual_preserved" ? "Tracker accepted observations and preserved website edits" : "Tracker accepted this capture revision"
