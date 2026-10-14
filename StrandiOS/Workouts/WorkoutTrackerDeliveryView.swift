@@ -14,6 +14,7 @@ struct WorkoutTrackerDeliveryView: View {
     @State private var remote: WorkoutTrackerCaptureSnapshot?
     @State private var remoteCheckedAt: Date?
     @State private var recoveryReview: WorkoutTrackerRecoveryReview?
+    @State private var historyReview: WorkoutTrackerHistoryReview?
     @State private var preparedDeliveryId: UUID?
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
@@ -44,11 +45,20 @@ struct WorkoutTrackerDeliveryView: View {
                             Text("Tracker receipt").font(StrandFont.headline)
                             Text("A local save, a received capture, and applied website values are separate states.")
                                 .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                            if let replacement = try? client.historyOnlyReplacement(for: delivery.id) {
+                                NavigationLink { WorkoutTrackerDeliveryView(deliveryId: replacement.id) } label: {
+                                    Label("Open history-only correction", systemImage: "clock.arrow.circlepath")
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }.buttonStyle(NoopSecondaryButtonStyle())
+                                Text("This original intent is retained. Sending it is disabled because you prepared a history-only replacement.")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
                             NoopAsyncButton(delivery.recoveryOf != nil && delivery.status == .ready ? "Send prepared delivery" : "Recover original receipt", systemImage: "arrow.clockwise") {
                                 guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
                                 try await client.synchronize(store: store, deliveryId: delivery.id)
                                 try await checkLocal(delivery)
-                            }.disabled(!client.state.enabled || client.busy || delivery.bytes == nil || localVerified != true)
+                            }.disabled(!client.state.enabled || client.busy || delivery.bytes == nil || localVerified != true ||
+                                (try? client.historyOnlyReplacement(for: delivery.id)) != nil)
                             if let originalId = delivery.recoveryOf {
                                 let original = try? client.delivery(originalId)
                                 Text(original?.sourceWorkoutId == delivery.sourceWorkoutId ? "Original event retained" : "Original event retention could not be verified")
@@ -63,11 +73,22 @@ struct WorkoutTrackerDeliveryView: View {
                             if [.lifeRevisionConflict, .manifestConflict].contains(delivery.rejection), delivery.acknowledgement == nil, delivery.operation != .delete {
                                 NoopAsyncButton("Review a new delivery", systemImage: "doc.text.magnifyingglass", kind: .secondary) {
                                     recoveryReview = nil; preparedDeliveryId = nil
+                                    historyReview = nil
                                     let review = try await client.reviewRecovery(deliveryId: delivery.id)
                                     remote = review.comparison.capture; remoteCheckedAt = review.comparison.checkedAt
                                     recoveryReview = review
                                 }.disabled(!client.state.enabled || client.busy || localVerified != true)
                                 Text("Review is available only for a definite revision rejection. Uncertain receipts must be recovered with the original event first.")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
+                            if delivery.operation != .delete {
+                                NoopAsyncButton("Review history-only correction", systemImage: "clock.arrow.circlepath", kind: .secondary) {
+                                    historyReview = nil; recoveryReview = nil; preparedDeliveryId = nil
+                                    let review = try await client.reviewHistoryOnly(deliveryId: delivery.id)
+                                    remote = review.capture; remoteCheckedAt = review.checkedAt
+                                    historyReview = review
+                                }.disabled(!client.state.enabled || client.busy || localVerified != true)
+                                Text("Requires a previously accepted workout and resolved earlier receipts. Saves source history only; website sets, manual edits and progression are not changed.")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
                             NoopAsyncButton("Keep locally", systemImage: "pause.circle", kind: .tertiary) {
@@ -85,6 +106,9 @@ struct WorkoutTrackerDeliveryView: View {
                     }
                     if let recoveryReview {
                         recoveryCard(recoveryReview)
+                    }
+                    if let historyReview {
+                        historyCard(historyReview)
                     }
                     if let preparedDeliveryId {
                         NavigationLink {
@@ -146,7 +170,7 @@ struct WorkoutTrackerDeliveryView: View {
         switch delivery.status { case .accepted: return StrandPalette.metricSteps; case .review: return StrandPalette.metricHRV; case .failed: return StrandPalette.statusCritical; default: return StrandPalette.textPrimary }
     }
     private func statusTitle(_ delivery: WorkoutTrackerDelivery) -> String {
-        if delivery.status == .accepted { return delivery.needsReconciliation ? "Progress pending" : "Receipt verified" }
+        if delivery.status == .accepted { return delivery.isHistoryOnly ? "History saved · website unchanged" : delivery.needsReconciliation ? "Progress pending" : "Receipt verified" }
         if delivery.recoveryOf != nil, delivery.paused == true, delivery.status == .ready { return "Prepared · not sent" }
         if delivery.paused == true { return "Kept locally" }
         switch delivery.status {
@@ -155,6 +179,50 @@ struct WorkoutTrackerDeliveryView: View {
         case .failed: return "Receipt not verified"
         case .prepared: return "Awaiting local confirmation"
         case .ready: return "Ready to send"
+        }
+    }
+    private func historyCard(_ review: WorkoutTrackerHistoryReview) -> some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Label("Review source history", systemImage: "clock.arrow.circlepath").font(StrandFont.headline)
+                Text("Your recorded correction stays attached to the same physical workout. This action does not change website sets or request progression.")
+                    .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                if review.capture.projectionState == "retired" {
+                    Text("Original routine retired · accepted history remains eligible")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.metricAmber)
+                }
+                Text("\(review.capture.ownership.values.filter { $0.origin == "manual" }.count) manually owned fields remain unchanged")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Text("Session note: \(review.original.record.note ?? "None")")
+                    .font(StrandFont.subhead).fixedSize(horizontal: false, vertical: true)
+                Text(review.original.record.sessionRpe.map { "Session effort: \($0.formatted()) / 10" } ?? "Session effort: not recorded")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                ForEach(review.capture.sets) { observed in comparison(observed, delivery: review.original) }
+                DisclosureGroup("All proposed set details") {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                        ForEach(review.original.sets, id: \.id) { row in
+                            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                                Text("\(row.exercise) · set \(row.setIndex) · \(row.isWarmup ? "Warm-up" : "Working set")").font(StrandFont.subhead)
+                                Text("\(row.weightKg.map { LiftFormat.weight($0, system: unitSystem) } ?? "No mass load") · \(row.reps.map { "\($0) reps" } ?? "Reps unavailable")")
+                                    .font(StrandFont.caption)
+                                Text(row.rpe.map { "Effort: \($0.formatted()) / 10" } ?? "Effort: not recorded").font(StrandFont.caption)
+                                Text("Note: \(row.note ?? "None")").font(StrandFont.caption)
+                                Text(row.startTs.flatMap { start in row.endTs.map { end in
+                                    "Recorded: \(Date(timeIntervalSince1970: Double(start)).formatted(date: .abbreviated, time: .standard)) – \(Date(timeIntervalSince1970: Double(end)).formatted(date: .abbreviated, time: .standard))"
+                                }} ?? "Timing unavailable")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }.fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }.font(StrandFont.subhead).tint(StrandPalette.accent)
+                Text("Preparing retains the original event and start plan. The new correction is paused; sending is a separate action.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                NoopAsyncButton("Prepare history-only correction", systemImage: "doc.badge.plus") {
+                    guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
+                    preparedDeliveryId = try await client.prepareHistoryOnly(reviewId: review.id, store: store)
+                    historyReview = nil
+                }.disabled(!client.state.enabled || client.busy)
+            }
         }
     }
     private func recoveryCard(_ review: WorkoutTrackerRecoveryReview) -> some View {
