@@ -21,6 +21,7 @@ final class WorkoutTrackerClient: ObservableObject {
     private var stateRevision = 0
     private var metadataRestoring = false
     private var recoveryReview: WorkoutTrackerRecoveryReview?
+    private var historyReview: WorkoutTrackerHistoryReview?
 
     private convenience init() {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -79,6 +80,10 @@ final class WorkoutTrackerClient: ObservableObject {
         let ids = Set(active.map(\.id))
         let archived = try state.archives.values.filter { $0.sourceWorkoutId == source && !ids.contains($0.id) }.map { try store.archived($0) }
         return (active + archived).sorted { ($0.revision, $0.createdAt ?? .distantPast) < ($1.revision, $1.createdAt ?? .distantPast) }
+    }
+    func historyOnlyReplacement(for deliveryId: UUID) throws -> WorkoutTrackerDelivery? {
+        guard let original = try delivery(deliveryId), original.status != .accepted else { return nil }
+        return try history(for: original.sourceWorkoutId).last { $0.recoveryOf == deliveryId && $0.isHistoryOnly }
     }
     private func activateDelivery(_ id: UUID) throws {
         guard !state.deliveries.contains(where: { $0.id == id }), let item = try delivery(id) else { return }
@@ -260,6 +265,7 @@ final class WorkoutTrackerClient: ObservableObject {
 
     private func readCapture(item: WorkoutTrackerDelivery, config: WorkoutSyncConfiguration) async throws -> WorkoutTrackerCaptureSnapshot {
         var cursor = 0, result: WorkoutTrackerCaptureSnapshot?
+        var header: Data?
         for _ in 0..<5 {
             let data: Data
             do { data = try await send(.captures(item.sourceWorkoutId, cursor: cursor, limit: 50), nil, config) }
@@ -269,11 +275,19 @@ final class WorkoutTrackerClient: ObservableObject {
             }
             var page = try JSONDecoder().decode(WorkoutTrackerCaptureSnapshot.self, from: data)
             try page.validate(for: item.binding)
+            guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw WorkoutTrackerContractError.invalidSnapshot }
+            let evidence = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            object.removeValue(forKey: "sets"); object.removeValue(forKey: "nextCursor")
+            let pageHeader = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            guard header == nil || header == pageHeader else { throw WorkoutTrackerContractError.invalidSnapshot }
+            header = pageHeader
+            page.readEvidence = [evidence]
             guard page.sets.count <= 50 else { throw WorkoutTrackerContractError.invalidSnapshot }
             let pageCount = page.sets.count
             if let previous = result {
                 guard previous.sourceRevision == page.sourceRevision, previous.lifeRevision == page.lifeRevision else { throw WorkoutTrackerContractError.invalidSnapshot }
                 page.sets = previous.sets + page.sets
+                page.readEvidence = (previous.readEvidence ?? []) + [evidence]
                 try page.validate(for: item.binding)
             }
             result = page
@@ -285,6 +299,62 @@ final class WorkoutTrackerClient: ObservableObject {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         return result
+    }
+
+    /// Historical eligibility comes from the accepted capture; a retired routine need not exist.
+    func reviewHistoryOnly(deliveryId: UUID) async throws -> WorkoutTrackerHistoryReview {
+        historyReview = nil
+        guard !busy, !metadataRestoring, let original = try delivery(deliveryId),
+              !preparingCaptures.contains(original.sourceWorkoutId), !transmittingCaptures.contains(original.sourceWorkoutId) else {
+            throw WorkoutTrackerContractError.deliveryInProgress
+        }
+        let history = try history(for: original.sourceWorkoutId)
+        guard history.last?.id == original.id, let accepted = history.last(where: { $0.status == .accepted }) else {
+            throw WorkoutTrackerContractError.historyReviewRequired
+        }
+        guard history.filter({ $0.revision > accepted.revision && $0.id != original.id }).allSatisfy({
+            ([.ready, .review].contains($0.status) && $0.submissionAttempted == false && $0.acknowledgement == nil && $0.rejection == nil) ||
+                ($0.status == .review && $0.acknowledgement == nil &&
+                    [.lifeRevisionConflict, .manifestConflict, .sessionRetired, .setRetired, .prescriptionInconsistent].contains($0.rejection))
+        }) else { throw WorkoutTrackerContractError.historyReviewRequired }
+        let initialRevision = stateRevision
+        let before = try await captureSnapshot(deliveryId: deliveryId)
+        let after = try await captureSnapshot(deliveryId: deliveryId)
+        guard before == after, initialRevision == stateRevision, !Task.isCancelled else { throw WorkoutTrackerContractError.sessionChanged }
+        try WorkoutTrackerHistoryReview.validate(original: original, accepted: accepted, capture: after)
+        let review = WorkoutTrackerHistoryReview(id: UUID(), original: original, accepted: accepted, capture: after, checkedAt: Date())
+        historyReview = review
+        return review
+    }
+
+    /// Persist an explicit paused correction. No request is sent by preparation.
+    func prepareHistoryOnly(reviewId: UUID, store: WhoopStore) async throws -> UUID {
+        guard !busy, !metadataRestoring, let review = historyReview, review.id == reviewId,
+              preparingCaptures.insert(review.original.sourceWorkoutId).inserted else { throw WorkoutTrackerContractError.sessionChanged }
+        defer { preparingCaptures.remove(review.original.sourceWorkoutId) }
+        let original = review.original, initialRevision = stateRevision
+        guard try delivery(original.id)?.sameIntent(as: original) == true,
+              try history(for: original.sourceWorkoutId).last?.id == original.id,
+              try await original.matches(store: store) else { throw WorkoutTrackerContractError.sessionChanged }
+        let before = try await captureSnapshot(deliveryId: original.id)
+        let after = try await captureSnapshot(deliveryId: original.id)
+        guard before == after, after == review.capture, initialRevision == stateRevision,
+              historyReview?.id == reviewId, !Task.isCancelled,
+              try await original.matches(store: store) else {
+            historyReview = nil; throw WorkoutTrackerContractError.sessionChanged
+        }
+        guard initialRevision == stateRevision, historyReview?.id == reviewId,
+              try history(for: original.sourceWorkoutId).last?.id == original.id else { throw WorkoutTrackerContractError.sessionChanged }
+        let replacement = try review.replacement()
+        var next = state
+        if let index = next.deliveries.firstIndex(where: { $0.id == original.id }) {
+            next.deliveries[index].paused = true
+            next.deliveries[index].message = "Original event retained. A separate history-only correction was prepared."
+        }
+        next.deliveries.append(replacement)
+        try commit(next, protecting: [original.sourceWorkoutId])
+        historyReview = nil
+        return replacement.id
     }
 
     func reviewRecovery(deliveryId: UUID) async throws -> WorkoutTrackerRecoveryReview {
@@ -414,7 +484,7 @@ final class WorkoutTrackerClient: ObservableObject {
             installationId: destination.installationId, origin: destination.origin, revision: revision, bytes: bytes,
             record: record, sets: sets, binding: binding, operation: operation, message: message,
             paused: state.locallyKeptSources.contains(binding.sourceWorkoutId) ? true : previous.last?.paused, createdAt: Date(),
-            reviewedManifest: bytes == nil ? nil : writeManifest))
+            reviewedManifest: bytes == nil ? nil : writeManifest, submissionAttempted: false))
         try commit(next)
         return event
     }
@@ -470,6 +540,7 @@ final class WorkoutTrackerClient: ObservableObject {
         for item in candidates.prefix(10) {
             guard currentGeneration == generation, state.enabled, !Task.isCancelled else { return }
             guard !preparingCaptures.contains(item.sourceWorkoutId) else { throw WorkoutTrackerContractError.deliveryInProgress }
+            if try historyOnlyReplacement(for: item.id) != nil { throw WorkoutTrackerContractError.deliverySuperseded }
             transmittingCaptures.insert(item.sourceWorkoutId)
             defer { transmittingCaptures.remove(item.sourceWorkoutId) }
             guard item.origin == config.origin, item.installationId == config.installationId,
@@ -485,15 +556,20 @@ final class WorkoutTrackerClient: ObservableObject {
             }
             try item.validateBody()
             do {
+                var attempting = state
+                guard let index = attempting.deliveries.firstIndex(where: { $0.id == item.id }) else { throw WorkoutTrackerContractError.sessionChanged }
+                attempting.deliveries[index].submissionAttempted = true
+                try commit(attempting, protecting: [item.sourceWorkoutId])
                 let response = try await send(.observations, body, config)
                 let ack = try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: response)
                 try ack.validate(eventId: item.id, sourceWorkoutId: item.sourceWorkoutId, revision: item.revision)
                 guard currentGeneration == generation, state.enabled else { return }
-                if ack.needsSourceReview(revision: item.revision, deleting: item.operation == .delete) {
+                if ack.needsSourceReview(revision: item.revision, deleting: item.operation == .delete, expectingHistoryOnly: item.isHistoryOnly) {
                     try updateDelivery(item.id, status: .review, message: "Tracker capture or projection state differs; review before retrying", acknowledgement: response)
                 } else {
                     try ack.validate(binding: item.binding, sets: item.operation == .delete ? [] : item.sets)
-                    let receipt = !ack.preservedFields.isEmpty || ack.outcome == "manual_preserved" ? "Tracker accepted observations and preserved website edits" : "Tracker accepted this capture revision"
+                    let receipt = item.isHistoryOnly ? "Tracker saved source history only · website sets and progression were not updated" :
+                        !ack.preservedFields.isEmpty || ack.outcome == "manual_preserved" ? "Tracker accepted observations and preserved website edits" : "Tracker accepted this capture revision"
                     try updateDelivery(item.id, status: .accepted,
                         message: ack.reconciliation.pending ? "\(receipt) · derived progress is pending; Sync retries the same receipt" : receipt,
                         acknowledgement: response)

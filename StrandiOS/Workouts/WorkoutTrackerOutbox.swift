@@ -23,6 +23,13 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var rejection: WorkoutSyncRejection? = nil
     var recoveryOf: UUID? = nil
     var reviewedManifest: WorkoutTrackerManifest? = nil
+    // Nil is legacy/unknown. Persist true before starting a POST so relaunch cannot mistake
+    // an interrupted submission for a never-sent correction.
+    var submissionAttempted: Bool? = nil
+    var isHistoryOnly: Bool {
+        guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return false }
+        return object["projectionPolicy"] as? String == "capture_only"
+    }
     var writeManifestRevision: String? {
         guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return nil }
         return object["manifestRevision"] as? String
@@ -33,7 +40,7 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
               let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
               (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil,
               (try? ack.validate(binding: binding, sets: operation == .delete ? [] : sets)) != nil else { return false }
-        return !ack.needsSourceReview(revision: revision, deleting: operation == .delete)
+        return !ack.needsSourceReview(revision: revision, deleting: operation == .delete, expectingHistoryOnly: isHistoryOnly)
     }
     func sameIntent(as other: WorkoutTrackerDelivery) -> Bool {
         id == other.id && sourceWorkoutId == other.sourceWorkoutId && installationId == other.installationId && origin == other.origin &&
@@ -76,7 +83,94 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
               (object["sourceWorkoutId"] as? String).flatMap(UUID.init(uuidString:)) == sourceWorkoutId,
               (object["installationId"] as? String).flatMap(UUID.init(uuidString:)) == installationId,
               (object["sourceRevision"] as? Int) == revision,
-              (object["operation"] as? String) == (operation ?? .upsert).rawValue else { throw WorkoutTrackerContractError.invalidSnapshot }
+              (object["operation"] as? String) == (operation ?? .upsert).rawValue,
+              object["projectionPolicy"] == nil || ["apply", "capture_only"].contains(object["projectionPolicy"] as? String ?? ""),
+              !isHistoryOnly || (operation != .delete && (object["deletedSetIds"] as? [Any])?.isEmpty == true &&
+                  (object["deletedOccurrenceIds"] == nil || (object["deletedOccurrenceIds"] as? [Any])?.isEmpty == true)) else { throw WorkoutTrackerContractError.invalidSnapshot }
+    }
+}
+
+/// An owner-reviewed source-history correction. No current routine or canonical write is implied.
+struct WorkoutTrackerHistoryReview: Identifiable {
+    let id: UUID
+    let original: WorkoutTrackerDelivery
+    let accepted: WorkoutTrackerDelivery
+    let capture: WorkoutTrackerCaptureSnapshot
+    let checkedAt: Date
+
+    static func validate(original: WorkoutTrackerDelivery, accepted: WorkoutTrackerDelivery,
+                         capture: WorkoutTrackerCaptureSnapshot) throws {
+        try original.validateBody(); try accepted.validateBody()
+        guard original.valid, accepted.valid, original.localPersistenceConfirmed == true,
+              original.operation != .delete, accepted.operation != .delete,
+              accepted.status == .accepted, let acknowledgement = accepted.acknowledgement,
+              original.sourceWorkoutId == accepted.sourceWorkoutId, original.origin == accepted.origin,
+              original.installationId == accepted.installationId,
+              original.binding.connection == accepted.binding.connection,
+              original.binding.connection?.origin == original.origin,
+              original.binding.connection?.installationId == original.installationId,
+              original.binding.manifest == accepted.binding.manifest,
+              original.binding.planAtStart == accepted.binding.planAtStart,
+              original.revision >= accepted.revision, capture.sourceRevision == accepted.revision,
+              capture.nextCursor == nil, capture.readEvidence?.isEmpty == false, !capture.tombstone else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        // Unknown network outcomes must recover their exact original receipt first.
+        let knownRejected = original.status == .review && original.acknowledgement == nil &&
+            [.lifeRevisionConflict, .manifestConflict, .sessionRetired, .setRetired, .prescriptionInconsistent].contains(original.rejection)
+        let neverSubmitted = [.ready, .review].contains(original.status) && original.submissionAttempted == false &&
+            original.acknowledgement == nil && original.rejection == nil
+        guard original.status == .accepted || neverSubmitted || knownRejected else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        let receipt = try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement)
+        try receipt.validate(eventId: accepted.id, sourceWorkoutId: accepted.sourceWorkoutId, revision: accepted.revision)
+        try receipt.validate(binding: accepted.binding, sets: accepted.sets)
+        guard !receipt.needsSourceReview(revision: accepted.revision, deleting: false, expectingHistoryOnly: accepted.isHistoryOnly) else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        try capture.validate(for: original.binding)
+        try capture.validateKnownBindings(binding: original.binding)
+        guard Set(accepted.sets.compactMap { UUID(uuidString: $0.id) }).isSubset(of: Set(capture.sets.map(\.sourceSetId))) else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        guard let bytes = original.bytes, let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              (object["deletedSetIds"] as? [Any])?.isEmpty == true,
+              object["deletedOccurrenceIds"] == nil || (object["deletedOccurrenceIds"] as? [Any])?.isEmpty == true else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        guard let acceptedBytes = accepted.bytes,
+              let acceptedObject = try JSONSerialization.jsonObject(with: acceptedBytes) as? [String: Any],
+              let evidence = capture.readEvidence?.first,
+              let remoteObject = try JSONSerialization.jsonObject(with: evidence) as? [String: Any],
+              NSDictionary(dictionary: ["start": object["planAtStart"] ?? NSNull()]).isEqual(to: ["start": acceptedObject["planAtStart"] ?? NSNull()]),
+              NSDictionary(dictionary: ["start": object["planAtStart"] ?? NSNull()]).isEqual(to: ["start": remoteObject["planAtStart"] ?? NSNull()]) else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+    }
+
+    func replacement(eventId: UUID = UUID()) throws -> WorkoutTrackerDelivery {
+        try Self.validate(original: original, accepted: accepted, capture: capture)
+        guard let bytes = original.bytes, var object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              original.revision < 9_007_199_254_740_991, eventId != original.id else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        object["eventId"] = eventId.uuidString.lowercased()
+        object["sourceRevision"] = original.revision + 1
+        object["baseLifeRevision"] = capture.lifeRevision
+        object["projectionPolicy"] = "capture_only"
+        object["deletedSetIds"] = []
+        let body = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        var result = WorkoutTrackerDelivery(id: eventId, sourceWorkoutId: original.sourceWorkoutId,
+            installationId: original.installationId, origin: original.origin, revision: original.revision + 1,
+            bytes: body, record: original.record, sets: original.sets, binding: original.binding)
+        result.status = .ready; result.localPersistenceConfirmed = true; result.paused = true
+        result.submissionAttempted = false
+        result.createdAt = Date(); result.recoveryOf = original.id; result.reviewedManifest = original.reviewedManifest
+        result.message = "History-only correction prepared locally. Not sent; website sets and progression will not be updated."
+        guard result.valid else { throw WorkoutTrackerContractError.invalidSnapshot }
+        try result.validateBody()
+        return result
     }
 }
 
@@ -124,37 +218,7 @@ struct WorkoutTrackerRecoveryReview: Identifiable {
                   remote.nextCursor == nil, remote.lifeRevision == current.lifeRevision, remote.sourceRevision < original.revision else {
                 throw WorkoutTrackerContractError.invalidSnapshot
             }
-            guard let remoteOccurrences = remote.occurrences else { throw WorkoutTrackerContractError.invalidSnapshot }
-            for (key, observed) in remoteOccurrences {
-                guard let id = UUID(uuidString: key), observed.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
-                if let occurrence = original.binding.occurrences.first(where: { $0.sourceOccurrenceId == id }),
-                   let prescribed = frozen.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }) {
-                    guard observed.kind == "prescribed", observed.sessionExerciseId == occurrence.sessionExerciseId,
-                          observed.programSlotId == prescribed.programSlotId, observed.slotKey == prescribed.slotKey,
-                          observed.exerciseKey == prescribed.exerciseKey, observed.loadMode == prescribed.loadMode.rawValue else {
-                        throw WorkoutTrackerContractError.invalidSnapshot
-                    }
-                } else if let extra = original.binding.additionalOccurrences?.first(where: { $0.sourceOccurrenceId == id }) {
-                    guard observed.kind == "actual_only", observed.sessionExerciseId == nil, observed.exerciseKey == extra.exerciseKey,
-                          observed.loadMode == extra.loadMode.rawValue, observed.raw.replacesSourceOccurrenceId == extra.replacesSourceOccurrenceId else {
-                        throw WorkoutTrackerContractError.invalidSnapshot
-                    }
-                } else { throw WorkoutTrackerContractError.invalidSnapshot }
-            }
-            for set in remote.sets {
-                guard set.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
-                if let occurrence = original.binding.occurrences.first(where: { $0.sourceOccurrenceId == set.sourceOccurrenceId }),
-                   let identity = occurrence.sets.first(where: { $0.sourceSetId == set.sourceSetId }),
-                   let prescribed = frozen.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }) {
-                    guard identity.lifeSetId == set.lifeSetId, occurrence.sessionExerciseId == set.sessionExerciseId,
-                          prescribed.exerciseKey == set.exerciseKey,
-                          set.raw.loadBasis.map({ $0 == prescribed.loadBasis }) ?? true else { throw WorkoutTrackerContractError.invalidSnapshot }
-                } else if let extra = original.binding.additionalOccurrences?.first(where: { $0.sourceOccurrenceId == set.sourceOccurrenceId }) {
-                    guard extra.sets.contains(where: { $0.sourceSetId == set.sourceSetId }), set.lifeSetId == nil,
-                          set.sessionExerciseId == nil, set.exerciseKey == extra.exerciseKey,
-                          set.raw.loadBasis.map({ $0 == extra.loadMode.loadBasis }) ?? true else { throw WorkoutTrackerContractError.invalidSnapshot }
-                } else { throw WorkoutTrackerContractError.invalidSnapshot }
-            }
+            try remote.validateKnownBindings(binding: original.binding)
         }
     }
 
@@ -174,6 +238,7 @@ struct WorkoutTrackerRecoveryReview: Identifiable {
             record: original.record, sets: original.sets, binding: original.binding)
         result.operation = original.operation
         result.status = .ready; result.localPersistenceConfirmed = true
+        result.submissionAttempted = false
         result.paused = true; result.createdAt = Date(); result.recoveryOf = original.id
         result.reviewedManifest = comparison.manifest
         result.message = "Reviewed delivery prepared locally. Not sent; open this delivery to send its exact event."

@@ -92,8 +92,23 @@ extension WorkoutTrackerFileStore {
             if let existing = next.legacyExerciseIdentities[key], existing != value { throw WorkoutTrackerContractError.backupConflict }
             next.legacyExerciseIdentities[key] = value
         }
-        for value in manifest.state.deliveries where try local(value.id) == nil { next.deliveries.append(value) }
-        for (key, reference) in manifest.state.archives where try local(reference.id) == nil { next.archives[key] = reference }
+        // A backup's "not attempted" fact only describes its creation time. The original app
+        // may have submitted later. Restored unaccepted intents must recover their receipt first.
+        func restored(_ value: WorkoutTrackerDelivery) -> WorkoutTrackerDelivery {
+            var copy = value
+            if copy.status != .accepted, copy.submissionAttempted == false { copy.submissionAttempted = nil }
+            return copy
+        }
+        var restoredArchives: [(UUID, WorkoutTrackerDelivery)] = []
+        for value in manifest.state.deliveries where try local(value.id) == nil { next.deliveries.append(restored(value)) }
+        for (key, reference) in manifest.state.archives where try local(reference.id) == nil {
+            let original = try incoming(reference), copy = restored(original)
+            if copy != original {
+                let fileId = UUID()
+                next.archives[key] = WorkoutTrackerArchiveReference(delivery: copy, fileId: fileId)
+                restoredArchives.append((fileId, copy))
+            } else { next.archives[key] = reference }
+        }
         next.locallyKeptSources.formUnion(manifest.state.locallyKeptSources)
         next.locallyKeptSources.formUnion(manifest.state.deliveries.filter { $0.paused == true }.map(\.sourceWorkoutId))
         next.locallyKeptSources.formUnion(manifest.state.archives.values.filter { $0.paused == true }.map(\.sourceWorkoutId))
@@ -114,6 +129,10 @@ extension WorkoutTrackerFileStore {
         try FileManager.default.createDirectory(at: archiveDirectory, withIntermediateDirectories: true)
         for id in manifest.archiveFiles where !FileManager.default.fileExists(atPath: archiveURL(id).path) {
             try FileManager.default.copyItem(at: incomingDirectory.appendingPathComponent(id.uuidString.lowercased() + ".json"), to: archiveURL(id))
+        }
+        for (id, value) in restoredArchives {
+            try JSONEncoder().encode(value).write(to: archiveURL(id), options: .atomic)
+            guard try archived(WorkoutTrackerArchiveReference(delivery: value, fileId: id)) == value else { throw WorkoutTrackerContractError.invalidSnapshot }
         }
         return next
     }

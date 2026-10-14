@@ -215,11 +215,15 @@ struct WorkoutCaptureAcknowledgement: Decodable {
     let currentProjectionState: String?
     let projectionPolicy: String?
 
-    func needsSourceReview(revision: Int, deleting: Bool) -> Bool {
-        outcome == "stale" || acceptedSourceRevision != revision ||
+    func needsSourceReview(revision: Int, deleting: Bool, expectingHistoryOnly: Bool = false) -> Bool {
+        let mismatchedPolicy = expectingHistoryOnly
+            ? deleting || projectionPolicy != "capture_only" || !["capture_only", "retired"].contains(projectionState ?? "") ||
+                !["captured_only", "duplicate"].contains(outcome) || reconciliation.state != "not_requested"
+            : outcome == "captured_only" || projectionPolicy == "capture_only" || projectionState == "capture_only" ||
+                (!deleting && (projectionState == "retired" || currentProjectionState == "retired"))
+        return outcome == "stale" || acceptedSourceRevision != revision ||
             (currentSourceRevision ?? revision) > revision || (currentTombstone == true && !deleting) ||
-            outcome == "captured_only" || projectionPolicy == "capture_only" || projectionState == "capture_only" ||
-            (!deleting && (projectionState == "retired" || currentProjectionState == "retired"))
+            mismatchedPolicy
     }
 
     func validate(eventId: UUID, sourceWorkoutId: UUID, revision: Int) throws {

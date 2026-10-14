@@ -557,6 +557,189 @@ final class WorkoutTrackerClientTests: XCTestCase {
             XCTAssertEqual(posts, 2, "Neither review nor preparation may apply manual website values")
         }
     }
+    private func historyCapture(_ f: Fixture, sourceRevision: Int = 1) throws -> [String: Any] {
+        let occurrence = f.binding.occurrences[0].sourceOccurrenceId.uuidString.lowercased()
+        return ["schemaVersion": 1, "sourceWorkoutId": f.record.id, "sourceRevision": sourceRevision, "lifeRevision": 2,
+            "binding": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "tombstone": false,
+            "session": ["timeZone": f.binding.timeZone, "notes": "Website source note"],
+            "planAtStart": NSNull(), "ownership": ["set:1:actualLoad": ["origin": "manual"]],
+            "projectionPolicy": "apply", "projectionState": "retired", "nextCursor": NSNull(),
+            "occurrences": [occurrence: ["kind": "prescribed", "sessionExerciseId": 2, "programSlotId": 3,
+                "slotKey": "push", "exerciseKey": "bench", "loadMode": "barbell", "raw": [:]]],
+            "sets": [["sourceSetId": f.sets[0].id, "sourceOccurrenceId": occurrence, "sessionExerciseId": 2,
+                "lifeSetId": 1, "exerciseKey": "bench", "setType": "work", "raw": ["loadKg": 60, "loadBasis": "total", "reps": 8],
+                "projection": ["actual_load": 150, "actual_reps": 9]]]]
+    }
+    private func localHistoryCorrection(_ client: WorkoutTrackerClient, fixture f: Fixture) async throws -> UUID {
+        try await ready(client, fixture: f)
+        try await client.synchronize(store: f.db)
+        var changed = f.sets; changed[0].reps = 10; changed[0].note = "Corrected note"
+        let prepared = try await client.prepareHistoryChange(record: f.record, sets: changed, store: f.db)
+        let event = try XCTUnwrap(prepared)
+        try await f.db.upsertLiftSets(changed)
+        try await client.confirmPersistence(event, store: f.db)
+        return event
+    }
+
+    func testExplicitHistoryOnlyCorrectionUsesAcceptedRetiredCaptureAndSendsOnlyAfterPreparation() async throws {
+        let f = try await fixture()
+        var posts = [Data](), captureReads = 0
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            switch endpoint {
+            case .observations:
+                let body = try XCTUnwrap(body); posts.append(body)
+                XCTAssertEqual(try f.file.load().deliveries.last?.submissionAttempted, true, "Submission must be durable before transport starts")
+                var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: self.receipt(body, fixture: f)) as? [String: Any])
+                if posts.count > 1 {
+                    ack["outcome"] = "captured_only"; ack["projectionPolicy"] = "capture_only"; ack["projectionState"] = "retired"
+                    ack["lifeRevision"] = 3; ack["receiptLifeRevision"] = 3; ack["reconciliation"] = ["state": "not_requested"]
+                }
+                return try JSONSerialization.data(withJSONObject: ack)
+            case .captures: captureReads += 1; return try JSONSerialization.data(withJSONObject: self.historyCapture(f))
+            default: XCTFail("Retired history review must not depend on a current manifest"); throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        let originalId = try await localHistoryCorrection(client, fixture: f)
+        let original = try XCTUnwrap(client.delivery(originalId)), originalBytes = try XCTUnwrap(original.bytes)
+        let review = try await client.reviewHistoryOnly(deliveryId: originalId)
+        XCTAssertEqual(review.capture.projectionState, "retired")
+        let replacementId = try await client.prepareHistoryOnly(reviewId: review.id, store: f.db)
+        XCTAssertEqual(posts.count, 1, "Review/preparation may only read; the first POST was the original accepted workout")
+        XCTAssertEqual(captureReads, 4)
+        let replacement = try XCTUnwrap(client.delivery(replacementId))
+        XCTAssertTrue(replacement.isHistoryOnly); XCTAssertTrue(replacement.paused == true)
+        XCTAssertEqual(replacement.revision, 3); XCTAssertEqual(replacement.sourceWorkoutId, original.sourceWorkoutId)
+        XCTAssertEqual(try client.delivery(originalId)?.bytes, originalBytes)
+        var before = try XCTUnwrap(JSONSerialization.jsonObject(with: originalBytes) as? [String: Any])
+        var after = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(replacement.bytes)) as? [String: Any])
+        for key in ["eventId", "sourceRevision", "baseLifeRevision", "projectionPolicy"] { before.removeValue(forKey: key); after.removeValue(forKey: key) }
+        XCTAssertTrue(NSDictionary(dictionary: before).isEqual(to: after), "All measured values, binding IDs and start provenance must be retained")
+        do { _ = try await client.prepareHistoryOnly(reviewId: review.id, store: f.db); XCTFail("No duplicate preparation") }
+        catch WorkoutTrackerContractError.sessionChanged {}
+        do { try await client.synchronize(store: f.db, deliveryId: originalId); XCTFail("Superseded apply cannot be sent") }
+        catch WorkoutTrackerContractError.deliverySuperseded {}
+        try await client.synchronize(store: f.db)
+        XCTAssertEqual(posts.count, 1, "Automatic sync must not send a paused history-only choice")
+        try await client.synchronize(store: f.db, deliveryId: replacementId)
+        let accepted = try XCTUnwrap(client.delivery(replacementId))
+        XCTAssertEqual(posts.count, 2); XCTAssertEqual(accepted.status, .accepted)
+        XCTAssertTrue(accepted.canArchive); XCTAssertFalse(accepted.needsReconciliation)
+        XCTAssertTrue(accepted.message.contains("history only"))
+        let restored = WorkoutTrackerClient(store: f.file, readCredential: { f.config })
+        XCTAssertEqual(try restored.delivery(replacementId)?.bytes, replacement.bytes)
+        XCTAssertEqual(try restored.delivery(replacementId)?.submissionAttempted, true)
+        XCTAssertEqual(try restored.delivery(replacementId)?.status, .accepted)
+    }
+
+    func testNeverSubmittedCorrectionKeptLocallyCanStillBeExplicitlyReviewed() async throws {
+        let f = try await fixture()
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            switch endpoint {
+            case .observations: return try self.receipt(try XCTUnwrap(body), fixture: f)
+            case .captures: return try JSONSerialization.data(withJSONObject: self.historyCapture(f))
+            default: throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        let event = try await localHistoryCorrection(client, fixture: f)
+        try client.keepLocally(deliveryId: event)
+        let review = try await client.reviewHistoryOnly(deliveryId: event)
+        let prepared = try await client.prepareHistoryOnly(reviewId: review.id, store: f.db)
+        XCTAssertTrue(try XCTUnwrap(client.delivery(prepared)).isHistoryOnly)
+        XCTAssertTrue(client.state.locallyKeptSources.contains(f.binding.sourceWorkoutId))
+    }
+
+    func testHistoryOnlyReviewRejectsUncertainSubmissionsAndChangedAcceptedIdentityOrProvenance() async throws {
+        for scenario in ["unknown", "legacy", "newer", "tombstone", "identity", "provenance", "missing", "removedSet"] {
+            let f = try await fixture()
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                switch endpoint {
+                case .observations: return try self.receipt(try XCTUnwrap(body), fixture: f)
+                case .captures:
+                    if scenario == "missing" { throw WorkoutSyncTransportError.captureNotFound }
+                    var object = try self.historyCapture(f, sourceRevision: scenario == "newer" ? 3 : 1)
+                    if scenario == "tombstone" { object["tombstone"] = true }
+                    if scenario == "identity" {
+                        var sets = try XCTUnwrap(object["sets"] as? [[String: Any]])
+                        sets[0]["lifeSetId"] = 99; object["sets"] = sets
+                    }
+                    if scenario == "provenance" { object["planAtStart"] = ["manifestRevision": NSNull(), "provenance": "live", "fetchedAt": NSNull()] }
+                    if scenario == "removedSet" { object["sets"] = [] }
+                    return try JSONSerialization.data(withJSONObject: object)
+                default: throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            let event = try await localHistoryCorrection(client, fixture: f)
+            if ["unknown", "legacy"].contains(scenario) {
+                var state = try f.file.load()
+                state.deliveries[state.deliveries.count - 1].submissionAttempted = scenario == "unknown" ? true : nil
+                try f.file.save(state)
+            }
+            let candidate = ["unknown", "legacy"].contains(scenario)
+                ? WorkoutTrackerClient(store: f.file, send: { _, _, _ in try JSONSerialization.data(withJSONObject: self.historyCapture(f)) }, readCredential: { f.config }) : client
+            do { _ = try await candidate.reviewHistoryOnly(deliveryId: event); XCTFail("Must hold \(scenario) for review") }
+            catch {}
+            XCTAssertEqual(candidate.state.deliveries.count, 2)
+        }
+    }
+
+    func testBackupCannotTurnAnOldUnacceptedSnapshotIntoProofOfNoSubmission() async throws {
+        for archived in [false, true] {
+            let f = try await fixture(), client = WorkoutTrackerClient(store: f.file, readCredential: { nil })
+            try await ready(client, fixture: f)
+            var state = client.state
+            let original = state.deliveries[0]
+            XCTAssertEqual(original.submissionAttempted, false)
+            var originalArchiveId: UUID?
+            if archived {
+                let fileId = UUID(); originalArchiveId = fileId
+                try FileManager.default.createDirectory(at: f.file.archiveDirectory, withIntermediateDirectories: true)
+                try JSONEncoder().encode(original).write(to: f.file.archiveURL(fileId))
+                state.deliveries = []
+                state.archives[original.id.uuidString.lowercased()] = WorkoutTrackerArchiveReference(delivery: original, fileId: fileId)
+            }
+            let package = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".dhoopworkouts")
+            try f.file.prepareBackup(state: state, destination: package)
+            let target = WorkoutTrackerFileStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json"))
+            let merged = try target.mergedBackup(from: package, current: WorkoutTrackerState())
+            let imported: WorkoutTrackerDelivery
+            if archived {
+                let reference = try XCTUnwrap(merged.archives[original.id.uuidString.lowercased()])
+                imported = try target.archived(reference)
+                XCTAssertTrue(FileManager.default.fileExists(atPath: target.archiveURL(try XCTUnwrap(originalArchiveId)).path), "Original provenance snapshot is retained")
+            } else { imported = try XCTUnwrap(merged.deliveries.first) }
+            XCTAssertNil(imported.submissionAttempted, "An old backup cannot prove the original phone never sent this intent later")
+            XCTAssertEqual(imported.bytes, original.bytes); XCTAssertEqual(imported.id, original.id)
+            XCTAssertFalse(merged.enabled)
+        }
+    }
+
+    func testHistoryOnlyPreparationRechecksUnrenderedEvidenceAndCurrentLocalStorage() async throws {
+        for scenario in ["rawEvidence", "localStorage"] {
+            let f = try await fixture()
+            var changed = false
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                switch endpoint {
+                case .observations: return try self.receipt(try XCTUnwrap(body), fixture: f)
+                case .captures:
+                    var object = try self.historyCapture(f)
+                    object["collectionSessionId"] = changed && scenario == "rawEvidence" ? "00000000-0000-4000-8000-000000000099" : NSNull()
+                    return try JSONSerialization.data(withJSONObject: object)
+                default: throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            let event = try await localHistoryCorrection(client, fixture: f)
+            let review = try await client.reviewHistoryOnly(deliveryId: event)
+            changed = true
+            if scenario == "localStorage" {
+                var sets = f.sets; sets[0].reps = 11
+                try await f.db.upsertLiftSets(sets)
+            }
+            do { _ = try await client.prepareHistoryOnly(reviewId: review.id, store: f.db); XCTFail("A changed review cannot prepare") }
+            catch WorkoutTrackerContractError.sessionChanged {}
+            XCTAssertEqual(client.state.deliveries.count, 2)
+        }
+    }
+
     func testUnsupportedNoteIsSavedLocallyWithItsActualValidationReasonAndCannotUpload() async throws {
         let f = try await fixture()
         var rows = f.sets; rows[0].note = String(repeating: "x", count: 2001)

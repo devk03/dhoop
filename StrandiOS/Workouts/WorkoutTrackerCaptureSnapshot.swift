@@ -77,6 +77,9 @@ struct WorkoutTrackerCaptureSnapshot: Decodable, Equatable {
     let projectionState: String
     var sets: [SetObservation]
     let nextCursor: Int?
+    // Full canonical response evidence is ephemeral. It includes fields not rendered by the UI
+    // so a review cannot overlook a change to accepted provenance or another raw observation.
+    var readEvidence: [Data]? = nil
 
     func validate(for capture: WorkoutTrackerCaptureBinding) throws {
         guard schemaVersion == 1, sourceWorkoutId == capture.sourceWorkoutId, sourceRevision > 0,
@@ -92,6 +95,42 @@ struct WorkoutTrackerCaptureSnapshot: Decodable, Equatable {
                   set.raw.sourceSetId == nil || set.raw.sourceSetId == set.sourceSetId,
                   set.raw.loadKg.map({ $0.isFinite && (0...2267).contains($0) }) ?? true,
                   set.raw.rpe.map({ $0.isFinite && (0...10).contains($0) }) ?? true else { throw WorkoutTrackerContractError.invalidSnapshot }
+        }
+    }
+
+    /// Accepted source identity is checked against captured UUID bindings, never display names.
+    func validateKnownBindings(binding: WorkoutTrackerCaptureBinding) throws {
+        let remote = self
+        guard let remoteOccurrences = remote.occurrences else { throw WorkoutTrackerContractError.invalidSnapshot }
+        for (key, observed) in remoteOccurrences {
+            guard let id = UUID(uuidString: key), observed.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
+            if let occurrence = binding.occurrences.first(where: { $0.sourceOccurrenceId == id }),
+               let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }) {
+                guard observed.kind == "prescribed", observed.sessionExerciseId == occurrence.sessionExerciseId,
+                      observed.programSlotId == prescribed.programSlotId, observed.slotKey == prescribed.slotKey,
+                      observed.exerciseKey == prescribed.exerciseKey, observed.loadMode == prescribed.loadMode.rawValue else {
+                    throw WorkoutTrackerContractError.invalidSnapshot
+                }
+            } else if let extra = binding.additionalOccurrences?.first(where: { $0.sourceOccurrenceId == id }) {
+                guard observed.kind == "actual_only", observed.sessionExerciseId == nil, observed.exerciseKey == extra.exerciseKey,
+                      observed.loadMode == extra.loadMode.rawValue, observed.raw.replacesSourceOccurrenceId == extra.replacesSourceOccurrenceId else {
+                    throw WorkoutTrackerContractError.invalidSnapshot
+                }
+            } else { throw WorkoutTrackerContractError.invalidSnapshot }
+        }
+        for set in remote.sets {
+            guard set.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
+            if let occurrence = binding.occurrences.first(where: { $0.sourceOccurrenceId == set.sourceOccurrenceId }),
+               let identity = occurrence.sets.first(where: { $0.sourceSetId == set.sourceSetId }),
+               let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }) {
+                guard identity.lifeSetId == set.lifeSetId, occurrence.sessionExerciseId == set.sessionExerciseId,
+                      prescribed.exerciseKey == set.exerciseKey,
+                      set.raw.loadBasis.map({ $0 == prescribed.loadBasis }) ?? true else { throw WorkoutTrackerContractError.invalidSnapshot }
+            } else if let extra = binding.additionalOccurrences?.first(where: { $0.sourceOccurrenceId == set.sourceOccurrenceId }) {
+                guard extra.sets.contains(where: { $0.sourceSetId == set.sourceSetId }), set.lifeSetId == nil,
+                      set.sessionExerciseId == nil, set.exerciseKey == extra.exerciseKey,
+                      set.raw.loadBasis.map({ $0 == extra.loadMode.loadBasis }) ?? true else { throw WorkoutTrackerContractError.invalidSnapshot }
+            } else { throw WorkoutTrackerContractError.invalidSnapshot }
         }
     }
 }
