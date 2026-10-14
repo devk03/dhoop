@@ -870,6 +870,15 @@ state without manufacturing success. Wake-alarm ownership, cue policy and networ
 The [previous/timer/pairing study](design/dhoop-previous-meditation-pairing-actions-study.png) and
 [built-in prompts](design/dhoop-previous-meditation-pairing-actions-study.prompt.txt) contain demo states.
 
+Workout delivery also offers an explicit history-only review for an already accepted programmed
+capture. This reads and rechecks accepted source evidence without requiring a current routine, then
+prepares a paused correction. Sending remains separate. Its receipt is labelled as source history
+accepted, with website sets and progression unchanged; canonical retirement does not erase source
+acceptance. Uncertain previous submissions must recover their exact receipt first. Imported backup
+metadata cannot establish that an intent was never submitted after the backup was made.
+The [history-only study](design/dhoop-history-only-review-study.png) and
+[built-in prompt](design/dhoop-history-only-review-study.prompt.txt) are demo references only.
+
 Alarm editing uses the shared asynchronous Save control. The editor remains open with its current
 draft after permission, validation or storage failure; editing/dismissal is held only while saving.
 Local save completion means the definition was persisted. Strap storage and felt vibration remain

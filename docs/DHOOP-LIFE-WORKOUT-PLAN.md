@@ -99,7 +99,8 @@ features, and rest cues must use the shared buzz system without changing wake al
 - [x] Read-only source/canonical comparison and coherent manifest/capture comparison foundation.
 - [x] Reviewed upsert/apply-recovery proposal, differences UI and immutable replacement-intent writer.
 - [ ] Reviewed historical deletion recovery when its original receipt needs new preconditions.
-- [ ] Explicit accepted-capture history-only correction and accurate receipt labels.
+- [x] Explicit accepted-capture history-only correction and accurate receipt labels (native software
+      path tested; production and physical acceptance remain pending).
 - [ ] Complete pause/resume with durable active intervals and measured-window attribution.
 - [ ] Supersets and exercise variations after approval of the required additive storage changes.
 - [ ] Consistent controls throughout remaining goal screens, with ImageGen references and accessible
@@ -129,6 +130,20 @@ Life's detailed eligibility and receipt rules remain authoritative in its contra
 history-only is currently for already accepted programmed captures; it is not a fallback for a
 never-accepted invalid plan or a standalone session. A full-delete receipt preserving manual values
 can still accompany a successful source tombstone; verify the resulting source state.
+
+Build 485 implements history-only review from the latest local intent and a verified accepted
+source receipt. It reads bounded capture pages twice, retains full response evidence, and repeats
+the comparison plus exact local-storage checks before preparing a paused immutable correction.
+No current manifest is required. Source acceptance is resolved separately from canonical projection,
+so a retired canonical receipt does not erase evidence that the physical capture was accepted.
+Original events are retained; a superseded unaccepted apply intent cannot be sent after a reviewed
+history-only replacement. Full/set/occurrence tombstones and conflicting bindings still require
+resolution; this path never revives a deleted identity.
+
+Submission evidence is stored before POST. Legacy or imported unaccepted backup snapshots do not
+prove that a submission never happened, so receipt recovery precedes preparing another correction.
+Backup import retains original archive snapshots and immutable event bytes. These changes affect
+the iOS integration metadata only, not SQLite, Android schema or physiological calculations.
 
 Complete true pause/rest interval storage, supersets and exercise variation relationships only
 after approval of the additive native schema changes. Approval of integration design does not

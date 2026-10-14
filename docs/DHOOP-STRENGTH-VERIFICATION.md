@@ -145,6 +145,30 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - No timer was started, credential imported, motor cue sent, wake configuration changed or physical
   installation performed by these checks. Build 484 UI/hardware verification remains outstanding.
 
+## Build 485 accepted source-history correction
+
+- Forty-seven selected tracker client, delivery and transport tests passed in
+  `/private/tmp/dhoop-history-only-485-final-tests.log`. The new cases exercise the production client
+  against bounded synthetic receiver responses: retired capture eligibility without a current
+  manifest, prepare versus send, unchanged IDs/observations, source-only receipt recognition,
+  rejection of uncertain/legacy attempts, changed identity/provenance, tombstones, newer source data,
+  missing captures, changed unrendered evidence and changed SQLite rows.
+- Tests also verify a durable attempted marker before transport, blocking a superseded apply,
+  duplicate preparation, local pause retention, relaunch, and active/archive backup import without
+  treating an old snapshot as proof that the original phone never submitted later. Original bytes
+  and archive provenance remain retained. In-memory SQLite fixtures do not migrate the owner's DB.
+- The generated reference is `docs/design/dhoop-history-only-review-study.png`, with its built-in
+  ImageGen prompt in the adjacent `.prompt.txt`. It contains demo states, not phone screenshots or
+  live data. Implementation uses shared tokens/actions, wrapping details and separate preparation
+  and sending. Actual Dynamic Type/VoiceOver/gesture quality remains a physical acceptance item.
+- Signed generic-device iOS build and macOS app build passed:
+  `/private/tmp/dhoop-history-only-485-final-ios-build.log` and
+  `/private/tmp/dhoop-history-only-485-final-macos-build.log`. Build 485 retains the stable bundle,
+  Loshi signing team and workout metadata document type. It has not been installed on the phone.
+- No live Life request, receiver deployment, credential activation, physical app installation,
+  WHOOP command or physiological verification was performed for this pass. Full/set/occurrence
+  tombstones remain review gates; historical deletion recovery is still separate implementation work.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
