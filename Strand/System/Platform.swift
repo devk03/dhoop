@@ -27,12 +27,16 @@ extension Image {
 
 /// Cross-platform clipboard write. `NSPasteboard` on macOS, `UIPasteboard` on iOS.
 enum PlatformPasteboard {
-    static func copy(_ string: String) {
+    @discardableResult
+    static func copy(_ string: String) -> Bool {
         #if canImport(AppKit)
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(string, forType: .string)
+        return NSPasteboard.general.setString(string, forType: .string)
         #elseif canImport(UIKit)
         UIPasteboard.general.string = string
+        return true
+        #else
+        return false
         #endif
     }
 }
