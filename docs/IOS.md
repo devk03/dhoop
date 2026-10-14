@@ -655,6 +655,15 @@ The small collection readout distinguishes readable receipts from measured readi
 workout start. Its last checked timestamp describes the stored count. The live number uses the common
 freshness gate; connection alone never proves collection or persistence.
 
+Session history reads measured positive sensor rows under the session's original device ID.
+Its chart reuses the minute-average, gap-preserving projection and the shared scrubbing component.
+Session and timed-set statistics use full-window queries, with half-open bounds so a boundary second
+belongs to only one consecutive set. Untimed sets have no HR attribution. Optical estimates are
+excluded rather than silently mixed into measured averages. A chart capped at 100,000 readings is
+labeled as limited; the summary still covers the full window. Android exposes matching measured-only
+queries over the same table; no physiological formula or stored sample value changes.
+
+
 Routine metadata and ordered targets save together. A finished recording saves its session, exact
 set list, paired manual workout and approved routine-target updates in one SQLite transaction.
 Corrections and deletion are scoped to that recording and transactional. Failed storage operations

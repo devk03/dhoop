@@ -36,6 +36,11 @@ struct LiftSessionDetailSheet: View {
     @State private var editing = false
     /// Session RPE as stored now. The edit sheet can correct it, and the session load must follow.
     @State private var sessionRpe: Double?
+    @State private var heartRateStats: HRWindowStats?
+    @State private var setHeartRate: [String: HRWindowStats] = [:]
+    @State private var heartRatePoints: [TrendPoint] = []
+    @State private var heartRateError: String?
+    @State private var chartLimited = false
 
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
@@ -52,6 +57,7 @@ struct LiftSessionDetailSheet: View {
                     ComingSoon(what: "Reading the session…", symbol: "dumbbell")
                 } else {
                     figuresSection
+                    heartRateSection
                     exercisesSection
                     if !performed.isEmpty {
                         muscleSection
@@ -276,7 +282,8 @@ struct LiftSessionDetailSheet: View {
     }
 
     private func setLine(_ row: LiftSetRow) -> some View {
-        HStack(spacing: NoopMetrics.rowSpacing) {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+          HStack(spacing: NoopMetrics.rowSpacing) {
             Text(row.isWarmup ? String(localized: "W") : "\(row.setIndex)")
                 .font(StrandFont.captionNumber)
                 .foregroundStyle(row.isWarmup ? StrandPalette.textTertiary : StrandPalette.effortColor)
@@ -298,7 +305,60 @@ struct LiftSessionDetailSheet: View {
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
+          }
+          if let start = row.startTs, let end = row.endTs, end > start {
+              Text("\(Date(timeIntervalSince1970: Double(start)).formatted(date: .omitted, time: .standard)) – \(Date(timeIntervalSince1970: Double(end)).formatted(date: .omitted, time: .standard))")
+                  .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+              if let error = heartRateError {
+                  Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+              } else if start < session.startTs || end > (session.endTs ?? start) {
+                  Text("Set timing is outside this workout window").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+              } else if let stats = setHeartRate[row.id], let average = stats.avg, let peak = stats.max {
+                  Text("\(average.formatted(.number.precision(.fractionLength(0)))) avg bpm · \(peak) peak · \(stats.n) measured readings")
+                      .font(StrandFont.caption).foregroundStyle(StrandPalette.metricRose)
+              } else {
+                  Text("No measured HR readings in this set window").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+              }
+          } else {
+              Text("Set timing unavailable").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+          }
         }
+    }
+
+    private var heartRateSection: some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Heart rate").font(StrandFont.headline)
+                if let stats = heartRateStats, let average = stats.avg, let peak = stats.max {
+                    Text("\(average.formatted(.number.precision(.fractionLength(0)))) avg bpm · \(peak) peak")
+                        .font(StrandFont.bodyNumber).foregroundStyle(StrandPalette.metricRose)
+                    if let end = session.endTs, end > session.startTs, !heartRatePoints.isEmpty {
+                        DashboardChart(points: heartRatePoints,
+                            domain: Date(timeIntervalSince1970: Double(session.startTs))...Date(timeIntervalSince1970: Double(end)),
+                            range: chartRange, tint: StrandPalette.metricRose, label: "Workout measured heart-rate averages",
+                            valueFormat: { "\($0.formatted(.number.precision(.fractionLength(0)))) avg bpm" })
+                    }
+                    Text("\(stats.n.formatted()) usable measured readings · gaps preserved")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    if chartLimited {
+                        Text("The chart shows the first 100,000 readings; summary statistics cover the entire session.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                } else {
+                    Text(heartRateError ?? "No measured heart-rate data in this workout window.")
+                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                }
+                Text("Minute averages from measured sensor rows. Optical estimates are excluded. Source: \(session.deviceId)")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var chartRange: ClosedRange<Double> {
+        let minimum = heartRatePoints.map(\.value).min() ?? 40
+        let maximum = heartRatePoints.map(\.value).max() ?? 100
+        return max(0, minimum - 10)...max(minimum + 20, maximum + 10)
     }
 
     private func setValueText(_ row: LiftSetRow) -> String {
@@ -445,7 +505,7 @@ struct LiftSessionDetailSheet: View {
         }
 
         // The workout row this session is pinned to, by that table's own natural key.
-        let rows = (try? await store.workouts(deviceId: repo.deviceId,
+        let rows = (try? await store.workouts(deviceId: session.deviceId,
                                               from: session.startTs - 1,
                                               to: session.startTs + 1, limit: 10)) ?? []
         workout = rows.first { $0.startTs == session.startTs && $0.sport == session.sport }
@@ -453,12 +513,33 @@ struct LiftSessionDetailSheet: View {
         // Previous volume per exercise, for the "vs last time" line.
         var previous: [String: Double] = [:]
         for name in Set(performed.map(\.exercise)) {
-            let before = (try? await store.lastLiftSets(deviceId: repo.deviceId,
+            let before = (try? await store.lastLiftSets(deviceId: session.deviceId,
                                                         exercise: name,
                                                         before: session.startTs)) ?? []
             if let v = LiftMetrics.volumeLoadKg(before) { previous[name] = v }
         }
         previousVolume = previous
+        await loadHeartRate(store: store)
         loaded = true
+    }
+
+    private func loadHeartRate(store: WhoopStore) async {
+        heartRateStats = nil; setHeartRate = [:]; heartRatePoints = []; heartRateError = nil; chartLimited = false
+        guard let end = session.endTs, end > session.startTs else { return }
+        do {
+            let stats = try await store.measuredHeartRateStats(deviceId: session.deviceId, from: session.startTs, toExclusive: end)
+            let samples = try await store.measuredHeartRateSamples(deviceId: session.deviceId, from: session.startTs, toExclusive: end, limit: 100_000)
+            let display = HistoricalHeartRateProjection.summarize(samples.map {
+                DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm))
+            }, from: Double(session.startTs), through: Double(end))
+            var perSet: [String: HRWindowStats] = [:]
+            for row in sets {
+                guard let start = row.startTs, let stop = row.endTs, start >= session.startTs, stop <= end, stop > start else { continue }
+                perSet[row.id] = try await store.measuredHeartRateStats(deviceId: session.deviceId, from: start, toExclusive: stop)
+            }
+            guard !Task.isCancelled else { return }
+            heartRateStats = stats; setHeartRate = perSet; chartLimited = stats.n > samples.count
+            heartRatePoints = display.readings.map { TrendPoint(date: Date(timeIntervalSince1970: $0.time), value: $0.averageBPM, segment: $0.segment) }
+        } catch { heartRateError = "Heart-rate storage check failed: \(error.localizedDescription)" }
     }
 }
