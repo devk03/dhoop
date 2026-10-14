@@ -41,7 +41,20 @@ existing buzz or sleep/protein credentials cannot be reused.
 
 ## Completion decision
 
-**Incomplete.** Remaining work is the native approved phase/superset/variation implementation,
-the complete physical acceptance list. Neither compilation,
+**Incomplete.** Remaining work is the native phase/superset/variation implementation after storage
+approval, and the complete physical acceptance list. Neither compilation,
 test existence, receiver acceptance nor Bluetooth ACKs proves streaming, persistence on the owner's
 phone, felt vibration or physiological accuracy. No official WHOOP-app writes are part of this goal.
+
+## Verified blocker audit
+
+The latest read-only listing still reports `0A-Homeboy` unavailable
+(`/private/tmp/dhoop-494-blocked-device-state.json`). The five-field migration approval has not arrived;
+those fields and true Strength pause/superset/variation persistence remain absent in current source.
+Both conditions have persisted through more than three consecutive goal turns. Independent control
+and history-read work is committed; further work must not substitute a lossy storage workaround for
+the requested persisted features. The goal is blocked, not achieved. Its complete scope is retained.
+
+Resume prerequisites: explicit approval of the five nullable fields in the reviewed plan, and a
+connected/unlocked physical iPhone for later installation and acceptance. Receiver deployment and
+credentials remain separately gated; no production action is implied by resuming native work.
