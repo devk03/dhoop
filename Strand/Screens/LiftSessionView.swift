@@ -25,6 +25,7 @@ struct LiftSessionView: View {
     @EnvironmentObject var session: LiftSessionController
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Called once the session has been written, so the hub can reload.
     let onFinished: () async -> Void
@@ -118,8 +119,8 @@ struct LiftSessionView: View {
                 VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                     header(engine)
                     LiftCollectionReadout(fromTs: engine.startTs, deviceId: session.sourceDeviceId)
-                    ForEach(Array(engine.plan.enumerated()), id: \.offset) { index, item in
-                        exerciseCard(engine, index: index, item: item)
+                    ForEach(engine.exerciseOrder, id: \.self) { index in
+                        exerciseCard(engine, index: index, item: engine.plan[index])
                     }
                     addExerciseRow(engine)
                     if dynamicTypeSize.isAccessibilitySize { controlBar(engine) }
@@ -132,11 +133,13 @@ struct LiftSessionView: View {
                 // Follow the session down the sheet, but only when it moves on its own — scrolling
                 // back to read an earlier exercise must not be yanked away from.
                 guard let slot else { return }
-                withAnimation { proxy.scrollTo(slot.exerciseIndex, anchor: .top) }
+                if reduceMotion { proxy.scrollTo(slot.exerciseIndex, anchor: .top) }
+                else { withAnimation { proxy.scrollTo(slot.exerciseIndex, anchor: .top) } }
             }
             .onChange(of: scrollTarget) { target in
                 guard let target else { return }
-                withAnimation { proxy.scrollTo(target, anchor: .top) }
+                if reduceMotion { proxy.scrollTo(target, anchor: .top) }
+                else { withAnimation { proxy.scrollTo(target, anchor: .top) } }
                 scrollTarget = nil
             }
             .sheet(isPresented: $addingExercise) {
@@ -185,6 +188,8 @@ struct LiftSessionView: View {
             Text(String(localized: "\(engine.completedWorkingSets) of \(engine.plannedWorkingSets) sets done"))
                 .font(StrandFont.caption)
                 .foregroundStyle(StrandPalette.textSecondary)
+            Text("Exercise menu changes this session's order. Logged sets keep their original exercise.")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -194,14 +199,17 @@ struct LiftSessionView: View {
     private func exerciseCard(_ engine: LiftSessionEngine, index: Int, item: LiftPlanItem) -> some View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.exercise)
-                        .font(StrandFont.headline)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                    Text(LiftMuscleSummary.line(primary: item.primaryMuscle,
-                                                secondaries: item.secondaryMuscles))
-                        .font(StrandFont.caption)
-                        .foregroundStyle(StrandPalette.textTertiary)
+                HStack(alignment: .top, spacing: NoopMetrics.space3) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                        Text(item.exercise)
+                            .font(StrandFont.headline)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text(LiftMuscleSummary.line(primary: item.primaryMuscle,
+                                                   secondaries: item.secondaryMuscles))
+                            .font(StrandFont.caption)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                    exerciseMenu(engine, index: index, item: item)
                 }
                 if let note = item.note, !note.isEmpty {
                     Text(note)
@@ -218,11 +226,6 @@ struct LiftSessionView: View {
                 }
 
                 columnHeadings
-                NoopButton("Set notes", systemImage: "text.bubble", kind: .tertiary) {
-                    let slots = engine.slots(forExercise: index)
-                    if slots.allSatisfy({ expandedNotes.contains($0) }) { slots.forEach { expandedNotes.remove($0) } }
-                    else { slots.forEach { expandedNotes.insert($0) } }
-                }
 
                 ForEach(engine.slots(forExercise: index), id: \.self) { slot in
                     setRow(engine, slot: slot)
@@ -235,6 +238,34 @@ struct LiftSessionView: View {
             }
         }
         .id(index)
+    }
+
+    private func exerciseMenu(_ engine: LiftSessionEngine, index: Int, item: LiftPlanItem) -> some View {
+        let position = engine.exerciseOrder.firstIndex(of: index) ?? 0
+        return Menu {
+            Button {
+                focused = nil
+                if session.moveExercise(index, by: -1) { scrollTarget = index }
+            } label: { Label("Move earlier", systemImage: "arrow.up") }
+                .disabled(position == 0 || engine.isFinished)
+            Button {
+                focused = nil
+                if session.moveExercise(index, by: 1) { scrollTarget = index }
+            } label: { Label("Move later", systemImage: "arrow.down") }
+                .disabled(position == engine.exerciseOrder.count - 1 || engine.isFinished)
+            Button {
+                let slots = engine.slots(forExercise: index)
+                if slots.allSatisfy({ expandedNotes.contains($0) }) { slots.forEach { expandedNotes.remove($0) } }
+                else { slots.forEach { expandedNotes.insert($0) } }
+            } label: { Label("Set notes", systemImage: "text.bubble") }
+        } label: {
+            Image(systemName: "ellipsis").font(StrandFont.headline)
+                .foregroundStyle(StrandPalette.accent)
+                .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
+                .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopVisualStyle.compactRadius))
+                .contentShape(Rectangle())
+        }.buttonStyle(NoopFeedbackButtonStyle())
+            .accessibilityLabel("Exercise actions for \(item.exercise)")
     }
 
     /// Add one more set, or drop the last planned one — at the END of the exercise, because that is
