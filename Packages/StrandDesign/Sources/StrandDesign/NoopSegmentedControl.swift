@@ -14,7 +14,7 @@ public struct NoopSegmentedControl: View {
 
     public var body: some View {
         Group {
-            if typeSize >= .xxLarge {
+            if typeSize >= .xxLarge || options.count > 4 {
                 ScrollView(.horizontal, showsIndicators: false) { choices }
             } else {
                 choices
@@ -35,7 +35,7 @@ public struct NoopSegmentedControl: View {
                         .padding(.horizontal, options.count > 3 ? NoopMetrics.space1 : NoopMetrics.space2)
                         .foregroundStyle(selection == option ? NoopVisualStyle.selectedControlInk : StrandPalette.textSecondary)
                         .background(selection == option ? NoopVisualStyle.selectedControlFill : .clear, in: Capsule())
-                }.buttonStyle(.plain).accessibilityAddTraits(selection == option ? .isSelected : [])
+                }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityAddTraits(selection == option ? .isSelected : [])
             }
         }
     }

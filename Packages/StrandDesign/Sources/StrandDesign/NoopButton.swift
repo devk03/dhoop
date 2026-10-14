@@ -50,6 +50,43 @@ public enum NoopButtonMetrics {
     public static let pressedOpacity: Double = 0.82
     /// Disabled dim, shared so call sites don't invent their own.
     public static let disabledOpacity: Double = 0.4
+    /// Reserved leading state region; progress and result icons never move the title.
+    public static let stateWidth: CGFloat = 24
+}
+
+/// Press feedback for labels that already own their layout (rows, chart cards, selectors).
+/// Native Button tracking owns activation and drag-off cancellation; no gesture is installed.
+public struct NoopFeedbackButtonStyle: ButtonStyle {
+    public init() {}
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label.modifier(NoopPressFeedback(pressed: configuration.isPressed))
+    }
+}
+
+/// Compact chrome for accessible icon-only actions. Call sites supply an accessibility label.
+public struct NoopIconButtonStyle: ButtonStyle {
+    public init() {}
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(StrandFont.headline)
+            .foregroundStyle(configuration.role == .destructive ? StrandPalette.statusCritical : StrandPalette.textPrimary)
+            .frame(minWidth: NoopButtonMetrics.minHitTarget, minHeight: NoopButtonMetrics.minHitTarget)
+            .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius))
+            .modifier(NoopPressFeedback(pressed: configuration.isPressed))
+    }
+}
+
+struct NoopPressFeedback: ViewModifier {
+    let pressed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? (pressed ? NoopButtonMetrics.pressedOpacity : 1) : NoopButtonMetrics.disabledOpacity)
+            .scaleEffect(pressed && isEnabled && !reduceMotion ? NoopButtonMetrics.pressedScale : 1)
+            .animation(reduceMotion ? nil : StrandMotion.interactive, value: pressed)
+    }
 }
 
 /// Resolves a `NoopButtonKind` to its concrete fill / label / border tokens. Internal

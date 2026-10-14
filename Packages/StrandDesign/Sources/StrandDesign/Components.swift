@@ -628,19 +628,8 @@ public struct NoopPrimaryButtonStyle: ButtonStyle {
 public struct NoopSecondaryButtonStyle: ButtonStyle {
     public init() {}
     public func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
-        return configuration.label
-            .font(StrandFont.body.weight(.semibold))
-            .foregroundStyle(StrandPalette.textPrimary)
-            .padding(.vertical, 11).padding(.horizontal, 18)
-            .frame(maxWidth: .infinity)
-            .background(shape.fill(StrandPalette.surfaceInset))
-            .overlay(shape.strokeBorder(StrandPalette.hairline, lineWidth: 1))
-            .opacity(pressed ? 0.82 : 1)
-            .scaleEffect(pressed ? 0.98 : 1)
-            .animation(StrandMotion.interactive, value: pressed)
-            .contentShape(Rectangle())
+        configuration.label.modifier(NoopButtonChrome(kind: configuration.role == .destructive ? .destructive : .secondary,
+            fullWidth: true, pressed: configuration.isPressed))
     }
 }
 
@@ -648,18 +637,8 @@ public struct NoopSecondaryButtonStyle: ButtonStyle {
 public struct NoopGhostButtonStyle: ButtonStyle {
     public init() {}
     public func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
-        return configuration.label
-            .font(StrandFont.body.weight(.semibold))
-            .foregroundStyle(StrandPalette.gold)
-            .padding(.vertical, 11).padding(.horizontal, 18)
-            .frame(maxWidth: .infinity)
-            .background(shape.fill(StrandPalette.gold.opacity(pressed ? 0.10 : 0)))
-            .overlay(shape.strokeBorder(StrandPalette.gold.opacity(0.3), lineWidth: 1))
-            .scaleEffect(pressed ? 0.98 : 1)
-            .animation(StrandMotion.interactive, value: pressed)
-            .contentShape(Rectangle())
+        configuration.label.modifier(NoopButtonChrome(kind: configuration.role == .destructive ? .destructive : .tertiary,
+            fullWidth: true, pressed: configuration.isPressed))
     }
 }
 
