@@ -28,6 +28,7 @@ private struct AlarmsContent: View, Equatable {
     @State private var editor: DhoopAlarmDefinition?
     @State private var remove: DhoopAlarmDefinition?
     @State private var capturedAt = Date()
+    @State private var localActionError: String?
     @ScaledMetric(relativeTo: .largeTitle) private var timeSize = NoopMetrics.alarmTimeNumber
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.manager === rhs.manager }
 
@@ -120,7 +121,9 @@ private struct AlarmsContent: View, Equatable {
                                 }
                                 .contextMenu {
                                     Button("Edit alarm") { editor = alarm }
-                                    Button("Skip next alarm") { manager.skipNext(alarm.id) }
+                                    Button("Skip next alarm") {
+                                        if !manager.skipNext(alarm.id) { localActionError = alarmChangeError(manager) }
+                                    }
                                     Button("Delete alarm", role: .destructive) { remove = alarm }
                                 }
                                 if alarm.id != sortedDefinitions.last?.id { Divider().overlay(StrandPalette.hairline) }
@@ -164,8 +167,14 @@ private struct AlarmsContent: View, Equatable {
         }
         .sheet(item: $editor) { alarm in AlarmEditorView(manager: manager, original: alarm) }
         .confirmationDialog("Delete this alarm?", isPresented: Binding(get: { remove != nil }, set: { if !$0 { remove = nil } }), presenting: remove) { alarm in
-            Button("Delete \(alarm.label)", role: .destructive) { manager.delete(alarm.id); remove = nil }
+            Button("Delete \(alarm.label)", role: .destructive) {
+                if !manager.delete(alarm.id) { localActionError = alarmChangeError(manager) }
+                remove = nil
+            }
         } message: { _ in Text("Pending strap removal stays visible until WHOOP reports it cleared. Alarm history is kept.") }
+        .alert("Alarm change was not saved", isPresented: Binding(get: { localActionError != nil }, set: { if !$0 { localActionError = nil } })) {
+            Button("OK", role: .cancel) { localActionError = nil }
+        } message: { Text(localActionError ?? "") }
         .task {
             #if os(iOS)
             DhoopPhoneAlarmBackup.configure(manager)
@@ -385,6 +394,7 @@ private struct AlarmDetailView: View {
     @EnvironmentObject private var app: AppModel
     @State private var showEditor = false
     @State private var delete = false
+    @State private var localActionError: String?
     var body: some View {
         if let alarm = manager.definitions.first(where: { $0.id == id }) {
             ScreenScaffold(title: LocalizedStringKey(alarm.label)) {
@@ -401,33 +411,43 @@ private struct AlarmDetailView: View {
                         }
                     }
                     Button("Edit alarm") { showEditor = true }.buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
-                    Button("Skip next alarm") { manager.skipNext(id) }.buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                    NoopAsyncButton("Skip next alarm", systemImage: "forward.end", kind: .secondary, fullWidth: true) {
+                        try requireAlarmChange(manager.skipNext(id), manager: manager)
+                    }
                     Button("Test vibration") { app.requestBuzz(owner: "alarm-preview", loops: 1) }
                         .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
                         .disabled(!manager.context.ready || manager.blocksMotor(now: Date()))
                     Text("The test is one connection buzz. It does not run, consume, or change your stored alarms.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     NavigationLink("View stored WHOOP records", value: AlarmRoute.slots).font(StrandFont.subhead)
-                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                    Button("Delete alarm", role: .destructive) { delete = true }.frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(NoopFeedbackButtonStyle())
+                    Button("Delete alarm", role: .destructive) { delete = true }
+                        .buttonStyle(NoopButtonStyle(.destructive, fullWidth: true))
                     ForEach(manager.currentSlots.filter { $0.definitionIDs.contains(id) }) { slot in
                         if slot.expected.epoch <= Int64(Date().timeIntervalSince1970) && slot.expected.epoch > 0 {
-                            Button("I felt this alarm") { manager.confirmFelt(slot: slot.slot, epoch: Int(slot.expected.epoch), felt: true) }
-                                .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                            NoopAsyncButton("I felt this alarm", systemImage: "checkmark", kind: .secondary, fullWidth: true) {
+                                try requireAlarmChange(manager.confirmFelt(slot: slot.slot, epoch: Int(slot.expected.epoch), felt: true), manager: manager)
+                            }
                         }
                     }
                 }
             }
             .sheet(isPresented: $showEditor) { AlarmEditorView(manager: manager, original: alarm) }
             .confirmationDialog("Delete \(alarm.label)?", isPresented: $delete) {
-                Button("Delete alarm", role: .destructive) { manager.delete(id) }
+                Button("Delete alarm", role: .destructive) {
+                    if !manager.delete(id) { localActionError = alarmChangeError(manager) }
+                }
             } message: { Text("A stored alarm may still fire until removal is verified on WHOOP. History is kept.") }
+            .alert("Alarm change was not saved", isPresented: Binding(get: { localActionError != nil }, set: { if !$0 { localActionError = nil } })) {
+                Button("OK", role: .cancel) { localActionError = nil }
+            } message: { Text(localActionError ?? "") }
         } else { Text("Alarm removed. Any pending strap removal is shown in WHOOP slots.").font(StrandFont.body) }
     }
 }
 
 private struct AlarmHistoryView: View {
     @ObservedObject var manager: DhoopAlarmManager
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         ScreenScaffold(title: "Alarm history") {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
@@ -443,21 +463,47 @@ private struct AlarmHistoryView: View {
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                                 if epoch <= Int(Date().timeIntervalSince1970), let slot = item.slot,
                                    item.deviceID == manager.context.deviceID {
-                                    HStack(spacing: NoopMetrics.space3) {
-                                        Button("Felt it") { manager.confirmFelt(slot: slot, epoch: epoch, felt: true) }
-                                        Button("No vibration") { manager.confirmFelt(slot: slot, epoch: epoch, felt: false) }
-                                    }.font(StrandFont.caption).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                                    if typeSize.isAccessibilitySize {
+                                        VStack(spacing: NoopMetrics.space3) { reportControls(slot: slot, epoch: epoch) }
+                                    } else {
+                                        HStack(spacing: NoopMetrics.space3) { reportControls(slot: slot, epoch: epoch) }
+                                    }
                                 }
                             }
                         }
                     }
                 }
                 if FileManager.default.fileExists(atPath: manager.exportURL.path) {
-                    ShareLink("Export alarm state", item: manager.exportURL).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    ShareLink("Export alarm state", item: manager.exportURL)
+                        .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
                 }
             }
         }
     }
+    @ViewBuilder private func reportControls(slot: Int, epoch: Int) -> some View {
+        NoopAsyncButton("Felt it", systemImage: "checkmark", kind: .secondary, fullWidth: true) {
+            try requireAlarmChange(manager.confirmFelt(slot: slot, epoch: epoch, felt: true), manager: manager)
+        }
+        NoopAsyncButton("No vibration", systemImage: "xmark", kind: .secondary, fullWidth: true) {
+            try requireAlarmChange(manager.confirmFelt(slot: slot, epoch: epoch, felt: false), manager: manager)
+        }
+    }
+
+}
+
+private struct AlarmLocalActionFailure: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+@MainActor
+private func alarmChangeError(_ manager: DhoopAlarmManager) -> String {
+    manager.storageError ?? "The local alarm change was not saved. Check that this alarm or occurrence is still available."
+}
+
+@MainActor
+private func requireAlarmChange(_ saved: Bool, manager: DhoopAlarmManager) throws {
+    guard saved else { throw AlarmLocalActionFailure(message: alarmChangeError(manager)) }
 }
 
 private func repeatLabel(_ weekdays: Set<Int>) -> String {
