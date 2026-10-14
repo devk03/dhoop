@@ -724,6 +724,9 @@ that accepts observations with derived progression pending is labeled separately
 retries that same receipt. HTTP errors and revision conflicts retain local data. Conflicts do not
 silently refresh IDs or overwrite website edits. Timed-set HR summaries use measured sensor rows
 for the original strap and half-open actual windows; missing timing and coverage remain unavailable.
+Known tracker conflict codes retain neutral, specific explanations through relaunch. Only reviewed
+codes from a bounded 4 KiB JSON 409 response are retained; unknown codes, HTML and arbitrary response
+details remain generic. A changed revision is evidence for review, not permission to rebind a target.
 
 Settings delivery rows open a review screen. Opening it checks only local persistence and labels the
 check time. Tracker comparison is an explicit read, bounded to 200 sets and consistent source/Life
