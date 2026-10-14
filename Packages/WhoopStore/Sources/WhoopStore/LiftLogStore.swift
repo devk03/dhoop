@@ -445,25 +445,7 @@ extension WhoopStore {
     @discardableResult
     public func upsertLiftPrograms(_ rows: [LiftProgramRow]) async throws -> Int {
         guard !rows.isEmpty else { return 0 }
-        return try syncWrite { db in
-            var n = 0
-            for r in rows {
-                try db.execute(sql: """
-                    INSERT INTO liftProgram
-                        (id, deviceId, name, note, createdAt, updatedAt, archived)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        name = excluded.name,
-                        note = excluded.note,
-                        updatedAt = excluded.updatedAt,
-                        archived = excluded.archived
-                    """, arguments: [
-                        r.id, r.deviceId, r.name, r.note, r.createdAt, r.updatedAt, r.archived,
-                    ])
-                n += db.changesCount
-            }
-            return n
-        }
+        return try syncWrite { db in try Self.writeLiftPrograms(rows, db: db) }
     }
 
     /// Programs for a device, most recently touched first. `includeArchived` defaults false so the
@@ -503,24 +485,7 @@ extension WhoopStore {
     /// then reinserting inside one transaction avoids reconciling removals and reorders row by row.
     @discardableResult
     public func replaceLiftProgramItems(programId: String, items: [LiftProgramItemRow]) async throws -> Int {
-        try syncWrite { db in
-            try db.execute(sql: "DELETE FROM liftProgramItem WHERE programId = ?", arguments: [programId])
-            var n = 0
-            for r in items {
-                try db.execute(sql: """
-                    INSERT INTO liftProgramItem
-                        (id, deviceId, programId, ord, exercise, targetSets,
-                         targetRepsLow, targetRepsHigh, targetRpe, targetWeightKg, restSec, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, arguments: [
-                        r.id, r.deviceId, r.programId, r.ord, r.exercise, r.targetSets,
-                        r.targetRepsLow, r.targetRepsHigh, r.targetRpe, r.targetWeightKg,
-                        r.restSec, r.note,
-                    ])
-                n += db.changesCount
-            }
-            return n
-        }
+        try syncWrite { db in try Self.writeLiftProgramItems(programId: programId, items: items, db: db) }
     }
 
     /// A program's exercise lines in program order.
@@ -542,28 +507,7 @@ extension WhoopStore {
     @discardableResult
     public func upsertLiftSessions(_ rows: [LiftSessionRow]) async throws -> Int {
         guard !rows.isEmpty else { return 0 }
-        return try syncWrite { db in
-            var n = 0
-            for r in rows {
-                try db.execute(sql: """
-                    INSERT INTO liftSession
-                        (id, deviceId, startTs, endTs, sport, programId, programName,
-                         sessionRpe, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(deviceId, startTs, sport) DO UPDATE SET
-                        endTs = excluded.endTs,
-                        programId = excluded.programId,
-                        programName = excluded.programName,
-                        sessionRpe = excluded.sessionRpe,
-                        note = excluded.note
-                    """, arguments: [
-                        r.id, r.deviceId, r.startTs, r.endTs, r.sport,
-                        r.programId, r.programName, r.sessionRpe, r.note,
-                    ])
-                n += db.changesCount
-            }
-            return n
-        }
+        return try syncWrite { db in try Self.writeLiftSessions(rows, db: db) }
     }
 
     /// Sessions for a device that started within `[fromTs, toTs]` inclusive, most recent first.
@@ -611,39 +555,7 @@ extension WhoopStore {
     @discardableResult
     public func upsertLiftSets(_ rows: [LiftSetRow]) async throws -> Int {
         guard !rows.isEmpty else { return 0 }
-        return try syncWrite { db in
-            var n = 0
-            for r in rows {
-                try db.execute(sql: """
-                    INSERT INTO liftSet
-                        (id, deviceId, sessionId, ord, exercise, primaryMuscle, secondaryMuscles,
-                         setIndex, weightKg, reps, rpe, isWarmup, startTs, endTs, restSec, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        ord = excluded.ord,
-                        exercise = excluded.exercise,
-                        primaryMuscle = excluded.primaryMuscle,
-                        secondaryMuscles = excluded.secondaryMuscles,
-                        setIndex = excluded.setIndex,
-                        weightKg = excluded.weightKg,
-                        reps = excluded.reps,
-                        rpe = excluded.rpe,
-                        isWarmup = excluded.isWarmup,
-                        startTs = excluded.startTs,
-                        endTs = excluded.endTs,
-                        restSec = excluded.restSec,
-                        note = excluded.note
-                    """, arguments: [
-                        r.id, r.deviceId, r.sessionId, r.ord, r.exercise,
-                        r.primaryMuscle?.rawValue,
-                        LiftMuscle.encodeList(r.secondaryMuscles, excluding: r.primaryMuscle),
-                        r.setIndex, r.weightKg, r.reps, r.rpe, r.isWarmup,
-                        r.startTs, r.endTs, r.restSec, r.note,
-                    ])
-                n += db.changesCount
-            }
-            return n
-        }
+        return try syncWrite { db in try Self.writeLiftSets(rows, db: db) }
     }
 
     /// Every set in a session, in the order they were performed.
@@ -746,4 +658,100 @@ extension WhoopStore {
         }
     }
 
+
+    static func writeLiftSessions(_ rows: [LiftSessionRow], db: Database) throws -> Int {
+            var n = 0
+            for r in rows {
+                try db.execute(sql: """
+                    INSERT INTO liftSession
+                        (id, deviceId, startTs, endTs, sport, programId, programName,
+                         sessionRpe, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(deviceId, startTs, sport) DO UPDATE SET
+                        endTs = excluded.endTs,
+                        programId = excluded.programId,
+                        programName = excluded.programName,
+                        sessionRpe = excluded.sessionRpe,
+                        note = excluded.note
+                    """, arguments: [
+                        r.id, r.deviceId, r.startTs, r.endTs, r.sport,
+                        r.programId, r.programName, r.sessionRpe, r.note,
+                    ])
+                n += db.changesCount
+            }
+            return n
+    }
+
+    static func writeLiftSets(_ rows: [LiftSetRow], db: Database) throws -> Int {
+            var n = 0
+            for r in rows {
+                try db.execute(sql: """
+                    INSERT INTO liftSet
+                        (id, deviceId, sessionId, ord, exercise, primaryMuscle, secondaryMuscles,
+                         setIndex, weightKg, reps, rpe, isWarmup, startTs, endTs, restSec, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        ord = excluded.ord,
+                        exercise = excluded.exercise,
+                        primaryMuscle = excluded.primaryMuscle,
+                        secondaryMuscles = excluded.secondaryMuscles,
+                        setIndex = excluded.setIndex,
+                        weightKg = excluded.weightKg,
+                        reps = excluded.reps,
+                        rpe = excluded.rpe,
+                        isWarmup = excluded.isWarmup,
+                        startTs = excluded.startTs,
+                        endTs = excluded.endTs,
+                        restSec = excluded.restSec,
+                        note = excluded.note
+                    """, arguments: [
+                        r.id, r.deviceId, r.sessionId, r.ord, r.exercise,
+                        r.primaryMuscle?.rawValue,
+                        LiftMuscle.encodeList(r.secondaryMuscles, excluding: r.primaryMuscle),
+                        r.setIndex, r.weightKg, r.reps, r.rpe, r.isWarmup,
+                        r.startTs, r.endTs, r.restSec, r.note,
+                    ])
+                n += db.changesCount
+            }
+            return n
+    }
+
+    static func writeLiftPrograms(_ rows: [LiftProgramRow], db: Database) throws -> Int {
+            var n = 0
+            for r in rows {
+                try db.execute(sql: """
+                    INSERT INTO liftProgram
+                        (id, deviceId, name, note, createdAt, updatedAt, archived)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name = excluded.name,
+                        note = excluded.note,
+                        updatedAt = excluded.updatedAt,
+                        archived = excluded.archived
+                    """, arguments: [
+                        r.id, r.deviceId, r.name, r.note, r.createdAt, r.updatedAt, r.archived,
+                    ])
+                n += db.changesCount
+            }
+            return n
+    }
+
+    static func writeLiftProgramItems(programId: String, items: [LiftProgramItemRow], db: Database) throws -> Int {
+            try db.execute(sql: "DELETE FROM liftProgramItem WHERE programId = ?", arguments: [programId])
+            var n = 0
+            for r in items {
+                try db.execute(sql: """
+                    INSERT INTO liftProgramItem
+                        (id, deviceId, programId, ord, exercise, targetSets,
+                         targetRepsLow, targetRepsHigh, targetRpe, targetWeightKg, restSec, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [
+                        r.id, r.deviceId, r.programId, r.ord, r.exercise, r.targetSets,
+                        r.targetRepsLow, r.targetRepsHigh, r.targetRpe, r.targetWeightKg,
+                        r.restSec, r.note,
+                    ])
+                n += db.changesCount
+            }
+            return n
+    }
 }
