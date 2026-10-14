@@ -115,6 +115,21 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - Build 482 has not been installed or physically tested. This is additional control coverage;
   it does not establish completion of the remaining app-wide audit or strength hardware checks.
 
+## Build 483 catalog and routine safety
+
+- Three new catalog-model tests passed: failed-read retention versus actual empty success,
+  superseded source reads, and foreign/duplicate row rejection. These test the shared read boundary;
+  they do not establish native picker behavior or routine-editor gesture acceptance.
+- Full catalog browsing and error/retry states are implemented with shared components. Routine save
+  is held after failed line loading, and source identities/drafts are retained. Numeric target
+  validation and routine deletion error reporting are additional Apple UI changes.
+- Evidence: `/private/tmp/dhoop-catalog-read-safety-tests.log`. Source comment hygiene passed.
+- Specific iPhone destination was unavailable. The generic signed iOS and macOS targets were built;
+  logs are `/private/tmp/dhoop-catalog-483-final-ios-build.log` and
+  `/private/tmp/dhoop-catalog-483-final-macos-build.log`. No installation or strap command was performed.
+- No database migration was written or applied. The six-field approval request for variations,
+  supersets and persisted pause windows remains pending. The full goal remains incomplete.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

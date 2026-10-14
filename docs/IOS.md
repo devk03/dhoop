@@ -831,6 +831,30 @@ The [backup design study](design/dhoop-workout-metadata-backup-study.png) and
 Package preparation/merge and archive recovery have local tests; the native Files export/import
 workflow has not yet been verified on the physical iPhone.
 
+### Exercise catalog and routine draft safety
+
+Both exercise-entry sheets use one device-scoped catalog read model. A read failure retains the
+last readable same-device entries but disables saving until an explicit successful retry. A verified
+empty catalog still permits the first exercise. Late results for a previous source cannot replace
+the selected source. The full searchable browser is separate from the short recently used hints;
+muscles are user-assigned, and tracked load basis remains an explicit choice.
+
+Exercise add/apply uses shared async controls, retains failed drafts, and holds fields while saving.
+Catalog-limit errors use one readable action failure. Routine-item apply is labeled as a draft action;
+the parent routine still commits its ordered lines atomically. Invalid nonempty numeric targets cannot
+be silently converted to blank targets. Catalog forgetting no longer hides a failed delete/readback.
+
+Existing routine editors do not turn a failed line read into an empty list that can overwrite the
+program. An explicit retry preserves typed name/note. Routine and item writes retain their original
+source identity when the active strap changes; deletion errors keep the editor open. No schema or
+analytics change is introduced. Variations, supersets and durable pause intervals still require the
+separately requested migration approval.
+
+The [catalog recovery study](design/dhoop-exercise-catalog-recovery-study.png) and
+[built-in generation/edit prompts](design/dhoop-exercise-catalog-recovery-study.prompt.txt) contain demo
+names and classifications. Native browsing, editing and Dynamic Type behavior remain unverified on
+the physical iPhone.
+
 ### Shared alarm, summary and activity actions
 
 Alarm editing uses the shared asynchronous Save control. The editor remains open with its current
