@@ -105,6 +105,10 @@ targets:
       - StrandiOS/Workouts/WorkoutSetObservation.swift
       - StrandiOS/Workouts/WorkoutSyncEndpoint.swift
       - StrandiOS/Workouts/WorkoutSyncTransport.swift
+      - StrandiOS/Workouts/WorkoutTrackerState.swift
+      - StrandiOS/Workouts/WorkoutCapturePayload.swift
+      - StrandiOS/Workouts/WorkoutTrackerOutbox.swift
+      - Strand/Data/WorkoutTrackerManifest.swift
       - Strand/BLE/BuzzDeliveryCoordinator.swift
       - Strand/Alarms/DhoopAlarmState.swift
       - Strand/Alarms/DhoopAlarmManager.swift
@@ -128,6 +132,7 @@ targets:
       - package: StrandAnalytics
       - package: StrandDesign
       - package: WhoopProtocol
+      - package: WhoopStore
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

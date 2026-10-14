@@ -26,7 +26,7 @@ final class WorkoutSyncTransportTests: XCTestCase {
         return config
     }
     private func credentials() -> WorkoutSyncConfiguration {
-        WorkoutSyncConfiguration(enabled: true, origin: "https://track.kunjadia.dev", installationId: UUID(), credential: String(repeating: "x", count: 32))
+        WorkoutSyncConfiguration(enabled: true, origin: "https://track.kunjadia.dev", installationId: UUID(), credential: String(repeating: "a", count: 64))
     }
     func testConfiguredReadUsesOnlyDedicatedAuthAndInstallationHeaders() async throws {
         let credentials = credentials()

@@ -13,8 +13,7 @@ final class WorkoutSyncTransport: NSObject, URLSessionTaskDelegate, @unchecked S
               configuration: URLSessionConfiguration = .ephemeral) async throws -> Data {
         try Task.checkCancellation()
         guard credentials.enabled else { throw WorkoutSyncTransportError.disabled }
-        guard credentials.credential.utf8.count >= 32, credentials.credential.utf8.count <= 2048,
-              !credentials.credential.contains(where: { $0.isWhitespace || $0.isNewline }) else {
+        guard credentials.valid else {
             throw WorkoutSyncTransportError.configuration
         }
         let url = try endpoint.url(origin: credentials.origin)

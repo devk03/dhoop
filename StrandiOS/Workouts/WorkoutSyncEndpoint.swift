@@ -64,9 +64,14 @@ enum WorkoutSyncTransportError: LocalizedError {
 }
 
 /// An explicitly configured dedicated credential; never a sleep, buzz, MCP, or cookie credential.
-struct WorkoutSyncConfiguration {
+struct WorkoutSyncConfiguration: Codable {
     var enabled = false
     var origin: String
     var installationId: UUID
     var credential: String
+    var valid: Bool {
+        (try? WorkoutSyncEndpoint.catalog.url(origin: origin)) != nil && (
+            credential.range(of: #"^[0-9a-fA-F]{64,1024}$"#, options: .regularExpression) != nil ||
+            credential.range(of: #"^[A-Za-z0-9_-]{43,1024}$"#, options: .regularExpression) != nil)
+    }
 }
