@@ -46,6 +46,24 @@ public struct HRWindowStats: Sendable, Equatable {
 }
 
 extension WhoopStore {
+    /// Measured sensor rows only, for set attribution. Optical estimates are not silently mixed in.
+    public func measuredHeartRateSamples(deviceId: String, from: Int, toExclusive: Int, limit: Int) async throws -> [HRSample] {
+        try syncRead { db in
+            try Row.fetchAll(db, sql: "SELECT ts,bpm FROM hrSample WHERE deviceId = ? AND ts >= ? AND ts < ? AND bpm > 0 ORDER BY ts LIMIT ?",
+                arguments: [deviceId, from, toExclusive, max(0, limit)])
+                .map { HRSample(ts: $0["ts"], bpm: $0["bpm"]) }
+        }
+    }
+
+    /// Half-open windows assign a boundary reading to exactly one consecutive timed set.
+    public func measuredHeartRateStats(deviceId: String, from: Int, toExclusive: Int) async throws -> HRWindowStats {
+        try syncRead { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT COUNT(*) AS n,AVG(bpm) AS avg,MAX(bpm) AS peak FROM hrSample WHERE deviceId = ? AND ts >= ? AND ts < ? AND bpm > 0",
+                arguments: [deviceId, from, toExclusive]) else { return HRWindowStats(n: 0, avg: nil, max: nil) }
+            return HRWindowStats(n: row["n"], avg: row["avg"], max: row["peak"])
+        }
+    }
+
     /// Shared decoder, JSONDecoder is stateless across decodes and was previously allocated once
     /// per event row. Battery events are dense (~every 8 min), so a multi-year read decodes
     /// thousands of rows; reusing one decoder removes that per-row allocation.

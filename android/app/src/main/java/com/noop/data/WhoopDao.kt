@@ -481,6 +481,15 @@ interface WhoopDao : DeviceRegistryDao {
     )
     suspend fun rawHrSamples(deviceId: String, from: Long, to: Long, limit: Int): List<HrSample>
 
+    /** Measured-only positive readings for timed sets. Swift twin: measuredHeartRateSamples.
+     * Half-open bounds prevent a boundary second from belonging to two consecutive sets. */
+    @Query(MEASURED_WORKOUT_HR_SAMPLES_SQL)
+    suspend fun measuredHeartRateSamples(deviceId: String, from: Long, toExclusive: Long, limit: Int): List<HrSample>
+
+    /** Full-window statistics for measured rows; no optical fallback. Swift: measuredHeartRateStats. */
+    @Query(MEASURED_WORKOUT_HR_STATS_SQL)
+    suspend fun measuredHeartRateStats(deviceId: String, from: Long, toExclusive: Long): HrWindowStats
+
     /** Downsampled HR for charting: mean bpm per [bucketSeconds]-wide bucket over [from, to],
      *  keyed by the bucket start (floor(ts/bucket)*bucket). Aggregated in SQL so a 24h window
      *  returns ~(to-from)/bucketSeconds rows, not every ~1 Hz sample. Mirrors macOS hrBuckets.
