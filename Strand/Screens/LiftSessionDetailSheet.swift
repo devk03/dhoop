@@ -42,6 +42,10 @@ struct LiftSessionDetailSheet: View {
     @State private var heartRatePoints: [TrendPoint] = []
     @State private var heartRateError: String?
     @State private var chartLimited = false
+    #if os(iOS)
+    @ObservedObject private var tracker = WorkoutTrackerClient.shared
+    @State private var reviewingDelivery: UUID?
+    #endif
 
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
@@ -73,6 +77,11 @@ struct LiftSessionDetailSheet: View {
                     }
                     footnote
                     NoopButton("Edit sets", systemImage: "pencil", kind: .secondary) { editing = true }
+                    #if os(iOS)
+                    if let source = UUID(uuidString: session.id), let reference = tracker.historyReferences.first(where: { $0.sourceWorkoutId == source }) {
+                        NoopButton("Tracker delivery", systemImage: "link", kind: .secondary) { reviewingDelivery = reference.id }
+                    }
+                    #endif
                     deleteSection
                 }
             }
@@ -83,6 +92,11 @@ struct LiftSessionDetailSheet: View {
         .frame(width: 560, height: 780)
         #endif
         .background(StrandPalette.surfaceBase)
+        #if os(iOS)
+        .sheet(isPresented: Binding(get: { reviewingDelivery != nil }, set: { if !$0 { reviewingDelivery = nil } })) {
+            if let reviewingDelivery { NavigationStack { WorkoutTrackerDeliveryView(deliveryId: reviewingDelivery) } }
+        }
+        #endif
         .task { await load() }
         .sheet(isPresented: $editing) {
             LiftSessionEditSheet(session: storedSession, sets: sets) {

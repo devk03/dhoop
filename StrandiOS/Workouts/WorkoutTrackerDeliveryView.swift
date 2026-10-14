@@ -15,7 +15,7 @@ struct WorkoutTrackerDeliveryView: View {
     @State private var remoteCheckedAt: Date?
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
-    private var delivery: WorkoutTrackerDelivery? { client.state.deliveries.first { $0.id == deliveryId } }
+    private var delivery: WorkoutTrackerDelivery? { try? client.delivery(deliveryId) }
 
     var body: some View {
         ScreenScaffold(title: "Workout delivery", subtitle: LocalizedStringKey(delivery?.record.programName ?? "Strength workout")) {
