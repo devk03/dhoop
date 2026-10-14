@@ -138,7 +138,7 @@ struct HeartMetricsView: View, Equatable {
             if let count = data(capturedAt)?.hrvSavedDays, count > (data(capturedAt)?.hrvMonth.count ?? 0) {
                 Button("\(count.formatted()) saved days · View all") {
                     rangeSelection.preset = .all; expandedAt = Date(); expandedMetric = .hrv
-                }.font(StrandFont.caption).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                }.font(StrandFont.caption).buttonStyle(NoopButtonStyle(.tertiary))
             }
         }
     }

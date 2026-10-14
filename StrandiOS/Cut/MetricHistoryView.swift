@@ -106,7 +106,7 @@ struct MetricHistoryView: View {
                                 }
                                 Button("Show all history") { selection.preset = .all }
                                     .font(StrandFont.subhead)
-                                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                                    .buttonStyle(NoopButtonStyle(.secondary))
                             }
                         }
                     }

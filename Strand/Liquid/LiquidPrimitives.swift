@@ -451,14 +451,10 @@ extension View {
     }
 }
 
-/// The "this card was pressed" response for any tappable liquid card — a small settle inward plus a
-/// touch of dimming. Cheap (a transform), so it's free on static cards and makes every tap feel physical.
+/// Compatibility name for existing rows/cards. Feedback and accessibility stay in StrandDesign.
 struct LiquidPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.975 : 1)
-            .opacity(configuration.isPressed ? 0.86 : 1)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+        NoopFeedbackButtonStyle().makeBody(configuration: configuration)
     }
 }
 

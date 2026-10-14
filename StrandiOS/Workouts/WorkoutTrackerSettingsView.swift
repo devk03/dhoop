@@ -24,7 +24,7 @@ struct WorkoutTrackerSettingsView: View {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Toggle("Connect workout tracker", isOn: Binding(get: { client.state.enabled }, set: { enabled in
                             do { try client.setEnabled(enabled) } catch { self.error = error.localizedDescription }
-                        })).tint(StrandPalette.accent).disabled((!client.configured && !client.state.enabled) || client.storageUnavailable)
+                        })).toggleStyle(NoopSwitchStyle()).disabled(client.busy || (!client.configured && !client.state.enabled) || client.storageUnavailable)
                         Text(client.state.message).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                         if let captured = client.state.capturedAt {
                             Text("Last routine read: \(captured.formatted(date: .abbreviated, time: .shortened))")

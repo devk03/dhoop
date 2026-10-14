@@ -66,7 +66,7 @@ public struct NoopFeedbackButtonStyle: ButtonStyle {
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(minWidth: NoopButtonMetrics.minHitTarget, minHeight: NoopButtonMetrics.minHitTarget)
-            .modifier(NoopPressFeedback(pressed: configuration.isPressed))
+            .modifier(NoopPressFeedback(pressed: configuration.isPressed, scalesOnPress: false))
     }
 }
 
@@ -85,13 +85,14 @@ public struct NoopIconButtonStyle: ButtonStyle {
 
 struct NoopPressFeedback: ViewModifier {
     let pressed: Bool
+    var scalesOnPress = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
     func body(content: Content) -> some View {
         content
             .contentShape(Rectangle())
             .opacity(isEnabled ? (pressed ? NoopButtonMetrics.pressedOpacity : 1) : NoopButtonMetrics.disabledOpacity)
-            .scaleEffect(pressed && isEnabled && !reduceMotion ? NoopButtonMetrics.pressedScale : 1)
+            .scaleEffect(pressed && isEnabled && !reduceMotion && scalesOnPress ? NoopButtonMetrics.pressedScale : 1)
             .animation(reduceMotion ? nil : StrandMotion.interactive, value: pressed)
     }
 }
