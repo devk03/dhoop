@@ -103,4 +103,57 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
         object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 99], "sets": [setID: 1]]
         XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]))
     }
+
+    func testAdditionalSetRemainsCaptureOnlyAndCannotBeAcknowledgedAsAPrescribedSet() throws {
+        var binding = try binding()
+        let extraID = UUID(), event = UUID()
+        try binding.bindAdditionalSet(exerciseIndex: 0, slotIndex: 2, sourceSetId: extraID)
+        XCTAssertNil(binding.occurrences[0].sets[1].lifeSetId)
+        let restored = try JSONDecoder().decode(WorkoutTrackerCaptureBinding.self, from: JSONEncoder().encode(binding))
+        XCTAssertEqual(restored.occurrences[0].sets[1].sourceSetId, extraID)
+        let record = LiftSessionRow(id: binding.sourceWorkoutId.uuidString.lowercased(), deviceId: "strap", startTs: 1000, endTs: 1600, sport: "Strength Training", programId: nil, programName: nil, sessionRpe: nil, note: nil)
+        let extra = LiftSetRow(id: extraID.uuidString.lowercased(), deviceId: "strap", sessionId: record.id, ord: 0, exercise: "Bench", primaryMuscle: nil, setIndex: 2, weightKg: 60, reps: 9, rpe: 7.5, isWarmup: false, startTs: nil, endTs: nil, restSec: nil, note: nil)
+        let bytes = try WorkoutCapturePayload.make(record: record, sets: [extra], binding: binding, installationId: UUID(), revision: 1).bytes()
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        let occurrences = try XCTUnwrap(object["exerciseOccurrences"] as? [[String: Any]])
+        let sets = try XCTUnwrap(occurrences[0]["sets"] as? [[String: Any]])
+        XCTAssertTrue(sets[0]["lifeSetId"] is NSNull)
+        XCTAssertEqual(sets[0]["reps"] as? Int, 9)
+        var ack: [String: Any] = ["schemaVersion": 1, "eventId": event.uuidString, "sourceWorkoutId": record.id, "acceptedSourceRevision": 1,
+            "outcome": "applied", "lifeRevision": 1, "receiptLifeRevision": 1, "preservedFields": [], "reconciliation": ["state": "done"],
+            "mappings": ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [:],
+                "setTargets": [extra.id: ["kind": "capture_set", "sourceWorkoutId": record.id, "sourceSetId": extra.id]]]]
+        func decode() throws -> WorkoutCaptureAcknowledgement { try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: JSONSerialization.data(withJSONObject: ack)) }
+        try decode().validate(binding: binding, sets: [extra])
+        ack["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [extra.id: 99],
+            "setTargets": [extra.id: ["kind": "workout_set", "lifeSetId": 99, "sessionExerciseId": 2]]]
+        XCTAssertThrowsError(try decode().validate(binding: binding, sets: [extra]))
+    }
+
+    func testTombstoneIntentRequiresCompletedLocalDeletionAndNeverDeletesSensorHistory() async throws {
+        let binding = try binding(), event = UUID(), install = UUID()
+        let record = LiftSessionRow(id: binding.sourceWorkoutId.uuidString.lowercased(), deviceId: "strap", startTs: 1000, endTs: 1600, sport: "Strength Training", programId: nil, programName: nil, sessionRpe: nil, note: nil)
+        let set = LiftSetRow(id: binding.occurrences[0].sets[0].sourceSetId.uuidString.lowercased(), deviceId: "strap", sessionId: record.id, ord: 0, exercise: "Bench", primaryMuscle: nil, setIndex: 1, weightKg: 60, reps: 8, rpe: nil, isWarmup: false, startTs: 1010, endTs: 1040, restSec: nil, note: nil)
+        let bytes = try WorkoutCapturePayload.make(record: record, sets: [set], binding: binding, installationId: install, revision: 2, eventId: event, baseLifeRevision: 12, deleting: true).bytes()
+        let delivery = WorkoutTrackerDelivery(id: event, sourceWorkoutId: binding.sourceWorkoutId, installationId: install,
+            origin: "https://track.kunjadia.dev", revision: 2, bytes: bytes, record: record, sets: [set], binding: binding, operation: .delete)
+        try delivery.validateBody()
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        XCTAssertEqual(object["operation"] as? String, "delete")
+        XCTAssertEqual(object["baseLifeRevision"] as? Int, 12)
+        XCTAssertEqual((object["exerciseOccurrences"] as? [Any])?.count, 0)
+        let store = try await WhoopStore.inMemory()
+        try await store.saveLiftRecording(session: record, sets: [set], workout: WorkoutRow(startTs: 1000, endTs: 1600, sport: "Strength Training", source: "manual", durationS: 600, energyKcal: nil, avgHr: nil, maxHr: nil, strain: nil, distanceM: nil, zonesJSON: nil, notes: nil, steps: nil))
+        _ = try await store.insert(Streams(hr: [HRSample(ts: 1020, bpm: 90)]), deviceId: "strap")
+        let before = try await delivery.matches(store: store)
+        XCTAssertFalse(before)
+        _ = try await store.deleteLiftRecording(record)
+        let after = try await delivery.matches(store: store)
+        XCTAssertTrue(after)
+        let measured = try await store.measuredHeartRateStats(deviceId: "strap", from: 1000, toExclusive: 1600)
+        XCTAssertEqual(measured.n, 1)
+        let restored = try JSONDecoder().decode(WorkoutTrackerDelivery.self, from: JSONEncoder().encode(delivery))
+        XCTAssertEqual(restored.bytes, bytes, "Relaunch must preserve the immutable tombstone event")
+        XCTAssertEqual(restored.operation, .delete)
+    }
 }

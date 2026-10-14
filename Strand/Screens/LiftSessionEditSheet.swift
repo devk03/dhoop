@@ -300,7 +300,19 @@ struct LiftSessionEditSheet: View {
         if sessionRpeText != originalSessionRpe {
             row.sessionRpe = LiftFormat.number(sessionRpeText)
         }
-        do { try await store.editLiftRecording(session: row, upserts: change.upserts, deletedSetIDs: change.deletedIds) }
+        do {
+            #if os(iOS)
+            let candidate = sets.filter { old in !change.deletedIds.contains(old.id) && !change.upserts.contains(where: { $0.id == old.id }) } + change.upserts
+            let trackerEvent = try await WorkoutTrackerClient.shared.prepareHistoryChange(record: row, sets: candidate, store: store)
+            #endif
+            try await store.editLiftRecording(session: row, upserts: change.upserts, deletedSetIDs: change.deletedIds)
+            #if os(iOS)
+            if let trackerEvent {
+                do { try await WorkoutTrackerClient.shared.confirmPersistence(trackerEvent, store: store) }
+                catch { saveError = "Your changes are saved locally. Tracker delivery state needs recovery; your edits are retained."; return }
+            }
+            #endif
+        }
         catch { saveError = error.localizedDescription; return }
         await onSaved()
         dismiss()

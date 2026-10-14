@@ -18,6 +18,12 @@ final class WorkoutSetObservationTests: XCTestCase {
         XCTAssertTrue(cleared["reps"] is NSNull)
         XCTAssertNil(cleared["loadKg"])
         XCTAssertNil(cleared["startedAt"], "An unmeasured time must not be synthesized")
+        value.notes = .value("Keep elbows tucked · second set felt harder")
+        XCTAssertEqual(try json(value)["notes"] as? String, "Keep elbows tucked · second set felt harder")
+        value.notes = .clear
+        XCTAssertTrue(try json(value)["notes"] is NSNull)
+        value.notes = .value(String(repeating: "😀", count: 1001))
+        XCTAssertThrowsError(try JSONEncoder().encode(value), "The receiver's text bound counts UTF-16 units; never silently truncate notes")
     }
     func testKgPrecisionAndFractionalRpeArePreservedWithoutInventingRir() throws {
         var value = observation()

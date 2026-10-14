@@ -683,3 +683,37 @@ by this local capture change. No workout is written into the official WHOOP app.
 
 Software builds and controller/store tests do not establish locked-phone collection reliability,
 wearer-felt vibration, or physiological accuracy. Those require physical-device checks.
+
+### Optional Life workout connection
+
+The iPhone Strength hub exposes Tracker routines; Settings exposes Workout tracker. The connection
+is off by default. A dedicated workout credential is stored separately in Keychain, bound to the
+explicitly configured owner origin and public installation UUID. Saving the connection keeps it off.
+No credentials or production service are created by the app. Reads use bounded pagination, reject
+mixed revisions and check a fresh manifest before starting. No recurring polling job is installed.
+
+A tracker capture retains exact cycle/session/occurrence/set IDs, its prescription snapshot, actual
+IANA timezone and original connection destination. Source workout and set UUIDs survive relaunch and
+save retries. Additional actual sets have source UUIDs but no prescribed Life set ID; they remain
+capture-only and do not alter Life prescriptions or progression. Added exercises without an approved
+occurrence binding remain local and require review rather than being matched by name. Bodyweight and
+per-hand load labels follow the manifest; RIR is never inferred from RPE.
+
+Delivery intent is written atomically in the private Application Support folder before the SQLite
+recording transaction. Credentials are not needed to retain this intent. Only exact persisted session,
+set and paired-workout values can become ready to send. Historical corrections retain source IDs;
+deletion records a tombstone intent and verifies local removal without deleting sensor samples.
+An earlier unverified receipt or an unsupported binding keeps a change in review. These sidecar files
+change no database schema and are not currently part of the cross-platform `.noopbak` whitelist.
+
+Each event body is immutable. Timeouts retry the same event. A verified receipt must identify the
+requested capture, revision, programmed target and prescribed/capture-only set mappings. A receipt
+that accepts observations with derived progression pending is labeled separately; a manual Sync
+retries that same receipt. HTTP errors and revision conflicts retain local data. Conflicts do not
+silently refresh IDs or overwrite website edits. Timed-set HR summaries use measured sensor rows
+for the original strap and half-open actual windows; missing timing and coverage remain unavailable.
+
+The native integration and matching Life receiver are local development work. Production deployment,
+dedicated credentials and any Cloudflare path activation require separate authorization. Additional
+occurrence editing, conflict review/rebinding, archival of the bounded delivery queue and backup
+coverage require further work before this integration is considered complete.

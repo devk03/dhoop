@@ -49,21 +49,24 @@ struct WorkoutCapturePayload: Encodable {
 
     static func make(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding,
                      installationId: UUID, revision: Int, eventId: UUID = UUID(),
-                     heartRateEvidence: [UUID: WorkoutObservedHeartRate] = [:]) throws -> WorkoutCapturePayload {
+                     heartRateEvidence: [UUID: WorkoutObservedHeartRate] = [:],
+                     baseLifeRevision: Int? = nil, deletedSetIds: [UUID] = [], deleting: Bool = false) throws -> WorkoutCapturePayload {
         try binding.validate()
         guard UUID(uuidString: record.id) == binding.sourceWorkoutId, revision > 0,
               sets.allSatisfy({ $0.sessionId == record.id && $0.deviceId == record.deviceId }),
               let end = record.endTs, end >= record.startTs else { throw WorkoutTrackerContractError.invalidSnapshot }
         if let rpe = record.sessionRpe, !rpe.isFinite || !(0...10).contains(rpe) { throw WorkoutTrackerContractError.invalidSnapshot }
         let ids = Set(sets.map(\.id))
-        guard ids.count == sets.count else { throw WorkoutTrackerContractError.invalidSnapshot }
+        guard ids.count == sets.count, sets.count <= 200,
+              deletedSetIds.count <= 200, Set(deletedSetIds).count == deletedSetIds.count,
+              Set(deletedSetIds).isDisjoint(with: sets.compactMap { UUID(uuidString: $0.id) }) else { throw WorkoutTrackerContractError.invalidSnapshot }
         let known = Set(binding.occurrences.flatMap(\.sets).map { $0.sourceSetId.uuidString.lowercased() })
         // Additional sets need an explicit occurrence binding; never attach them by a display name.
         guard ids.isSubset(of: known) else { throw WorkoutTrackerContractError.invalidSnapshot }
         let formatter = ISO8601DateFormatter()
         func date(_ seconds: Int) -> String { formatter.string(from: Date(timeIntervalSince1970: Double(seconds))) }
         var occurrences: [Occurrence] = []
-        for (order, identity) in binding.occurrences.enumerated() {
+        for (order, identity) in binding.occurrences.enumerated() where !deleting {
             guard let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == identity.sessionExerciseId }) else {
                 throw WorkoutTrackerContractError.invalidSnapshot
             }
@@ -73,16 +76,19 @@ struct WorkoutCapturePayload: Encodable {
                 var observed = WorkoutSetObservation(sourceSetId: set.sourceSetId,
                     setType: row.isWarmup ? .warmup : .work,
                     loadBasis: try basis(prescribed.loadBasis))
-                observed.lifeSetId = .value(set.lifeSetId)
+                observed.lifeSetId = set.lifeSetId.map(WorkoutObservationPatch.value) ?? .clear
                 observed.completed = (row.reps ?? 0) > 0
                 observed.loadKg = row.weightKg.map(WorkoutObservationPatch.value) ?? .clear
                 observed.reps = row.reps.map(WorkoutObservationPatch.value) ?? .clear
                 observed.rpe = row.rpe.map(WorkoutObservationPatch.value) ?? .clear
+                observed.notes = row.note.map(WorkoutObservationPatch.value) ?? .clear
+                // The legacy native row retains kg, not the original text/unit entry.
+                observed.enteredLoad = .clear
                 observed.startedAt = row.startTs.map { .value(date($0)) } ?? .clear
                 observed.endedAt = row.endTs.map { .value(date($0)) } ?? .clear
                 if let evidence = heartRateEvidence[set.sourceSetId] {
                     observed.heartRateSummary = .value(evidence)
-                }
+                } else { observed.heartRateSummary = .clear }
                 observed.executionOrder = row.ord
                 try observed.validate()
                 observations.append(observed)
@@ -93,12 +99,12 @@ struct WorkoutCapturePayload: Encodable {
                 executionOrder: order, sets: observations))
         }
         return WorkoutCapturePayload(eventId: eventId.uuidString.lowercased(), sourceWorkoutId: binding.sourceWorkoutId.uuidString.lowercased(),
-            installationId: installationId.uuidString.lowercased(), sourceRevision: revision, operation: "upsert",
-            baseLifeRevision: binding.manifest.lifeRevision, manifestRevision: binding.manifest.manifestRevision,
+            installationId: installationId.uuidString.lowercased(), sourceRevision: revision, operation: deleting ? "delete" : "upsert",
+            baseLifeRevision: baseLifeRevision ?? binding.manifest.lifeRevision, manifestRevision: binding.manifest.manifestRevision,
             binding: Binding(cycleId: binding.manifest.cycleId, sessionId: binding.manifest.sessionId),
-            session: Session(title: record.programName ?? binding.manifest.title, status: "completed",
+            session: Session(title: record.programName ?? binding.manifest.title, status: deleting ? "cancelled" : "completed",
                 startedAt: date(record.startTs), endedAt: date(end), timeZone: binding.timeZone, notes: record.note, rpe: record.sessionRpe),
-            exerciseOccurrences: occurrences, deletedSetIds: [])
+            exerciseOccurrences: occurrences, deletedSetIds: deleting ? [] : deletedSetIds.map { $0.uuidString.lowercased() }.sorted())
     }
     /// Stored strap readings only; no extrapolated coverage or statistics for untimed sets.
     static func measuredEvidence(record: LiftSessionRow, sets: [LiftSetRow], store: WhoopStore) async throws -> [UUID: WorkoutObservedHeartRate] {
@@ -129,8 +135,16 @@ struct WorkoutCapturePayload: Encodable {
 struct WorkoutCaptureAcknowledgement: Decodable {
     struct Mappings: Decodable {
         struct Session: Decodable { let kind: String; let cycleId: Int?; let sessionId: Int? }
+        struct SetTarget: Decodable {
+            let kind: String
+            let lifeSetId: Int?
+            let sessionExerciseId: Int?
+            let sourceWorkoutId: UUID?
+            let sourceSetId: UUID?
+        }
         let session: Session
         let sets: [String: Int]
+        let setTargets: [String: SetTarget]?
     }
     struct Reconciliation: Decodable {
         let state: String
@@ -158,12 +172,22 @@ struct WorkoutCaptureAcknowledgement: Decodable {
     func validate(binding: WorkoutTrackerCaptureBinding, sets: [LiftSetRow]) throws {
         guard mappings.session.kind == "programmed", mappings.session.cycleId == binding.manifest.cycleId,
               mappings.session.sessionId == binding.manifest.sessionId else { throw WorkoutSyncTransportError.invalidResponse }
-        let prescribed = Dictionary(uniqueKeysWithValues: binding.occurrences.flatMap(\.sets).map {
-            ($0.sourceSetId.uuidString.lowercased(), $0.lifeSetId)
-        })
         for row in sets {
-            guard let expected = prescribed[row.id.lowercased()], mappings.sets[row.id.lowercased()] == expected else {
+            guard let id = UUID(uuidString: row.id),
+                  let occurrence = binding.occurrences.first(where: { $0.sets.contains(where: { $0.sourceSetId == id }) }),
+                  let identity = occurrence.sets.first(where: { $0.sourceSetId == id }) else {
                 throw WorkoutSyncTransportError.invalidResponse
+            }
+            let target = mappings.setTargets?[row.id.lowercased()]
+            if let expected = identity.lifeSetId {
+                guard mappings.sets[row.id.lowercased()] == expected else { throw WorkoutSyncTransportError.invalidResponse }
+                if let target {
+                    guard target.kind == "workout_set", target.lifeSetId == expected,
+                          target.sessionExerciseId == occurrence.sessionExerciseId else { throw WorkoutSyncTransportError.invalidResponse }
+                }
+            } else {
+                guard let target, target.kind == "capture_set", target.sourceWorkoutId == binding.sourceWorkoutId,
+                      target.sourceSetId == id, mappings.sets[row.id.lowercased()] == nil else { throw WorkoutSyncTransportError.invalidResponse }
             }
         }
     }

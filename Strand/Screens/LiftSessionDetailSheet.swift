@@ -139,7 +139,18 @@ struct LiftSessionDetailSheet: View {
             return
         }
 
-        do { _ = try await store.deleteLiftRecording(session) }
+        do {
+            #if os(iOS)
+            let trackerEvent = try await WorkoutTrackerClient.shared.prepareHistoryChange(record: storedSession, sets: sets, store: store, deleting: true)
+            #endif
+            _ = try await store.deleteLiftRecording(session)
+            #if os(iOS)
+            if let trackerEvent {
+                do { try await WorkoutTrackerClient.shared.confirmPersistence(trackerEvent, store: store) }
+                catch { deleteError = "The session was deleted locally. Tracker delivery state needs recovery; its tombstone intent is retained."; return }
+            }
+            #endif
+        }
         catch { deleteError = error.localizedDescription; return }
 
         await onChanged()

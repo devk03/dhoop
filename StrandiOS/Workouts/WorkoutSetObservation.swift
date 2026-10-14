@@ -58,6 +58,7 @@ struct WorkoutSetObservation: Encodable, Equatable {
     var reps: WorkoutObservationPatch<Int> = .unchanged
     var enteredLoad: WorkoutObservationPatch<WorkoutEnteredLoad> = .unchanged
     var rpe: WorkoutObservationPatch<Double> = .unchanged
+    var notes: WorkoutObservationPatch<String> = .unchanged
     var rir: WorkoutObservationPatch<Int> = .unchanged
     var startedAt: WorkoutObservationPatch<String> = .unchanged
     var endedAt: WorkoutObservationPatch<String> = .unchanged
@@ -69,7 +70,7 @@ struct WorkoutSetObservation: Encodable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case sourceSetId, lifeSetId, setType, completed, loadKg, loadBasis, reps, enteredLoad
-        case rpe, rir, startedAt, endedAt, measuredActiveSeconds, heartRateSummary
+        case rpe, notes, rir, startedAt, endedAt, measuredActiveSeconds, heartRateSummary
         case supersetGroupId, roundIndex, executionOrder
     }
     func encode(to encoder: Encoder) throws {
@@ -84,6 +85,7 @@ struct WorkoutSetObservation: Encodable, Equatable {
         try c.encodePatch(reps, forKey: .reps)
         try c.encodePatch(enteredLoad, forKey: .enteredLoad)
         try c.encodePatch(rpe, forKey: .rpe)
+        try c.encodePatch(notes, forKey: .notes)
         try c.encodePatch(rir, forKey: .rir)
         try c.encodePatch(startedAt, forKey: .startedAt)
         try c.encodePatch(endedAt, forKey: .endedAt)
@@ -105,6 +107,7 @@ struct WorkoutSetObservation: Encodable, Equatable {
         }
         if case .value(let count) = reps, !(0...100).contains(count) { throw WorkoutObservationError.invalid("rep count") }
         if case .value(let rating) = rpe, !rating.isFinite || !(0...10).contains(rating) { throw WorkoutObservationError.invalid("RPE") }
+        if case .value(let notes) = notes, notes.utf16.count > 2000 { throw WorkoutObservationError.invalid("set notes") }
         if case .value(let rating) = rir, !(0...5).contains(rating) { throw WorkoutObservationError.invalid("RIR") }
         if case .value(let round) = roundIndex, !(0...199).contains(round) { throw WorkoutObservationError.invalid("superset round") }
         if let executionOrder, !(0...1000).contains(executionOrder) { throw WorkoutObservationError.invalid("set execution order") }

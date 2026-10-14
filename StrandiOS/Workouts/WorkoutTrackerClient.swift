@@ -110,14 +110,16 @@ final class WorkoutTrackerClient: ObservableObject {
     }
 
     /// Persist the complete local intent before SQLite. Unsupported bindings remain reviewable.
-    func prepare(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding, store: WhoopStore) async throws -> UUID {
+    func prepare(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding, store: WhoopStore,
+                 deleting: Bool = false, isHistoricalChange: Bool = false) async throws -> UUID {
         // Saving does not require the Keychain or an enabled connection. The destination belongs
         // to the capture, so changing settings cannot redirect an existing workout's observations.
         let destination = binding.connection ?? state.origin.flatMap { origin in
             state.installationId.map { WorkoutTrackerCaptureBinding.Connection(origin: origin, installationId: $0) }
         }
         guard let destination else { throw WorkoutSyncTransportError.configuration }
-        if let retry = state.deliveries.last(where: { $0.sourceWorkoutId == binding.sourceWorkoutId && $0.status == .prepared && $0.record == record && $0.sets == sets }) {
+        let operation: WorkoutTrackerDelivery.Operation = deleting ? .delete : .upsert
+        if let retry = state.deliveries.last(where: { $0.sourceWorkoutId == binding.sourceWorkoutId && $0.status == .prepared && $0.record == record && $0.sets == sets && ($0.operation ?? .upsert) == operation }) {
             return retry.id
         }
         let revision = (state.deliveries.filter { $0.sourceWorkoutId == binding.sourceWorkoutId }.map(\.revision).max() ?? 0) + 1
@@ -126,17 +128,33 @@ final class WorkoutTrackerClient: ObservableObject {
         var message = "Waiting for verified local persistence"
         do {
             guard binding.connection != nil else { throw WorkoutTrackerContractError.invalidSnapshot }
-            let evidence = try await WorkoutCapturePayload.measuredEvidence(record: record, sets: sets, store: store)
+            let previous = state.deliveries.filter { $0.sourceWorkoutId == binding.sourceWorkoutId }
+            let verifiedRevision = previous.filter { $0.status == .accepted }.map(\.revision).max() ?? 0
+            // A local correction cannot resolve an unknown previous server outcome by replaying it.
+            if isHistoricalChange, previous.contains(where: { $0.status != .accepted && $0.revision > verifiedRevision }) {
+                throw WorkoutTrackerContractError.unavailableCapture
+            }
+            let acknowledged = previous.last(where: { $0.status == .accepted })
+            let receipt = acknowledged?.acknowledgement.flatMap { try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0) }
+            let removed = Set(previous.filter { $0.status == .accepted }.flatMap(\.sets).map(\.id)).subtracting(sets.map(\.id))
+            let evidence = deleting ? [:] : try await WorkoutCapturePayload.measuredEvidence(record: record, sets: sets, store: store)
             bytes = try WorkoutCapturePayload.make(record: record, sets: sets, binding: binding,
-                installationId: destination.installationId, revision: revision, eventId: event, heartRateEvidence: evidence).bytes()
+                installationId: destination.installationId, revision: revision, eventId: event, heartRateEvidence: evidence,
+                baseLifeRevision: receipt?.lifeRevision, deletedSetIds: removed.compactMap(UUID.init(uuidString:)), deleting: deleting).bytes()
         }
         catch { message = "Saved intent needs binding review before upload. Local values are retained." }
         var next = state
         next.deliveries.append(WorkoutTrackerDelivery(id: event, sourceWorkoutId: binding.sourceWorkoutId,
             installationId: destination.installationId, origin: destination.origin, revision: revision, bytes: bytes,
-            record: record, sets: sets, binding: binding, message: message))
+            record: record, sets: sets, binding: binding, operation: operation, message: message))
         try commit(next)
         return event
+    }
+
+    /// History changes retain the same capture IDs. An unknown earlier receipt requires review.
+    func prepareHistoryChange(record: LiftSessionRow, sets: [LiftSetRow], store: WhoopStore, deleting: Bool = false) async throws -> UUID? {
+        guard let previous = state.deliveries.last(where: { $0.sourceWorkoutId.uuidString.lowercased() == record.id.lowercased() }) else { return nil }
+        return try await prepare(record: record, sets: sets, binding: previous.binding, store: store, deleting: deleting, isHistoricalChange: true)
     }
 
     func confirmPersistence(_ id: UUID, store: WhoopStore) async throws {
@@ -146,7 +164,7 @@ final class WorkoutTrackerClient: ObservableObject {
         var next = state
         guard let index = next.deliveries.firstIndex(where: { $0.id == id }) else { return }
         next.deliveries[index].status = item.bytes == nil ? .review : .ready
-        next.deliveries[index].message = item.bytes == nil ? "Saved locally · review extra exercise/set bindings before upload" : "Saved locally · waiting for tracker receipt"
+        next.deliveries[index].message = item.bytes == nil ? "Saved locally · review capture bindings or an earlier unverified receipt" : (item.operation == .delete ? "Deleted locally · waiting for tracker tombstone receipt" : "Saved locally · waiting for tracker receipt")
         next.message = "Workout saved locally. Tracker delivery is separate."
         try commit(next)
     }
@@ -178,8 +196,8 @@ final class WorkoutTrackerClient: ObservableObject {
                 if ack.outcome == "stale" || ack.acceptedSourceRevision != item.revision {
                     try updateDelivery(item.id, status: .review, message: "Tracker has a newer capture revision; review before retrying", acknowledgement: response)
                 } else {
-                    try ack.validate(binding: item.binding, sets: item.sets)
-                    let receipt = ack.outcome == "manual_preserved" ? "Tracker accepted observations and preserved website edits" : "Tracker accepted this capture revision"
+                    try ack.validate(binding: item.binding, sets: item.operation == .delete ? [] : item.sets)
+                    let receipt = !ack.preservedFields.isEmpty || ack.outcome == "manual_preserved" ? "Tracker accepted observations and preserved website edits" : "Tracker accepted this capture revision"
                     try updateDelivery(item.id, status: .accepted,
                         message: ack.reconciliation.pending ? "\(receipt) · derived progress is pending; Sync retries the same receipt" : receipt,
                         acknowledgement: response)
@@ -187,7 +205,7 @@ final class WorkoutTrackerClient: ObservableObject {
             } catch WorkoutSyncTransportError.http(let code) {
                 try updateDelivery(item.id, status: code == 409 ? .review : .failed,
                     message: code == 409 ? "Tracker revision or binding changed. Review before retrying." : "Tracker returned HTTP \(code). Saved locally; retry uses the same event.")
-                if code == 401 || code == 503 { return }
+                throw WorkoutSyncTransportError.http(code)
             } catch {
                 try updateDelivery(item.id, status: .failed, message: "Tracker receipt was not verified. Saved locally; retry uses the same event.")
                 throw error

@@ -3,6 +3,7 @@ import WhoopStore
 
 struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     enum Status: String, Codable { case prepared, ready, accepted, review, failed }
+    enum Operation: String, Codable { case upsert, delete }
     let id: UUID
     let sourceWorkoutId: UUID
     let installationId: UUID
@@ -12,6 +13,7 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     let record: LiftSessionRow
     let sets: [LiftSetRow]
     let binding: WorkoutTrackerCaptureBinding
+    var operation: Operation? = nil
     var status: Status = .prepared
     var message = "Waiting for verified local persistence"
     var acknowledgement: Data?
@@ -30,6 +32,11 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     /// The queue cannot claim persistence until the exact UUID-bound recording is present.
     func matches(store: WhoopStore) async throws -> Bool {
         let rows = try await store.liftSessions(deviceId: record.deviceId, fromTs: record.startTs, toTs: record.startTs)
+        if operation == .delete {
+            guard !rows.contains(where: { $0.id == record.id }), try await store.liftSets(sessionId: record.id).isEmpty else { return false }
+            let workouts = try await store.workouts(deviceId: record.deviceId, from: record.startTs, to: record.startTs, limit: 100)
+            return !workouts.contains { $0.startTs == record.startTs && $0.sport == record.sport && $0.source == "manual" }
+        }
         guard rows.contains(record) else { return false }
         let saved = try await store.liftSets(sessionId: record.id)
         guard saved.sorted(by: { $0.id < $1.id }) == sets.sorted(by: { $0.id < $1.id }) else { return false }
@@ -43,6 +50,7 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
               (object["eventId"] as? String).flatMap(UUID.init(uuidString:)) == id,
               (object["sourceWorkoutId"] as? String).flatMap(UUID.init(uuidString:)) == sourceWorkoutId,
               (object["installationId"] as? String).flatMap(UUID.init(uuidString:)) == installationId,
-              (object["sourceRevision"] as? Int) == revision else { throw WorkoutTrackerContractError.invalidSnapshot }
+              (object["sourceRevision"] as? Int) == revision,
+              (object["operation"] as? String) == (operation ?? .upsert).rawValue else { throw WorkoutTrackerContractError.invalidSnapshot }
     }
 }

@@ -130,18 +130,29 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
     struct Occurrence: Codable, Equatable {
         let sourceOccurrenceId: UUID
         let sessionExerciseId: Int
-        let sets: [SetBinding]
+        var sets: [SetBinding]
     }
     struct SetBinding: Codable, Equatable {
         let sourceSetId: UUID
-        let lifeSetId: Int
+        let lifeSetId: Int?
         let slotIndex: Int
     }
     let sourceWorkoutId: UUID
     let manifest: WorkoutTrackerManifest
     let timeZone: String
     let connection: Connection?
-    let occurrences: [Occurrence]
+    var occurrences: [Occurrence]
+
+    mutating func bindAdditionalSet(exerciseIndex: Int, slotIndex: Int, sourceSetId: UUID) throws {
+        guard occurrences.indices.contains(exerciseIndex), slotIndex > 0 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        if let existing = occurrences[exerciseIndex].sets.first(where: { $0.slotIndex == slotIndex }) {
+            guard existing.sourceSetId == sourceSetId else { throw WorkoutTrackerContractError.invalidSnapshot }
+            return
+        }
+        guard slotIndex > manifest.exerciseOccurrences[exerciseIndex].sets.count else { throw WorkoutTrackerContractError.invalidSnapshot }
+        occurrences[exerciseIndex].sets.append(SetBinding(sourceSetId: sourceSetId, lifeSetId: nil, slotIndex: slotIndex))
+        try validate()
+    }
 
     init(manifest: WorkoutTrackerManifest, timeZone: String = TimeZone.current.identifier, connection: Connection? = nil) throws {
         try manifest.validate()
@@ -162,14 +173,17 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
         var ids: Set<UUID> = []
         for occurrence in occurrences {
             guard let prescribed = manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }),
-                  occurrence.sets.count == prescribed.sets.count,
-                  Set(occurrence.sets.map(\.slotIndex)).count == occurrence.sets.count else { throw WorkoutTrackerContractError.invalidSnapshot }
+                  occurrence.sets.count >= prescribed.sets.count,
+                  Set(occurrence.sets.map(\.slotIndex)).count == occurrence.sets.count,
+                  Set(occurrence.sets.map(\.slotIndex)).isSuperset(of: prescribed.sets.indices.map { $0 + 1 }) else { throw WorkoutTrackerContractError.invalidSnapshot }
             for set in occurrence.sets {
-                guard set.slotIndex > 0, set.slotIndex <= prescribed.sets.count,
-                      prescribed.sets.contains(where: { $0.lifeSetId == set.lifeSetId }), ids.insert(set.sourceSetId).inserted else {
+                guard (1...200).contains(set.slotIndex) else { throw WorkoutTrackerContractError.invalidSnapshot }
+                let target = prescribed.sets.indices.contains(set.slotIndex - 1) ? prescribed.sets[set.slotIndex - 1].lifeSetId : nil
+                guard set.lifeSetId == target, ids.insert(set.sourceSetId).inserted else {
                     throw WorkoutTrackerContractError.invalidSnapshot
                 }
             }
         }
+        guard ids.count <= 200 else { throw WorkoutTrackerContractError.invalidSnapshot }
     }
 }

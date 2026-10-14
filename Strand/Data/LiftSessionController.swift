@@ -469,12 +469,20 @@ final class LiftSessionController: ObservableObject {
 
     /// Identities are assigned once and persisted before a save, so retries/relaunches reuse them.
     func identity(for slot: LiftSlot) -> UUID {
-        if let existing = setIdentities[slot] { return existing }
         let prescribed = trackerBinding.flatMap { binding -> UUID? in
             guard binding.occurrences.indices.contains(slot.exerciseIndex) else { return nil }
             return binding.occurrences[slot.exerciseIndex].sets.first { $0.slotIndex == slot.setIndex }?.sourceSetId
         }
-        let id = prescribed ?? UUID(); setIdentities[slot] = id; persist()
+        let id = setIdentities[slot] ?? prescribed ?? UUID()
+        setIdentities[slot] = id
+        if var binding = trackerBinding, binding.occurrences.indices.contains(slot.exerciseIndex),
+           !binding.occurrences[slot.exerciseIndex].sets.contains(where: { $0.slotIndex == slot.setIndex }) {
+            do {
+                try binding.bindAdditionalSet(exerciseIndex: slot.exerciseIndex, slotIndex: slot.setIndex, sourceSetId: id)
+                trackerBinding = binding
+            } catch { log("Strength: additional set binding needs review; local entry is retained") }
+        }
+        persist()
         return id
     }
 
