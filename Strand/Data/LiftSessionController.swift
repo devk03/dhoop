@@ -27,6 +27,9 @@ final class LiftSessionController: ObservableObject {
     @Published private(set) var engine: LiftSessionEngine? { didSet { scheduleRestTimers() } }
     @Published private(set) var programId: String?
     @Published private(set) var programName: String?
+    @Published private(set) var collectionMessage: String?
+    @Published private(set) var sourceDeviceId: String?
+    @Published private(set) var isSaving = false
     /// True while the full sheet is presented; false when minimised to the bottom bar.
     @Published var isPresented = false
 
@@ -102,6 +105,10 @@ final class LiftSessionController: ObservableObject {
     private let setStrapHandler: ((@MainActor () -> Void)?) -> Void
     /// Writes a line to the strap log — how a double-tap the session holds back is accounted for.
     private let log: (String) -> Void
+    /// The app's shared collection/buzz ownership. A failed claim must not start a second workout.
+    private let setCollectionActive: (Bool) -> Bool
+    private let currentDeviceId: () -> String?
+    private var collectionClaimed = false
 
     /// When the session last acted on a strap double-tap (unix seconds). Nil until it has, and after a
     /// relaunch: a knock is judged against a tap in the same sitting, never one from before it.
@@ -120,15 +127,23 @@ final class LiftSessionController: ObservableObject {
 
     init(buzz: @escaping (UInt8) -> Void,
          setStrapHandler: @escaping ((@MainActor () -> Void)?) -> Void,
+         setCollectionActive: @escaping (Bool) -> Bool = { _ in true },
+         currentDeviceId: @escaping () -> String? = { nil },
          log: @escaping (String) -> Void = { _ in }) {
         self.buzz = buzz
         self.setStrapHandler = setStrapHandler
         self.log = log
+        self.setCollectionActive = setCollectionActive
+        self.currentDeviceId = currentDeviceId
     }
 
     // MARK: - Lifecycle
 
-    func start(plan: [LiftPlanItem], programId: String?, programName: String?) {
+    @discardableResult
+    func start(plan: [LiftPlanItem], programId: String?, programName: String?) -> Bool {
+        guard engine == nil, !plan.isEmpty else { return false }
+        guard claimCollection() else { return false }
+        sourceDeviceId = currentDeviceId()
         let stamp = Int(Date().timeIntervalSince1970)
         engine = LiftSessionEngine(plan: plan, startTs: stamp)
         self.programId = programId
@@ -137,6 +152,7 @@ final class LiftSessionController: ObservableObject {
         isPresented = true
         claimStrap()
         persist()
+        return true
     }
 
     /// Pick up the session a previous run of NOOP left going, as the app process starts.
@@ -158,7 +174,9 @@ final class LiftSessionController: ObservableObject {
     /// Rehydrate an interrupted session found on disk. Does NOT present the sheet: the session comes
     /// back as the bottom bar, and the user opens it if they want to.
     func resume(from snapshot: LiftSessionPersistence.Snapshot, present: Bool = false) {
+        guard engine == nil else { return }
         engine = LiftSessionPersistence.engine(from: snapshot)
+        sourceDeviceId = snapshot.sourceDeviceId
         programId = snapshot.programId
         programName = snapshot.programName
         // Numbers typed for sets not yet performed, and warm-ups marked in advance, come back too:
@@ -176,32 +194,69 @@ final class LiftSessionController: ObservableObject {
             warnedFor = nil
         }
         isPresented = present
+        _ = claimCollection()
         claimStrap()
     }
 
     /// Give up the session without saving.
     func discard() {
+        guard !isSaving else { return }
         teardown()
         LiftSessionPersistence.clear()
     }
 
     /// Called once the session has been written to the store.
     func finishedSaving() {
+        guard engine != nil else { return }
         teardown()
         LiftSessionPersistence.clear()
         savedSessions += 1
     }
 
     private func teardown() {
+        releaseCollection()
         engine = nil
         programId = nil
         programName = nil
+        sourceDeviceId = nil
+        isSaving = false
         warnedFor = nil
         lastStrapStepAt = nil
         pendingWarmups = []
         pendingValues = [:]
         isPresented = false
         setStrapHandler(nil)
+    }
+
+    /// Retrying ownership does not restart the session or duplicate its stream reference.
+    @discardableResult
+    func claimCollection() -> Bool {
+        guard !collectionClaimed else { return true }
+        if let sourceDeviceId, let current = currentDeviceId(), sourceDeviceId != current {
+            collectionMessage = "Reconnect the WHOOP used to start this Strength workout before resuming collection."
+            return false
+        }
+        guard setCollectionActive(true) else {
+            collectionMessage = "Finish or pause the other WHOOP workout before collecting for Strength."
+            return false
+        }
+        collectionClaimed = true
+        collectionMessage = nil
+        return true
+    }
+
+    private func deliverBuzz(_ loops: UInt8) {
+        guard sourceDeviceId == currentDeviceId() else {
+            log("Strength: skipped a buzz because its original capture device is not active")
+            return
+        }
+        buzz(loops)
+    }
+
+    private func releaseCollection() {
+        guard collectionClaimed else { return }
+        collectionClaimed = false
+        _ = setCollectionActive(false)
     }
 
     /// The handler runs SYNCHRONOUSLY, inside the frame handling that delivered the tap. It used to hop
@@ -219,9 +274,13 @@ final class LiftSessionController: ObservableObject {
 
     /// The one action. `fromStrap` earns a single confirming buzz, unless the tap reads as a knock.
     func advance(fromStrap: Bool = false) {
-        guard let current = engine else { return }
+        guard !isSaving, let current = engine else { return }
         let stamp = Int(Date().timeIntervalSince1970)
         if fromStrap {
+            if let sourceDeviceId, let current = currentDeviceId(), sourceDeviceId != current {
+                log("Strength: ignored a strap gesture from a different active device")
+                return
+            }
             if let last = lastStrapStepAt,
                Self.isKnock(secondsSinceLastStep: stamp - last, stage: current.stage, now: stamp) {
                 // No buzz: the missing confirmation is the lifter's cue to tap again.
@@ -232,7 +291,7 @@ final class LiftSessionController: ObservableObject {
             lastStrapStepAt = stamp
             // BUZZ FIRST, before any state work. The confirmation is a latency signal — its whole job
             // is to say "that registered" — so it must not queue behind a JSON encode and a defaults write.
-            buzz(LiftSessionController.advanceConfirmBuzzes)
+            deliverBuzz(LiftSessionController.advanceConfirmBuzzes)
         }
 
         engine?.advance(now: stamp)
@@ -382,6 +441,7 @@ final class LiftSessionController: ObservableObject {
     /// Mark a slot as a warm-up (or not). Applies immediately when the set already exists, and is
     /// remembered for when it does not yet.
     func setWarmup(_ slot: LiftSlot, _ isWarmup: Bool) {
+        guard !isSaving else { return }
         if isWarmup { pendingWarmups.insert(slot) } else { pendingWarmups.remove(slot) }
         if let row = engine?.recordedSet(for: slot) {
             engine?.updateSet(slot, weightKg: row.weightKg, reps: row.reps,
@@ -417,8 +477,11 @@ final class LiftSessionController: ObservableObject {
 
     /// Begin a specific set — the out-of-order path, for when a machine is occupied.
     func start(_ slot: LiftSlot, fromStrap: Bool = false) {
-        guard engine != nil else { return }
-        if fromStrap { buzz(LiftSessionController.advanceConfirmBuzzes) }
+        guard !isSaving, engine != nil else { return }
+        if fromStrap {
+            guard sourceDeviceId == currentDeviceId() else { return }
+            deliverBuzz(LiftSessionController.advanceConfirmBuzzes)
+        }
         let stamp = Int(Date().timeIntervalSince1970)
         engine?.start(slot, now: stamp)
         // Starting a slot drops any record it had, so its warm-up mark reverts to pending — which is
@@ -431,6 +494,7 @@ final class LiftSessionController: ObservableObject {
     /// is what tells the caller whether the program behind the session needs rewriting.
     @discardableResult
     func addSet(toExercise index: Int) -> Bool {
+        guard !isSaving else { return false }
         guard engine?.addSet(toExercise: index) == true else { return false }
         persist()
         return true
@@ -442,6 +506,7 @@ final class LiftSessionController: ObservableObject {
     /// carries the id its program line will have if finishing adds it. Returns whether it was added.
     @discardableResult
     func addExercise(_ name: String, primaryMuscle: LiftMuscle?, secondaryMuscles: [LiftMuscle]) -> Bool {
+        guard !isSaving else { return false }
         let line = LiftPlanItem(exercise: name, primaryMuscle: primaryMuscle,
                                 secondaryMuscles: secondaryMuscles.filter { $0 != primaryMuscle },
                                 targetSets: 1, targetRepsLow: 0, targetWeightKg: 0,
@@ -455,6 +520,7 @@ final class LiftSessionController: ObservableObject {
     /// for what "can" means — a completed set is never removed this way.
     @discardableResult
     func removeSet(fromExercise index: Int) -> Bool {
+        guard !isSaving else { return false }
         guard let engine, engine.canRemoveSet(fromExercise: index) else { return false }
         let dropped = LiftSlot(exerciseIndex: index, setIndex: engine.plan[index].targetSets)
         self.engine?.removeSet(fromExercise: index)
@@ -474,6 +540,7 @@ final class LiftSessionController: ObservableObject {
     /// to type into whichever row they are looking at, and being mid-set somewhere else is not a
     /// reason to refuse.
     func updateSet(_ slot: LiftSlot, weightKg: Double?, reps: Int?, rpe: Double?, isWarmup: Bool) {
+        guard !isSaving else { return }
         if engine?.recordedSet(for: slot) != nil {
             engine?.updateSet(slot, weightKg: weightKg, reps: reps, rpe: rpe, isWarmup: isWarmup)
         } else if engine?.planItem(for: slot) != nil {
@@ -495,14 +562,26 @@ final class LiftSessionController: ObservableObject {
     }
 
     func undo() {
+        guard !isSaving else { return }
         engine?.undo()
         persist()
     }
 
     func finish() {
+        guard !isSaving else { return }
         engine?.finish(now: Int(Date().timeIntervalSince1970))
         persist()
     }
+
+    /// Freeze the submitted snapshot while its transaction runs, including hardware gestures.
+    @discardableResult
+    func beginSaving() -> Bool {
+        guard engine != nil, !isSaving else { return false }
+        isSaving = true
+        return true
+    }
+
+    func endSaving() { isSaving = false }
 
     // MARK: - Finishing
 
@@ -536,8 +615,10 @@ final class LiftSessionController: ObservableObject {
     /// (`LiftMetrics.isPerformed`) and Edit sets still shows, so a discard made by mistake can be filled
     /// back in. Done sets keep the order they happened in and their timing; sets never started follow in
     /// plan order, with no timing.
-    func setsToSave(completingUnfinished: Bool) -> [FinishedSet] {
-        guard let engine else { return [] }
+    func setsToSave(completingUnfinished: Bool, finishingAt: Int? = nil) -> [FinishedSet] {
+        guard var engine else { return [] }
+        // Preparing a save must not end the durable live session before storage succeeds.
+        if let finishingAt { engine.finish(now: finishingAt) }
         // The plan's max RPE, which the session shows grey in the RPE field.
         func planned(_ slot: LiftSlot) -> Double? { engine.planItem(for: slot)?.targetRpe }
         var out = engine.sets.map { set -> FinishedSet in
@@ -710,12 +791,12 @@ final class LiftSessionController: ObservableObject {
     }
 
     private func fireRestWarningIfDue() {
-        guard let engine, case .resting(_, let endsAt) = engine.stage else { return }
+        guard !isSaving, let engine, case .resting(_, let endsAt) = engine.stage else { return }
         guard warnedFor != endsAt else { return }
         guard Self.unixNow <= endsAt,
               endsAt - Self.unixNow <= LiftSessionController.restWarningLeadSec else { return }
         warnedFor = endsAt
-        buzz(LiftSessionController.restWarningBuzzes)
+        deliverBuzz(LiftSessionController.restWarningBuzzes)
     }
 
     /// The rest is over: the one moment a session's words change with time alone — on screen and, through
@@ -733,6 +814,7 @@ final class LiftSessionController: ObservableObject {
                                             programId: programId,
                                             programName: programName,
                                             pendingValues: pendingValues,
-                                            pendingWarmups: pendingWarmups))
+                                            pendingWarmups: pendingWarmups,
+                                            sourceDeviceId: sourceDeviceId))
     }
 }

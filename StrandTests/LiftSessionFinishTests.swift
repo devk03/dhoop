@@ -11,6 +11,21 @@ import WhoopStore
 /// set's numbers, without asking.
 @MainActor
 final class LiftSessionFinishTests: XCTestCase {
+    func testPreparingSaveKeepsLiveSessionAndSnapshotUntilStorageSucceeds() throws {
+        let c = controller()
+        c.start(plan: plan(), programId: "p", programName: "Upper A")
+        c.advance()
+        c.advance()
+        let before = try XCTUnwrap(c.engine)
+        let snapshot = try XCTUnwrap(LiftSessionPersistence.load())
+        let prepared = c.setsToSave(completingUnfinished: true, finishingAt: before.stageStartedAt + 12)
+        XCTAssertEqual(c.engine?.stage, before.stage)
+        XCTAssertEqual(c.engine?.stageStartedAt, before.stageStartedAt)
+        XCTAssertEqual(LiftSessionPersistence.load(), snapshot)
+        XCTAssertEqual(prepared.first?.restSec, 12)
+        XCTAssertNil(prepared.last?.startTs, "Preparing a save cannot invent timings for unstarted sets")
+        c.discard()
+    }
 
     private func controller() -> LiftSessionController {
         LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
