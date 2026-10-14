@@ -1,5 +1,12 @@
 import Foundation
 
+/// Read evidence only. Creating this value neither replaces a delivery nor authorizes a write.
+struct WorkoutTrackerReviewComparison {
+    let manifest: WorkoutTrackerManifest
+    let capture: WorkoutTrackerCaptureSnapshot?
+    let checkedAt: Date
+}
+
 /// A consistent read of source observations and canonical projections; these are different facts.
 struct WorkoutTrackerCaptureSnapshot: Decodable {
     struct Binding: Decodable { let kind: String; let cycleId: Int?; let sessionId: Int? }

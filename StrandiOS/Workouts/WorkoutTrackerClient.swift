@@ -220,9 +220,52 @@ final class WorkoutTrackerClient: ObservableObject {
         guard config.origin == item.origin, config.installationId == item.installationId else { throw WorkoutSyncTransportError.configuration }
         busy = true; defer { busy = false }
         let initialGeneration = generation
+        let result = try await readCapture(item: item, config: config)
+        guard initialGeneration == generation, state.enabled, !Task.isCancelled else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        return result
+    }
+
+    /// Bracket the capture read with exact manifest reads. Absence is not receipt recovery.
+    func reviewComparison(deliveryId: UUID) async throws -> WorkoutTrackerReviewComparison {
+        guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
+        guard let item = try delivery(deliveryId) else { throw WorkoutTrackerContractError.invalidSnapshot }
+        let config = try credentials()
+        guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        guard config.origin == item.origin, config.installationId == item.installationId else { throw WorkoutSyncTransportError.configuration }
+        busy = true; defer { busy = false }
+        let initialGeneration = generation
+        func readManifest() async throws -> WorkoutTrackerManifest {
+            let bytes = try await send(.manifest(item.binding.manifest.sessionId), nil, config)
+            let manifest = try JSONDecoder().decode(WorkoutTrackerManifest.self, from: bytes)
+            try manifest.validate()
+            guard manifest.sessionId == item.binding.manifest.sessionId, manifest.cycleId == item.binding.manifest.cycleId else {
+                throw WorkoutTrackerContractError.invalidSnapshot
+            }
+            return manifest
+        }
+        let before = try await readManifest()
+        let capture: WorkoutTrackerCaptureSnapshot?
+        do { capture = try await readCapture(item: item, config: config) }
+        catch WorkoutSyncTransportError.captureNotFound { capture = nil }
+        let after = try await readManifest()
+        guard before == after, capture.map({ $0.lifeRevision == after.lifeRevision }) ?? true,
+              initialGeneration == generation, state.enabled, !Task.isCancelled else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        return WorkoutTrackerReviewComparison(manifest: after, capture: capture, checkedAt: Date())
+    }
+
+    private func readCapture(item: WorkoutTrackerDelivery, config: WorkoutSyncConfiguration) async throws -> WorkoutTrackerCaptureSnapshot {
         var cursor = 0, result: WorkoutTrackerCaptureSnapshot?
         for _ in 0..<5 {
-            let data = try await send(.captures(item.sourceWorkoutId, cursor: cursor, limit: 50), nil, config)
+            let data: Data
+            do { data = try await send(.captures(item.sourceWorkoutId, cursor: cursor, limit: 50), nil, config) }
+            catch WorkoutSyncTransportError.captureNotFound {
+                guard cursor == 0 else { throw WorkoutTrackerContractError.invalidSnapshot }
+                throw WorkoutSyncTransportError.captureNotFound
+            }
             var page = try JSONDecoder().decode(WorkoutTrackerCaptureSnapshot.self, from: data)
             try page.validate(for: item.binding)
             guard page.sets.count <= 50 else { throw WorkoutTrackerContractError.invalidSnapshot }
@@ -237,7 +280,7 @@ final class WorkoutTrackerClient: ObservableObject {
             guard pageCount > 0, next == cursor + pageCount, next <= 200 else { throw WorkoutTrackerContractError.invalidSnapshot }
             cursor = next
         }
-        guard let result, result.nextCursor == nil, initialGeneration == generation, state.enabled, !Task.isCancelled else {
+        guard let result, result.nextCursor == nil else {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         return result

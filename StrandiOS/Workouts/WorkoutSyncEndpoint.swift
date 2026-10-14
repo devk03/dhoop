@@ -81,6 +81,7 @@ enum WorkoutSyncRejection: String, Codable {
 
 enum WorkoutSyncTransportError: LocalizedError {
     case disabled, configuration, payloadTooLarge, invalidResponse, responseTooLarge, http(Int)
+    case captureNotFound
     case rejected(WorkoutSyncRejection)
     var errorDescription: String? {
         switch self {
@@ -89,6 +90,7 @@ enum WorkoutSyncTransportError: LocalizedError {
         case .payloadTooLarge: return "Workout sync exceeds the receiver's payload limit. Local entries are kept."
         case .invalidResponse: return "Workout sync received an invalid acknowledgement."
         case .responseTooLarge: return "Workout sync response exceeded its size limit."
+        case .captureNotFound: return "No capture is visible for this installation. This does not prove an earlier delivery was rejected."
         case .http(let code): return "Workout sync returned HTTP \(code). Local entries are kept."
         case .rejected(let reason): return reason.explanation + " Local entries are kept."
         }

@@ -40,7 +40,7 @@ final class WorkoutSyncTransport: NSObject, URLSessionTaskDelegate, @unchecked S
         guard let http = response as? HTTPURLResponse else { throw WorkoutSyncTransportError.invalidResponse }
         if http.statusCode != 200 {
             // A small JSON conflict code is useful for review; HTML, unknown codes and details are not.
-            if http.statusCode == 409, http.mimeType?.lowercased() == "application/json", response.expectedContentLength <= 4096 {
+            if [404, 409].contains(http.statusCode), http.mimeType?.lowercased() == "application/json", response.expectedContentLength <= 4096 {
                 var errorBody = Data()
                 for try await byte in stream {
                     try Task.checkCancellation()
@@ -48,8 +48,13 @@ final class WorkoutSyncTransport: NSObject, URLSessionTaskDelegate, @unchecked S
                     errorBody.append(byte)
                 }
                 struct Rejection: Decodable { let error: String }
-                if let body = try? JSONDecoder().decode(Rejection.self, from: errorBody), let reason = WorkoutSyncRejection(rawValue: body.error) {
-                    throw WorkoutSyncTransportError.rejected(reason)
+                if let body = try? JSONDecoder().decode(Rejection.self, from: errorBody) {
+                    if http.statusCode == 404, case .captures = endpoint, body.error == "capture_not_found" {
+                        throw WorkoutSyncTransportError.captureNotFound
+                    }
+                    if http.statusCode == 409, let reason = WorkoutSyncRejection(rawValue: body.error) {
+                        throw WorkoutSyncTransportError.rejected(reason)
+                    }
                 }
             }
             throw WorkoutSyncTransportError.http(http.statusCode)

@@ -784,6 +784,14 @@ revisions. Local intent, source observations and canonical website values are sh
 canonical pounds convert through the exact unit factor for display. Retired targets and history-only
 observations do not imply canonical updates. No background comparison poll is started.
 
+The review-recovery client also provides an explicit read-only comparison that brackets capture
+pagination with two exact manifest reads. Both manifests and the capture must have the same Life
+revision; inconsistent reads fail without changing cached plans or delivery intents. Only the
+capture endpoint's bounded JSON `capture_not_found` response represents a capture not visible to
+this installation. A generic 404, login page or network error is not capture absence. This absence
+can also hide an installation mismatch and never resolves an uncertain delivery receipt. This
+comparison foundation does not yet expose a reviewed replacement-delivery action in the UI.
+
 Selected receipt recovery replays the original body only after verifying its current local recording.
 Keep locally retains the event and its data, pauses automatic delivery for that capture across relaunch,
 and leaves previously accepted website data unchanged. Explicit selected recovery remains available.

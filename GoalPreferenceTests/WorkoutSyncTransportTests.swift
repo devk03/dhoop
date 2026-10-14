@@ -100,4 +100,22 @@ final class WorkoutSyncTransportTests: XCTestCase {
         }
         XCTAssertTrue(called)
     }
+
+    func testOnlyCaptureEndpointRecognizesTypedAbsenceAndOther404sRemainFailures() async {
+        let cases: [(WorkoutSyncEndpoint, String, String, Bool)] = [
+            (.captures(UUID(), cursor: 0, limit: 50), "application/json", "{\"error\":\"capture_not_found\"}", true),
+            (.catalog, "application/json", "{\"error\":\"capture_not_found\"}", false),
+            (.captures(UUID(), cursor: 0, limit: 50), "text/html", "not found", false),
+            (.captures(UUID(), cursor: 0, limit: 50), "application/json", "{\"error\":\"route_not_found\"}", false)
+        ]
+        for (endpoint, type, body, absent) in cases {
+            WorkoutMockProtocol.handler = { _ in (404, ["Content-Type": type], Data(body.utf8)) }
+            do {
+                _ = try await WorkoutSyncTransport().send(to: endpoint, credentials: credentials(), configuration: config())
+                XCTFail("Absence is not a success receipt")
+            } catch WorkoutSyncTransportError.captureNotFound { XCTAssertTrue(absent) }
+            catch WorkoutSyncTransportError.http(let status) { XCTAssertFalse(absent); XCTAssertEqual(status, 404) }
+            catch { XCTFail("Unexpected transport result: \(error)") }
+        }
+    }
 }

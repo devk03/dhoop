@@ -64,6 +64,19 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   `/private/tmp/dhoop-controls-480-ios-build.log`, `/private/tmp/dhoop-controls-480-macos-build.log`.
 - Build 480 has not been installed or visually verified on the physical iPhone.
 
+## Tracker review-comparison foundation
+
+- Twenty-six selected tracker client/transport tests passed. The new cases cover typed endpoint
+  absence versus generic 404, changing manifest revisions, capture/manifest revision mismatch,
+  read-only comparison and retention of the exact queued intent.
+- The comparison makes no POST, cached-plan update, replacement event or activation. Missing capture
+  visibility does not establish that an uncertain original event was rejected.
+- Test evidence: `/private/tmp/dhoop-tracker-review-comparison-tests.log`.
+- The iOS app build passed (`/private/tmp/dhoop-review-comparison-ios-build.log`); the build 480
+  artifact retains the stable signing/bundle identity and workout backup file type. Not installed.
+- The explicit reviewed replacement-delivery UI/writer remains unfinished. No physical, production
+  receiver or physiological verification is implied by these tests.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

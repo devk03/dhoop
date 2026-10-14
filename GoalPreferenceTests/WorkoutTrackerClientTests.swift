@@ -225,6 +225,86 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(restored.state.deliveries.first?.status, .accepted)
         XCTAssertEqual(restored.state.deliveries.first?.bytes, original.bytes)
     }
+
+    func testReviewComparisonBracketsAbsentCaptureWithoutReplacingOrSendingTheIntent() async throws {
+        let f = try await fixture()
+        var reads = 0
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            XCTAssertNil(body, "Comparison may not send observations")
+            reads += 1
+            switch endpoint {
+            case .manifest(5): return try JSONEncoder().encode(f.binding.manifest)
+            case .captures(let source, cursor: 0, limit: 50):
+                XCTAssertEqual(source, f.binding.sourceWorkoutId)
+                throw WorkoutSyncTransportError.captureNotFound
+            default: XCTFail("Unexpected write or read"); throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let before = client.state
+        let comparison = try await client.reviewComparison(deliveryId: client.state.deliveries[0].id)
+        XCTAssertNil(comparison.capture)
+        XCTAssertEqual(comparison.manifest, f.binding.manifest)
+        XCTAssertEqual(reads, 3)
+        XCTAssertEqual(client.state, before, "A missing capture cannot authorize replacing an uncertain event")
+    }
+
+    func testReviewComparisonRejectsChangingManifestAndGenericMissingRoute() async throws {
+        for generic404 in [false, true] {
+            let f = try await fixture()
+            var manifestReads = 0
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                XCTAssertNil(body)
+                switch endpoint {
+                case .manifest:
+                    manifestReads += 1
+                    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(f.binding.manifest)) as? [String: Any])
+                    object["lifeRevision"] = manifestReads
+                    return try JSONSerialization.data(withJSONObject: object)
+                case .captures:
+                    if generic404 { throw WorkoutSyncTransportError.http(404) }
+                    throw WorkoutSyncTransportError.captureNotFound
+                default: XCTFail("Comparison cannot send"); throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            let before = client.state
+            do {
+                _ = try await client.reviewComparison(deliveryId: client.state.deliveries[0].id)
+                XCTFail("Inconsistent or unverified absence must fail closed")
+            } catch WorkoutTrackerContractError.invalidSnapshot { XCTAssertFalse(generic404) }
+            catch WorkoutSyncTransportError.http(let code) { XCTAssertTrue(generic404); XCTAssertEqual(code, 404) }
+            XCTAssertEqual(client.state, before)
+            XCTAssertFalse(client.busy)
+        }
+    }
+
+    func testReviewComparisonRequiresCaptureAndManifestAtTheSameRevision() async throws {
+        for captureRevision in [0, 1] {
+            let f = try await fixture()
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                XCTAssertNil(body)
+                switch endpoint {
+                case .manifest: return try JSONEncoder().encode(f.binding.manifest)
+                case .captures:
+                    return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "sourceWorkoutId": f.record.id,
+                        "sourceRevision": 1, "lifeRevision": captureRevision,
+                        "binding": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "tombstone": false,
+                        "session": ["timeZone": "Europe/London"], "ownership": [:],
+                        "projectionPolicy": "apply", "projectionState": "current", "sets": [], "nextCursor": NSNull()])
+                default: XCTFail("Comparison cannot write"); throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            try await ready(client, fixture: f)
+            let before = client.state
+            do {
+                let comparison = try await client.reviewComparison(deliveryId: client.state.deliveries[0].id)
+                XCTAssertEqual(captureRevision, 0)
+                XCTAssertEqual(comparison.capture?.sourceWorkoutId, f.binding.sourceWorkoutId)
+            } catch WorkoutTrackerContractError.invalidSnapshot { XCTAssertEqual(captureRevision, 1) }
+            XCTAssertEqual(client.state, before)
+        }
+    }
     func testUnsupportedNoteIsSavedLocallyWithItsActualValidationReasonAndCannotUpload() async throws {
         let f = try await fixture()
         var rows = f.sets; rows[0].note = String(repeating: "x", count: 2001)
