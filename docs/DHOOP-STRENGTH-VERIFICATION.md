@@ -257,6 +257,34 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - Read-only availability check still found `0A-Homeboy` unavailable on the Mac
   (`/private/tmp/dhoop-488-device-availability.json`). No installation or container write was attempted.
 
+## Build 489 strap-log control pass
+
+- Three hostless preparation tests passed (`/private/tmp/dhoop-log-controls-489-tests.log`):
+  successive same-name exports retain exact independent UTF-8 contents; a blocked staging-directory
+  write retains the earlier export and blocking file; filenames cannot escape their staging folder.
+  Tests use temporary fixtures, not owner logs. They protect preparation, not native picker behavior.
+- Signed generic-device iOS and macOS builds passed:
+  `/private/tmp/dhoop-log-controls-489-ios-build.log` and
+  `/private/tmp/dhoop-log-controls-489-macos-final-build.log`. Build 489 retains stable bundle/team
+  and the workout metadata document type. Source comment hygiene and diff checks passed.
+- Strap-log controls now use shared action states and full-width wrapping. Preparation creates a
+  retained local file; verified saving and native sharing are separate. Pending operations reject
+  duplicates. Preparation/read/write failure and cancelled saving preserve the previous prepared
+  file. A changed active source during diagnostic reads prevents publishing that mixed snapshot.
+- macOS Copy reports the pasteboard setter's actual Boolean result; iOS completes after the native
+  setter. These native clipboard/picker actions were compiled but not exercised on the owner's phone.
+  Save controls for both prepared logs and CSVs reset when the file URL changes, so success for an
+  older file cannot remain attached to a new preparation. Share controls make no completion claim.
+- Settings no longer describes connection/full pairing as proof of streaming or persistence, and
+  does not promise HR-only sleep staging from an incomplete bond. Data collection remains the place
+  to inspect actual counts/freshness. No decoder, analytic formula or numeric data changed.
+- Built-in ImageGen reference `docs/design/dhoop-strap-log-controls-study.png` and adjacent exact
+  prompt show demo states. Implementation keeps native error/save dialogs; the reference's inline
+  error is illustrative. Physical picker cancellation, Dynamic Type, VoiceOver, gestures and visual
+  acceptance remain outstanding. This is an Apple Settings UX change; no Android storage contract changed.
+- No migration, owner log export, clipboard write, phone launch/installation, WHOOP command or cue
+  was executed by tooling. The full goal remains active, with storage approval and hardware gates pending.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
