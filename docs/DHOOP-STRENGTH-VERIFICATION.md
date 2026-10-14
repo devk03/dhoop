@@ -12,6 +12,8 @@
 - The subsequent 13 client tests passed after tightening archive-summary consistency. Companion
   backup tests cover archive round trips, conflicting event IDs, missing files, disabled restoration,
   original bindings and credential exclusion. They do not verify the native Files interface.
+- The latest 14 client tests passed after preserving the actual validation reason and full local
+  notes when tracker payload preparation fails. The iOS target was rebuilt afterward successfully.
 
 Evidence logs are local development artifacts, not product data:
 `/private/tmp/dhoop-strength-reorder-tests.log`,
@@ -20,6 +22,8 @@ Evidence logs are local development artifacts, not product data:
 `/private/tmp/dhoop-strength-477-ios-build.log`,
 `/private/tmp/dhoop-strength-477-macos-build.log`.
 The final iOS metadata rebuild is `/private/tmp/dhoop-strength-477-final-metadata-ios-build.log`.
+Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests.log` and
+`/private/tmp/dhoop-strength-477-reviewed-final-ios-build.log`.
 
 ## Physical checks still required
 
