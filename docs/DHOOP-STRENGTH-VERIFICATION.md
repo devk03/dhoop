@@ -380,6 +380,32 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - Next scoped review: alarm-detail custom navigation/destructive controls and root tab transition
   motion. The add-device wizard already uses shared primary/row feedback in the inspected paths.
 
+## Build 493 local alarm results and reduced-motion shell
+
+- Sixteen alarm-manager tests passed (`/private/tmp/dhoop-alarm-controls-493-tests.log`). New
+  fixture cases cover failed toggle/delete/skip/report writes preserving state and original bytes,
+  idempotent local deletion, and wearer reports requiring the known past occurrence. Mocked offline
+  links execute no strap commands in those failure cases; this is not a physical alarm test.
+- Signed generic-device iOS and macOS builds passed:
+  `/private/tmp/dhoop-alarm-controls-493-ios-build.log` and
+  `/private/tmp/dhoop-alarm-controls-493-macos-build.log`. Stable bundle/team/document type remain;
+  build 493 is not installed. Source comment/diff hygiene passed.
+- Local alarm mutators expose their actual save result. Native deletion/menu failures are surfaced;
+  skip/report controls use shared async feedback. Their success means local metadata was saved,
+  not that WHOOP cleared an alarm or the wearer felt a motor cue. Existing exact slot ownership,
+  wake preservation and readback scheduling are unchanged.
+- Alarm-detail destructive/navigation and export controls use shared feedback. Wearer-report buttons
+  stack at accessibility Dynamic Type. Native confirmation dialogs remain. The iOS tab crossfade and
+  Strength session-bar transition respect system/in-app reduced-motion preferences.
+- Built-in ImageGen reference `docs/design/dhoop-alarm-local-action-study.png` and adjacent prompts
+  show fictional states only. Repeat captions were corrected to one readout. Actual interface
+  accessibility/gestures/native dialogs and hardware behavior remain unverified.
+- `docs/DHOOP-GOAL-COMPLETION-AUDIT.md` records each full requirement and its acceptance gap. Some
+  history-detail session/workout/previous-volume reads still swallow failures into fallbacks;
+  they require correction. Superset/variation/true pause storage still awaits the five-field approval.
+- No migration, owner alarm edit/delete/report, phone launch/installation, strap command, cue,
+  production update or physiological validation was performed by tooling. The full goal is incomplete.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
