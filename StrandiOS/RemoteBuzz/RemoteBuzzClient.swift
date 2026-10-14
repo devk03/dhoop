@@ -13,6 +13,8 @@ final class RemoteBuzzClient: ObservableObject {
     @Published private(set) var invitationJSON: String?
     @Published private(set) var state = RemoteBuzzState()
     @Published private(set) var paired = false
+    @Published private(set) var checkingInbox = false
+    @Published private(set) var retryingUpdates = false
     @Published private(set) var registrationStatus = "Not registered with Life" {
         didSet { writeDebugSnapshotIfRequested() }
     }
@@ -111,7 +113,7 @@ final class RemoteBuzzClient: ObservableObject {
         return environment == "development" ? "sandbox" : "production"
     }
 
-    func preparePairing() {
+    @discardableResult func preparePairing() -> Bool {
         do {
             guard loaded, enrollment == nil else { throw RemoteBuzzEnrollmentError.invalid }
             let identityAccount = "remote-buzz-installation-v2"
@@ -129,10 +131,11 @@ final class RemoteBuzzClient: ObservableObject {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             invitationJSON = String(data: try encoder.encode(pairing.invitation), encoding: .utf8)
             status = "Public pairing invitation ready for Life. Expires in ten minutes."
-        } catch { status = "Could not prepare pairing. Check signing and existing connection." }
+            return true
+        } catch { status = "Could not prepare pairing. Check signing and existing connection."; return false }
     }
 
-    func importEnvelope(_ bytes: Data) {
+    @discardableResult func importEnvelope(_ bytes: Data) -> Bool {
         do {
             guard loaded, enrollment == nil, bytes.count <= 8192,
                   let pairingBytes = try SleepWebhookKeychain.read(pairingAccount), !pairingBytes.isEmpty
@@ -149,7 +152,8 @@ final class RemoteBuzzClient: ObservableObject {
             try SleepWebhookKeychain.save(Data(), account: pairingAccount)
             status = "Paired with Life. Remote alerts remain off until you enable them."
             UIApplication.shared.registerForRemoteNotifications()
-        } catch { status = "Pairing failed. Keep the envelope and create a fresh invitation if expired." }
+            return true
+        } catch { status = "Pairing setup did not fully complete. Check the current connection status; the encrypted response is retained."; return false }
     }
 
     func pairingURL() -> URL? {
@@ -347,7 +351,7 @@ final class RemoteBuzzClient: ObservableObject {
             scheduleFlush()
         } catch { status = "Delivery evidence could not be saved" }
     }
-    func confirm(eventId: String, felt: Bool) {
+    @discardableResult func confirm(eventId: String, felt: Bool) -> Bool {
         do {
             guard loaded, let enrollment,
                   state.receipts.contains(where: { $0.receipt.eventId == eventId && $0.receipt.stage == "strap_requested" && $0.receipt.outcome == "requested" })
@@ -358,7 +362,8 @@ final class RemoteBuzzClient: ObservableObject {
             try persist(next)
             model?.ble.buzzDelivery.recordWearerConfirmation(id: "life|" + eventId, felt: felt)
             scheduleFlush()
-        } catch { status = "Could not save your vibration confirmation" }
+            return true
+        } catch { status = "Could not save your vibration confirmation"; return false }
     }
 
     func retryPending() { scheduleFlush() }
@@ -390,9 +395,10 @@ final class RemoteBuzzClient: ObservableObject {
         guard loaded, state.enabled, !state.revoked, let enrollment, let model, inboxTask == nil,
               model.ble.buzzDelivery.link().ready, model.ble.buzzDelivery.exclusiveOwner == nil,
               inboxPolicy.begin(trigger, now: Date()) else { return }
+        checkingInbox = true
         inboxTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.inboxTask = nil }
+            defer { self.inboxTask = nil; self.checkingInbox = false }
             do {
                 let now = Int(Date().timeIntervalSince1970)
                 let seen = Array(self.state.events.filter { $0.enrollmentId == enrollment.enrollmentId && $0.expiresAt > now }
@@ -430,9 +436,10 @@ final class RemoteBuzzClient: ObservableObject {
     private func scheduleFlush() {
         guard loaded, enrollment != nil, retryTask == nil else { return }
         // One bounded outbox pass, triggered by an actual event. No background keepalive or monitor.
+        retryingUpdates = true
         retryTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.retryTask = nil }
+            defer { self.retryTask = nil; self.retryingUpdates = false }
             for _ in 0..<10 {
                 guard !Task.isCancelled else { return }
                 await self.flushOnce()

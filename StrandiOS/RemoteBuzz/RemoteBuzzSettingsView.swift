@@ -10,6 +10,11 @@ struct RemoteBuzzSettingsView: View {
     @State private var envelopeText = ""
     @State private var importingFile = false
     @State private var confirmRevocation = false
+    @State private var importError: String?
+    private struct ActionFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
 
     private var latest: RemoteBuzzState.Event? { client.state.events.last }
     var body: some View {
@@ -19,7 +24,7 @@ struct RemoteBuzzSettingsView: View {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Toggle("Remote alerts", isOn: Binding(get: { client.state.enabled && !client.state.revoked },
                             set: { client.setEnabled($0) }))
-                            .font(StrandFont.headline).tint(StrandPalette.accent)
+                            .font(StrandFont.headline).toggleStyle(NoopSwitchStyle())
                             .disabled(!client.paired || client.state.revoked)
                         Text(client.status).font(StrandFont.subhead)
                         Text(client.registrationStatus).font(StrandFont.caption)
@@ -60,16 +65,18 @@ struct RemoteBuzzSettingsView: View {
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                         Label("Wake alarms", systemImage: "alarm").font(StrandFont.headline)
-                        Text("Separate from agent cues. Existing WHOOP wake alarms are preserved. New alarm controls need verified readback and safe restoration before they can be enabled.")
+                        Text("Manage wake alarms in Alarms. Slot ownership and verified readback remain separate from remote agent cues; pairing does not grant alarm-slot ownership.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
                 DisclosureGroup("Troubleshooting") {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Button("Retry pending Life updates") { client.retryPending() }
-                            .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        Button("Check for waiting buzzes") { client.checkInbox() }
-                            .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        NoopActionButton("Retry pending Life updates", systemImage: "arrow.clockwise", kind: .secondary,
+                                         state: client.retryingUpdates ? .working : .idle) { client.retryPending() }
+                        NoopActionButton("Check for waiting buzzes", systemImage: "tray", kind: .secondary,
+                                         state: client.checkingInbox ? .working : .idle) { client.checkInbox() }
+                        Text("These actions request bounded checks. The evidence above confirms receipt, strap response and your felt-vibration report separately.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         Text("Missed requests are checked on opening, reconnecting and real Bluetooth wakes, with a ten-minute adaptive foreground window. No background keepalive is used. Expired requests never buzz late.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         BuzzDeliveryStatusView(ble: app.ble)
@@ -82,11 +89,18 @@ struct RemoteBuzzSettingsView: View {
             if case .success(let url) = result {
                 let access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
-                if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-                   size <= 8192, let data = try? Data(contentsOf: url) { client.importEnvelope(data) }
-                else { client.importEnvelope(Data()) }
+                do {
+                    guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= 8192 else { throw RemoteBuzzEnrollmentError.invalid }
+                    guard client.importEnvelope(try Data(contentsOf: url)) else { throw ActionFailure(message: client.status) }
+                    importError = nil
+                } catch { importError = "Encrypted pairing could not be imported. The file is unchanged; check connection status before retrying." }
+            } else if case .failure = result {
+                importError = "The encrypted response file could not be opened. Your pasted response is retained."
             }
         }
+        .alert("Pairing import needs attention", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
+            Button("OK", role: .cancel) { importError = nil }
+        } message: { Text(importError ?? "") }
         .confirmationDialog("Revoke this Life connection? Remote alerts stop immediately on this phone. A new pairing will be required.", isPresented: $confirmRevocation, titleVisibility: .visible) {
             Button("Revoke connection", role: .destructive) { client.revoke() }
         }
@@ -98,8 +112,9 @@ struct RemoteBuzzSettingsView: View {
                 Label("Connect to Life", systemImage: "link").font(StrandFont.headline)
                 Text("Create a public invitation, approve it in your Life Settings, then import the encrypted response. The private pairing key stays on this phone.")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                Button("Create pairing invitation") { client.preparePairing() }
-                    .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                NoopAsyncButton("Create pairing invitation", systemImage: "link") {
+                    guard client.preparePairing() else { throw ActionFailure(message: client.status) }
+                }
                 if let invitation = client.invitationJSON {
                     Button("Open pairing in Life") { if let url = client.pairingURL() { openURL(url) } }
                         .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
@@ -113,8 +128,10 @@ struct RemoteBuzzSettingsView: View {
                     TextEditor(text: $envelopeText).font(StrandFont.caption)
                         .frame(minHeight: NoopMetrics.minimumTouchTarget * 3)
                         .accessibilityLabel("Encrypted pairing response")
-                    Button("Import encrypted response") { client.importEnvelope(Data(envelopeText.utf8)) }
-                        .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    NoopAsyncButton("Import encrypted response", systemImage: "lock.shield") {
+                        guard client.importEnvelope(Data(envelopeText.utf8)) else { throw ActionFailure(message: client.status) }
+                        envelopeText = ""
+                    }
                         .disabled(envelopeText.isEmpty)
                     Button("Choose encrypted response file") { importingFile = true }
                         .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
@@ -129,10 +146,12 @@ struct RemoteBuzzSettingsView: View {
         }.fixedSize(horizontal: false, vertical: true).accessibilityElement(children: .combine)
     }
     @ViewBuilder private func confirmation(_ eventId: String) -> some View {
-        Button("I felt it") { client.confirm(eventId: eventId, felt: true) }
-            .buttonStyle(NoopButtonStyle(.primary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
-        Button("I didn’t feel it") { client.confirm(eventId: eventId, felt: false) }
-            .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
+        NoopAsyncButton("I felt it", systemImage: "checkmark") {
+            guard client.confirm(eventId: eventId, felt: true) else { throw ActionFailure(message: client.status) }
+        }
+        NoopAsyncButton("I didn’t feel it", systemImage: "xmark", kind: .secondary) {
+            guard client.confirm(eventId: eventId, felt: false) else { throw ActionFailure(message: client.status) }
+        }
     }
 }
 #endif
