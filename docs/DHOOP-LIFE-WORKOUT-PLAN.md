@@ -74,7 +74,8 @@ features, and rest cues must use the shared buzz system without changing wake al
 - [x] Frozen cached starts, explicit replacement lineage and observed execution ordering.
 - [x] Immutable outbox, exact receipt retries, paused local retention and metadata backup.
 - [x] Read-only source/canonical comparison and coherent manifest/capture comparison foundation.
-- [ ] Reviewed recovery proposal, differences UI and immutable replacement-intent writer.
+- [x] Reviewed upsert/apply-recovery proposal, differences UI and immutable replacement-intent writer.
+- [ ] Reviewed historical deletion recovery when its original receipt needs new preconditions.
 - [ ] Explicit accepted-capture history-only correction and accurate receipt labels.
 - [ ] Complete pause/resume with durable active intervals and measured-window attribution.
 - [ ] Supersets and exercise variations after approval of the required additive storage changes.
@@ -84,6 +85,7 @@ features, and rest cues must use the shared buzz system without changing wake al
       persisted sample observations, pause/lock/reconnect/relaunch, edits/deletion and gesture checks.
 - [ ] Separately approved receiver deployment, dedicated credentials and production activation.
 
-The native review foundation passed 26 targeted client/transport tests and the iOS build. It does
-not yet expose a replacement-delivery action. No production write, migration, installation,
+The native recovery path passed 46 selected manifest/client/delivery/transport tests, including
+unchanged observations, retained provenance, explicit separate send, changed local/remote data,
+identities, equal/newer remote source revisions and occurrence tombstones. No production write, migration, installation,
 wearer-confirmed cue or physiological accuracy is established by those software checks.

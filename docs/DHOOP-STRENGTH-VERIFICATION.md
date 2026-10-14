@@ -77,6 +77,26 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - The explicit reviewed replacement-delivery UI/writer remains unfinished. No physical, production
   receiver or physiological verification is implied by these tests.
 
+## Build 481 reviewed recovery
+
+- Forty-six selected manifest/client/delivery/transport tests passed. Reviewed global-only recovery
+  retains source revision; a changed prescription creates a higher revision without changing observed
+  set values or original start provenance. Preparation sends no POST and stays paused after relaunch.
+- Tests reject unknown receipts, changed identity/load mode, changed local/remote snapshots, equal
+  or newer server source revisions, workout/occurrence tombstones and repeated preparation. An
+  already accepted capture can review a newer local correction with exact original bindings.
+- The view uses named StrandDesign tokens and shared action/secondary-button components. Comparison
+  columns stack for accessibility Dynamic Type. Runtime gesture, VoiceOver and visual acceptance
+  on the physical iPhone remain unverified.
+- Evidence: `/private/tmp/dhoop-reviewed-recovery-481-final-tests.log`.
+- iOS and macOS builds passed (`/private/tmp/dhoop-reviewed-recovery-481-final-ios-build.log`,
+  `/private/tmp/dhoop-reviewed-recovery-481-final-macos-build.log`). The signed build 481 artifact
+  retains the stable bundle/team and workout backup file type. It has not been installed.
+- The correction test also verifies retaining the accepted reviewed write plan across relaunch and
+  later local corrections, independently of immutable start provenance. Ownership disagreement
+  between same-revision reads prevents preparation. Source doc-comment hygiene passed.
+- History-only correction is not implemented by this path; it never occurs automatically.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

@@ -790,7 +790,27 @@ revision; inconsistent reads fail without changing cached plans or delivery inte
 capture endpoint's bounded JSON `capture_not_found` response represents a capture not visible to
 this installation. A generic 404, login page or network error is not capture absence. This absence
 can also hide an installation mismatch and never resolves an uncertain delivery receipt. This
-comparison foundation does not yet expose a reviewed replacement-delivery action in the UI.
+comparison now supports an explicit reviewed replacement-delivery action for confirmed revision
+rejections. It does not provide history-only correction as a fallback.
+
+Review a new delivery is available for an upsert after a known `life_revision_conflict` or `manifest_conflict`
+with no uncertain ACK. The review compares current website values, manual ownership, schedule,
+status and prescription differences. Exact cycle/session/exercise/slot/set identities and load bases
+must remain unchanged. Equal or newer ambiguous source revisions, retired targets and tombstones
+prevent preparation. Unknown outcomes must recover the original receipt first.
+
+Prepare reviewed delivery checks the exact local recording again and obtains another unchanged
+coherent tracker comparison. It retains the original event and actual observations, creates a new
+immutable event, and keeps the replacement paused until Send prepared delivery is explicitly tapped.
+Global-only changes retain the source revision; changed prescription hashes increment it. Original
+start provenance is never rewritten. Concurrent edits invalidate the review, and repeated preparation
+cannot create another event. This preparation changes sidecar metadata only, not SQLite or Life.
+The retained reviewed write-plan snapshot is separate from the original start plan. Subsequent
+corrections use the last accepted write precondition while preserving original start provenance;
+a later global-only conflict does not become another prescription change merely because the start
+plan was older. Historical deletion rebase and history-only correction remain separate work.
+The [reviewed delivery design study](design/dhoop-reviewed-delivery-study.png) and
+[built-in ImageGen prompt](design/dhoop-reviewed-delivery-study.prompt.txt) contain demo values.
 
 Selected receipt recovery replays the original body only after verifying its current local recording.
 Keep locally retains the event and its data, pauses automatic delivery for that capture across relaunch,
@@ -813,5 +833,5 @@ workflow has not yet been verified on the physical iPhone.
 
 The native integration and matching Life receiver are local development work. Production deployment,
 dedicated credentials and any Cloudflare path activation require separate authorization. Additional
-reviewed conflict recovery requires further work before this
-integration is considered complete. Physical-device verification remains outstanding.
+history-only correction and activation verification require further work before this integration
+is considered complete. Physical-device verification remains outstanding.
