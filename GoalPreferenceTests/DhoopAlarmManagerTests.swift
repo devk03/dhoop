@@ -58,6 +58,10 @@ final class DhoopAlarmManagerTests: XCTestCase {
         XCTAssertEqual(writes,1)
         XCTAssertNotEqual(manager.status(value,now:Date()),"Stored on WHOOP")
         XCTAssertNotNil(manager.state.slots.first?.pendingRecord)
+        do { try await manager.synchronizeReviewed(); XCTFail("An ACK without stored readback cannot complete the user retry") }
+        catch DhoopAlarmManager.Failure.verificationFailed {}
+        XCTAssertEqual(writes, 2)
+        XCTAssertNotEqual(manager.status(value, now: Date()), "Stored on WHOOP")
     }
     func testCancellationTargetsOnlyOwnedSlotAndPreservesOthers() async throws {
         let (manager, link, _) = setup()
@@ -106,8 +110,58 @@ final class DhoopAlarmManagerTests: XCTestCase {
         let original=Data("not-json".utf8);try original.write(to:url)
         let manager=DhoopAlarmManager(file:.init(url:url))
         XCTAssertNotNil(manager.storageError)
-        manager.save(alarm())
+        XCTAssertFalse(manager.save(alarm()), "A corrupt store cannot report local save success")
         XCTAssertEqual(try Data(contentsOf:url),original)
+    }
+    func testInvalidSaveReturnsFailureWithoutChangingDefinitionsOrRequestingStrapWork() async throws {
+        let (manager, _, url) = setup()
+        var calls = 0
+        manager.exchange = { _, _ in calls += 1; throw DhoopAlarmManager.Failure.unavailable }
+        var invalid = alarm(); invalid.label = String(repeating: "x", count: 101)
+        XCTAssertFalse(manager.save(invalid))
+        await Task.yield()
+        XCTAssertTrue(manager.definitions.isEmpty)
+        XCTAssertNotNil(manager.error)
+        XCTAssertEqual(calls, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
+    func testExplicitSlotReadFailsOnPartialInventoryAndKeepsEveryReadAttributed() async throws {
+        for failedSlot in [0, 3] {
+            let (manager, link, _) = setup()
+            var calls = 0
+            manager.exchange = { opcode, payload in
+                XCTAssertEqual(opcode, 67, "Read completion must not create a strap write")
+                calls += 1
+                if Int(payload[1]) == failedSlot { throw DhoopAlarmManager.Failure.timeout }
+                return .init(deviceID: link.deviceID, connection: link.connection, opcode: opcode, result: "SUCCESS(1)",
+                             payload: [4, payload[1]] + Array(repeating: 0, count: 19))
+            }
+            do { try await manager.readSlotsReviewed(); XCTAssertEqual(failedSlot, 0) }
+            catch DhoopAlarmManager.Failure.invalidRecord { XCTAssertEqual(failedSlot, 3) }
+            XCTAssertEqual(calls, 6)
+            XCTAssertEqual(manager.readings.count, 6)
+            XCTAssertEqual(manager.readings.filter { $0.record == nil }.count, failedSlot == 0 ? 0 : 1)
+            XCTAssertFalse(manager.busy)
+            XCTAssertTrue(manager.state.slots.isEmpty, "Read evidence must not authorize ownership")
+        }
+    }
+    func testExplicitSlotReadRejectsConcurrentReadAndConnectionChanges() async throws {
+        let (manager, initial, _) = setup()
+        var current = initial
+        manager.link = { current }
+        var reads = 0
+        manager.exchange = { opcode, payload in
+            reads += 1
+            do { try await manager.readSlotsReviewed(); XCTFail("A second read must not masquerade as complete") }
+            catch DhoopAlarmManager.Failure.busy {}
+            current.connection = UUID()
+            return .init(deviceID: initial.deviceID, connection: initial.connection, opcode: opcode, result: "SUCCESS(1)",
+                         payload: [4, payload[1]] + Array(repeating: 0, count: 19))
+        }
+        do { try await manager.readSlotsReviewed(); XCTFail("Changed-link results cannot certify the inventory") }
+        catch DhoopAlarmManager.Failure.stale {}
+        XCTAssertEqual(reads, 1)
+        XCTAssertFalse(manager.busy)
     }
     func testClearRecoveryAfterRelaunchDoesNotResendAlarm() async throws {
         let (_, link, url) = setup()

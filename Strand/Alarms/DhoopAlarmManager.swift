@@ -33,7 +33,8 @@ final class DhoopAlarmManager: ObservableObject {
         let connection: UUID
     }
     enum Failure: LocalizedError {
-        case unavailable, timeout, stale, invalidRecord, rejected, conflict, storage
+        case unavailable, timeout, stale, invalidRecord, rejected, conflict, storage, busy
+        case verificationFailed(String)
         var errorDescription: String? {
             switch self {
             case .unavailable: return "Connect the paired WHOOP 5 to synchronize alarms."
@@ -43,6 +44,8 @@ final class DhoopAlarmManager: ObservableObject {
             case .rejected: return "WHOOP did not accept the operation. Existing storage needs checking."
             case .conflict: return "This slot changed on WHOOP. Dhoop preserved it."
             case .storage: return "Alarm state could not be saved. No new write was requested."
+            case .busy: return "Another WHOOP alarm check is in progress. Wait for it to finish."
+            case .verificationFailed(let message): return message
             }
         }
     }
@@ -83,14 +86,16 @@ final class DhoopAlarmManager: ObservableObject {
         }
         _ = commit(next)
     }
-    func save(_ definition: DhoopAlarmDefinition, now: Date = Date()) {
-        guard definition.valid else { error = "Choose a valid time and label."; return }
+    @discardableResult func save(_ definition: DhoopAlarmDefinition, now: Date = Date()) -> Bool {
+        guard definition.valid else { error = "Choose a valid time and label."; return false }
         var next = state, value = definition
         if let i = next.definitions.firstIndex(where: { $0.id == value.id }) {
             value.revision = next.definitions[i].revision + 1; next.definitions[i] = value
         } else { next.definitions.append(value) }
         append("Saved \(value.label); automatic WHOOP verification pending.", to: &next, now: now)
-        if commit(next) { requestSync() }
+        guard commit(next) else { return false }
+        requestSync()
+        return true
     }
     func toggle(_ id: String, enabled: Bool) {
         guard var definition = state.definitions.first(where: { $0.id == id && !$0.deleted }) else { return }
@@ -196,6 +201,27 @@ final class DhoopAlarmManager: ObservableObject {
         }
         if same(captured) { context = link() }
         exportDiagnostics()
+    }
+    /// Explicit read completion means six attributed, decodable records, not an empty or partial list.
+    func readSlotsReviewed() async throws {
+        guard !busy else { throw Failure.busy }
+        let captured = link()
+        guard captured.ready && captured.whoop5 else { throw Failure.unavailable }
+        await refresh()
+        try Task.checkCancellation()
+        guard same(captured) else { throw Failure.stale }
+        guard readings.count == 6, Set(readings.map(\.slot)) == Set(1...6), readings.allSatisfy({
+            $0.record != nil && $0.deviceID == captured.deviceID && $0.connection == captured.connection
+        }) else { throw Failure.invalidRecord }
+    }
+    /// The explicit retry awaits the existing owned-slot reconciler; it grants no new ownership.
+    func synchronizeReviewed() async throws {
+        guard !busy else { throw Failure.busy }
+        guard storageError == nil else { throw Failure.storage }
+        await synchronize()
+        try Task.checkCancellation()
+        guard storageError == nil else { throw Failure.storage }
+        if let error { throw Failure.verificationFailed(error) }
     }
     func connectionChanged() {
         context = link(); readings = []
