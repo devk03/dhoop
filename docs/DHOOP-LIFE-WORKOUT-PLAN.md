@@ -11,6 +11,11 @@ Life commit `c98ba65` adds a read-only exact event receipt lookup with focused r
 production build. It remains local and undeployed; native delivery activation is a separate gate.
 Life commit `f751538` makes read-only lookup the first recovery step throughout the contract;
 ingestion retry is a separate write requiring current observations or an explicit reviewed choice.
+Life commit `82ea3ac` adds the optional source phase ledger. Focused receiver tests and the production
+build passed; deployment, dedicated credentials and native storage approval remain separate gates.
+Test-only follow-up `6154998` pins session-wide rest pauses, set-associated work pauses, zero-duration
+evidence and unresolved ends after completion. The focused receiver suite passed again; invalid
+intervals reject before the atomic batch, preserving queued canonical and source writes.
 
 ## One workout, logged once
 
@@ -144,8 +149,8 @@ round-trip tests must agree before applying them. Existing workout IDs, raw HR a
 
 The proposed optional wire field is `session.activityIntervals`, a typed array (not a JSON string):
 `{sourceIntervalId, kind: work|rest|pause, sourceSetId: UUID|null, startedAt, endedAt: timestamp|null}`.
-The receiver currently rejects this field; its local source-retention extension is being implemented
-and tested before any native transmission. Omission preserves the existing snapshot, null explicitly
+Life commit `82ea3ac` implements and tests this optional source-retention field locally. It is not
+deployed; native transmission must not assume a destination supports it before activation. Omission preserves the existing snapshot, null explicitly
 clears/marks unknown, and an empty array explicitly retains no intervals. Present arrays replace the
 complete observed snapshot at a new source revision. Limits are 512 intervals and the existing 128 KiB
 request bound; neither side may truncate evidence to fit.
