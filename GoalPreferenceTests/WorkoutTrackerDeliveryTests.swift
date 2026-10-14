@@ -1,5 +1,6 @@
 import XCTest
 import WhoopStore
+import WhoopProtocol
 @testable import DhoopGoalTests
 
 final class WorkoutTrackerDeliveryTests: XCTestCase {
@@ -54,5 +55,52 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
         let corrupt = Data("invalid-state".utf8); try corrupt.write(to: url)
         XCTAssertThrowsError(try WorkoutTrackerFileStore(url: url).load())
         XCTAssertEqual(try Data(contentsOf: url), corrupt)
+    }
+
+    func testTimedSetEvidenceUsesOriginalStrapAndHalfOpenActualWindow() async throws {
+        let binding = try binding(), id = binding.sourceWorkoutId.uuidString.lowercased()
+        let setID = try XCTUnwrap(binding.occurrences.first?.sets.first?.sourceSetId)
+        let record = LiftSessionRow(id: id, deviceId: "original", startTs: 1000, endTs: 1600, sport: "Strength Training", programId: nil, programName: nil, sessionRpe: nil, note: nil)
+        let timed = LiftSetRow(id: setID.uuidString.lowercased(), deviceId: "original", sessionId: id, ord: 0, exercise: "Bench", primaryMuscle: nil, setIndex: 1,
+            weightKg: 60, reps: 8, rpe: nil, isWarmup: false, startTs: 1010, endTs: 1040, restSec: nil, note: nil)
+        let store = try await WhoopStore.inMemory()
+        _ = try await store.insert(Streams(hr: [HRSample(ts: 1010, bpm: 60), HRSample(ts: 1039, bpm: 120), HRSample(ts: 1040, bpm: 150)]), deviceId: "original")
+        _ = try await store.insert(Streams(hr: [HRSample(ts: 1020, bpm: 200)]), deviceId: "other")
+        let evidence = try await WorkoutCapturePayload.measuredEvidence(record: record, sets: [timed], store: store)
+        XCTAssertEqual(evidence[setID], WorkoutObservedHeartRate(sampleCount: 2, coverageFraction: nil, averageBpm: 90, maximumBpm: 120))
+        let bytes = try WorkoutCapturePayload.make(record: record, sets: [timed], binding: binding, installationId: UUID(), revision: 1, heartRateEvidence: evidence).bytes()
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        let occurrences = try XCTUnwrap(object["exerciseOccurrences"] as? [[String: Any]])
+        let sets = try XCTUnwrap(occurrences[0]["sets"] as? [[String: Any]])
+        let summary = try XCTUnwrap(sets[0]["heartRateSummary"] as? [String: Any])
+        XCTAssertEqual(summary["sampleCount"] as? Int, 2)
+        XCTAssertTrue(summary["coverageFraction"] is NSNull, "Sample count does not establish continuous sensor coverage")
+        var untimed = timed; untimed.startTs = nil; untimed.endTs = nil
+        let noTiming = try await WorkoutCapturePayload.measuredEvidence(record: record, sets: [untimed], store: store)
+        XCTAssertTrue(noTiming.isEmpty)
+        var outside = timed; outside.endTs = 1601
+        let invalidWindow = try await WorkoutCapturePayload.measuredEvidence(record: record, sets: [outside], store: store)
+        XCTAssertTrue(invalidWindow.isEmpty)
+        var missing = timed; missing.startTs = 1200; missing.endTs = 1220
+        let empty = try await WorkoutCapturePayload.measuredEvidence(record: record, sets: [missing], store: store)
+        XCTAssertEqual(empty[setID], WorkoutObservedHeartRate(sampleCount: 0, coverageFraction: nil, averageBpm: nil, maximumBpm: nil))
+    }
+
+    func testReceiptRequiresExactProgramAndSetMappingsAndRetainsPendingReconciliation() throws {
+        let binding = try binding(), event = UUID(), setID = try XCTUnwrap(binding.occurrences.first?.sets.first?.sourceSetId).uuidString.lowercased()
+        let record = LiftSessionRow(id: binding.sourceWorkoutId.uuidString.lowercased(), deviceId: "strap", startTs: 1000, endTs: 1600, sport: "Strength Training", programId: nil, programName: nil, sessionRpe: nil, note: nil)
+        let set = LiftSetRow(id: setID, deviceId: "strap", sessionId: record.id, ord: 0, exercise: "Bench", primaryMuscle: nil, setIndex: 1, weightKg: nil, reps: 8, rpe: nil, isWarmup: false, startTs: nil, endTs: nil, restSec: nil, note: nil)
+        var object: [String: Any] = ["schemaVersion": 1, "eventId": event.uuidString.lowercased(), "sourceWorkoutId": record.id, "acceptedSourceRevision": 1,
+            "outcome": "applied", "lifeRevision": 12, "receiptLifeRevision": 11, "preservedFields": [],
+            "mappings": ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [setID: 1]], "reconciliation": ["state": "pending"]]
+        func decode() throws -> WorkoutCaptureAcknowledgement { try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: JSONSerialization.data(withJSONObject: object)) }
+        let receipt = try decode()
+        try receipt.validate(eventId: event, sourceWorkoutId: binding.sourceWorkoutId, revision: 1)
+        try receipt.validate(binding: binding, sets: [set])
+        XCTAssertTrue(receipt.reconciliation.pending)
+        object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [setID: 99]]
+        XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]), "A response for another set is not a delivery receipt")
+        object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 99], "sets": [setID: 1]]
+        XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]))
     }
 }

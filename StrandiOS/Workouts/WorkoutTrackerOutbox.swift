@@ -15,11 +15,17 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var status: Status = .prepared
     var message = "Waiting for verified local persistence"
     var acknowledgement: Data?
+    var needsReconciliation: Bool {
+        status == .accepted && acknowledgement.flatMap {
+            try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0)
+        }?.reconciliation.pending == true
+    }
     var valid: Bool {
         (bytes?.count ?? 0) <= WorkoutSyncTransport.bodyLimit && revision > 0 && record.id.lowercased() == sourceWorkoutId.uuidString.lowercased()
             && sets.allSatisfy { $0.sessionId == record.id && $0.deviceId == record.deviceId }
             && (try? WorkoutSyncEndpoint.observations.url(origin: origin)) != nil
             && (try? binding.validate()) != nil && binding.sourceWorkoutId == sourceWorkoutId
+            && (binding.connection.map { $0.origin == origin && $0.installationId == installationId } ?? true)
     }
     /// The queue cannot claim persistence until the exact UUID-bound recording is present.
     func matches(store: WhoopStore) async throws -> Bool {

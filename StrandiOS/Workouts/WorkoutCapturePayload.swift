@@ -48,7 +48,8 @@ struct WorkoutCapturePayload: Encodable {
     let deletedSetIds: [String]
 
     static func make(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding,
-                     installationId: UUID, revision: Int, eventId: UUID = UUID()) throws -> WorkoutCapturePayload {
+                     installationId: UUID, revision: Int, eventId: UUID = UUID(),
+                     heartRateEvidence: [UUID: WorkoutObservedHeartRate] = [:]) throws -> WorkoutCapturePayload {
         try binding.validate()
         guard UUID(uuidString: record.id) == binding.sourceWorkoutId, revision > 0,
               sets.allSatisfy({ $0.sessionId == record.id && $0.deviceId == record.deviceId }),
@@ -79,6 +80,9 @@ struct WorkoutCapturePayload: Encodable {
                 observed.rpe = row.rpe.map(WorkoutObservationPatch.value) ?? .clear
                 observed.startedAt = row.startTs.map { .value(date($0)) } ?? .clear
                 observed.endedAt = row.endTs.map { .value(date($0)) } ?? .clear
+                if let evidence = heartRateEvidence[set.sourceSetId] {
+                    observed.heartRateSummary = .value(evidence)
+                }
                 observed.executionOrder = row.ord
                 try observed.validate()
                 observations.append(observed)
@@ -96,6 +100,20 @@ struct WorkoutCapturePayload: Encodable {
                 startedAt: date(record.startTs), endedAt: date(end), timeZone: binding.timeZone, notes: record.note, rpe: record.sessionRpe),
             exerciseOccurrences: occurrences, deletedSetIds: [])
     }
+    /// Stored strap readings only; no extrapolated coverage or statistics for untimed sets.
+    static func measuredEvidence(record: LiftSessionRow, sets: [LiftSetRow], store: WhoopStore) async throws -> [UUID: WorkoutObservedHeartRate] {
+        guard let workoutEnd = record.endTs else { return [:] }
+        var result: [UUID: WorkoutObservedHeartRate] = [:]
+        for set in sets {
+            guard set.sessionId == record.id, set.deviceId == record.deviceId,
+                  let id = UUID(uuidString: set.id), let start = set.startTs, let end = set.endTs,
+                  start >= record.startTs, end <= workoutEnd, end > start else { continue }
+            let measured = try await store.measuredHeartRateStats(deviceId: record.deviceId, from: start, toExclusive: end)
+            result[id] = WorkoutObservedHeartRate(sampleCount: measured.n, coverageFraction: nil,
+                averageBpm: measured.avg, maximumBpm: measured.max.map(Double.init))
+        }
+        return result
+    }
     private static func basis(_ raw: String) throws -> WorkoutSetObservation.LoadBasis {
         guard let basis = WorkoutSetObservation.LoadBasis(rawValue: raw) else { throw WorkoutTrackerContractError.invalidSnapshot }
         return basis
@@ -109,6 +127,15 @@ struct WorkoutCapturePayload: Encodable {
 }
 
 struct WorkoutCaptureAcknowledgement: Decodable {
+    struct Mappings: Decodable {
+        struct Session: Decodable { let kind: String; let cycleId: Int?; let sessionId: Int? }
+        let session: Session
+        let sets: [String: Int]
+    }
+    struct Reconciliation: Decodable {
+        let state: String
+        var pending: Bool { state == "pending" }
+    }
     let schemaVersion: Int
     let eventId: UUID
     let sourceWorkoutId: UUID
@@ -117,12 +144,27 @@ struct WorkoutCaptureAcknowledgement: Decodable {
     let lifeRevision: Int
     let receiptLifeRevision: Int
     let preservedFields: [String]
+    let mappings: Mappings
+    let reconciliation: Reconciliation
 
     func validate(eventId: UUID, sourceWorkoutId: UUID, revision: Int) throws {
         guard schemaVersion == 1, self.eventId == eventId, self.sourceWorkoutId == sourceWorkoutId,
-              acceptedSourceRevision >= revision, lifeRevision >= 0, receiptLifeRevision >= 0,
+              acceptedSourceRevision >= revision, lifeRevision >= receiptLifeRevision, receiptLifeRevision >= 0,
+              ["done", "pending", "not_pending", "not_applicable"].contains(reconciliation.state),
               ["applied", "duplicate", "stale", "manual_preserved", "deleted"].contains(outcome) else {
             throw WorkoutSyncTransportError.invalidResponse
+        }
+    }
+    func validate(binding: WorkoutTrackerCaptureBinding, sets: [LiftSetRow]) throws {
+        guard mappings.session.kind == "programmed", mappings.session.cycleId == binding.manifest.cycleId,
+              mappings.session.sessionId == binding.manifest.sessionId else { throw WorkoutSyncTransportError.invalidResponse }
+        let prescribed = Dictionary(uniqueKeysWithValues: binding.occurrences.flatMap(\.sets).map {
+            ($0.sourceSetId.uuidString.lowercased(), $0.lifeSetId)
+        })
+        for row in sets {
+            guard let expected = prescribed[row.id.lowercased()], mappings.sets[row.id.lowercased()] == expected else {
+                throw WorkoutSyncTransportError.invalidResponse
+            }
         }
     }
 }

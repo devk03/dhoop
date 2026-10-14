@@ -904,7 +904,10 @@ struct LiftSessionView: View {
             distanceM: nil, zonesJSON: nil, notes: session.programName, steps: nil)
         let updatedProgramItems = try await programChanges(store: store, plan: engine.plan, sets: finished)
         #if os(iOS)
-        let trackerEvent = try session.trackerBinding.map { try WorkoutTrackerClient.shared.prepare(record: row, sets: rows, binding: $0) }
+        let trackerEvent: UUID?
+        if let binding = session.trackerBinding {
+            trackerEvent = try await WorkoutTrackerClient.shared.prepare(record: row, sets: rows, binding: binding, store: store)
+        } else { trackerEvent = nil }
         #endif
         try await store.saveLiftRecording(session: row, sets: rows, workout: workout, updatedProgramItems: updatedProgramItems)
         #if os(iOS)

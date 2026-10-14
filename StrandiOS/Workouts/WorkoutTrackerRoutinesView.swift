@@ -26,7 +26,7 @@ struct WorkoutTrackerRoutinesView: View {
                                 if let date = row.scheduledDate { Text(date).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                                 NoopAsyncButton("Start tracker workout", systemImage: "play.fill") {
                                     let manifest = try await client.manifest(sessionId: row.sessionId)
-                                    let binding = try WorkoutTrackerCaptureBinding(manifest: manifest)
+                                    let binding = try client.captureBinding(manifest: manifest)
                                     guard !manifest.exerciseOccurrences.isEmpty,
                                           manifest.exerciseOccurrences.allSatisfy({ $0.loadMode != .duration && !$0.sets.isEmpty }) else {
                                         throw WorkoutTrackerContractError.invalidSnapshot

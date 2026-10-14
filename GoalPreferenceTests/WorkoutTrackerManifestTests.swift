@@ -10,7 +10,8 @@ final class WorkoutTrackerManifestTests: XCTestCase {
     }
     func testCaptureRetainsExactIdsAndPerHandLoadWithoutInferringRpeOrRest() throws {
         let value = try manifest()
-        let binding = try WorkoutTrackerCaptureBinding(manifest: value, timeZone: "Europe/London")
+        let connection = WorkoutTrackerCaptureBinding.Connection(origin: "https://track.kunjadia.dev", installationId: UUID())
+        let binding = try WorkoutTrackerCaptureBinding(manifest: value, timeZone: "Europe/London", connection: connection)
         XCTAssertEqual(binding.manifest.sessionId, 282)
         XCTAssertEqual(binding.occurrences.first?.sessionExerciseId, 891)
         XCTAssertEqual(binding.occurrences.first?.sets.first?.lifeSetId, 7886)
@@ -19,6 +20,7 @@ final class WorkoutTrackerManifestTests: XCTestCase {
         XCTAssertNil(value.exerciseOccurrences[0].restTargetSeconds)
         let reloaded = try JSONDecoder().decode(WorkoutTrackerCaptureBinding.self, from: JSONEncoder().encode(binding))
         XCTAssertEqual(reloaded, binding)
+        XCTAssertEqual(reloaded.connection, connection, "Capture destination survives settings changes and app relaunch")
     }
     func testWrongLoadBasisAndDuplicateLifeIdsCannotStartCapture() throws {
         let value = try manifest()

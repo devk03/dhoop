@@ -123,6 +123,10 @@ struct WorkoutTrackerManifest: Codable, Equatable {
 
 /// Exact IDs and prescription snapshot, retained when the connection or app process disappears.
 struct WorkoutTrackerCaptureBinding: Codable, Equatable {
+    struct Connection: Codable, Equatable {
+        let origin: String
+        let installationId: UUID
+    }
     struct Occurrence: Codable, Equatable {
         let sourceOccurrenceId: UUID
         let sessionExerciseId: Int
@@ -136,13 +140,14 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
     let sourceWorkoutId: UUID
     let manifest: WorkoutTrackerManifest
     let timeZone: String
+    let connection: Connection?
     let occurrences: [Occurrence]
 
-    init(manifest: WorkoutTrackerManifest, timeZone: String = TimeZone.current.identifier) throws {
+    init(manifest: WorkoutTrackerManifest, timeZone: String = TimeZone.current.identifier, connection: Connection? = nil) throws {
         try manifest.validate()
         guard !manifest.hasObservations, manifest.status == "planned" else { throw WorkoutTrackerContractError.unavailableCapture }
         guard TimeZone(identifier: timeZone) != nil else { throw WorkoutTrackerContractError.invalidSnapshot }
-        self.sourceWorkoutId = UUID(); self.manifest = manifest; self.timeZone = timeZone
+        self.sourceWorkoutId = UUID(); self.manifest = manifest; self.timeZone = timeZone; self.connection = connection
         self.occurrences = manifest.exerciseOccurrences.map { occurrence in
             Occurrence(sourceOccurrenceId: UUID(), sessionExerciseId: occurrence.sessionExerciseId,
                 sets: occurrence.sets.enumerated().map { SetBinding(sourceSetId: UUID(), lifeSetId: $0.element.lifeSetId, slotIndex: $0.offset + 1) })
