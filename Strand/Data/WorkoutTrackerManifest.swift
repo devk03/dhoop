@@ -11,7 +11,7 @@ enum WorkoutTrackerContractError: LocalizedError {
     }
 }
 
-enum WorkoutTrackerLoadMode: String, Codable {
+enum WorkoutTrackerLoadMode: String, Codable, CaseIterable {
     case barbell, machine, dumbbellEach = "dumbbell_each", bodyweightAdded = "bodyweight_added", bodyweight, duration
     var loadBasis: String {
         switch self {
@@ -22,6 +22,25 @@ enum WorkoutTrackerLoadMode: String, Codable {
         }
     }
     var hasMass: Bool { loadBasis != "none" }
+    var title: String {
+        switch self {
+        case .barbell: return "Barbell · total load"
+        case .machine: return "Machine · total load"
+        case .dumbbellEach: return "Dumbbells · per hand"
+        case .bodyweightAdded: return "Bodyweight · added load"
+        case .bodyweight: return "Bodyweight · no load"
+        case .duration: return "Duration"
+        }
+    }
+    var explanation: String {
+        switch self {
+        case .dumbbellEach: return "Log the weight of one dumbbell."
+        case .bodyweightAdded: return "Log only added weight, excluding body weight."
+        case .bodyweight: return "Log repetitions. Weight is not used."
+        case .duration: return "Timed exercise; no weight or repetitions."
+        default: return "Log the total weight used for the set."
+        }
+    }
 }
 
 struct WorkoutTrackerIndex: Codable, Equatable {
@@ -138,21 +157,61 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
         let lifeSetId: Int?
         let slotIndex: Int
     }
+    struct AdditionalOccurrence: Codable, Equatable {
+        let sourceOccurrenceId: UUID
+        let planIndex: Int
+        let exerciseKey: String
+        let name: String
+        let loadMode: WorkoutTrackerLoadMode
+        var sets: [SetBinding]
+    }
     let sourceWorkoutId: UUID
     let manifest: WorkoutTrackerManifest
     let timeZone: String
     let connection: Connection?
     var occurrences: [Occurrence]
+    var additionalOccurrences: [AdditionalOccurrence]? = nil
+
+    func identity(exerciseIndex: Int, slotIndex: Int) -> SetBinding? {
+        if occurrences.indices.contains(exerciseIndex) {
+            return occurrences[exerciseIndex].sets.first { $0.slotIndex == slotIndex }
+        }
+        return additionalOccurrences?.first { $0.planIndex == exerciseIndex }?.sets.first { $0.slotIndex == slotIndex }
+    }
+
+    mutating func bindAdditionalExercise(planIndex: Int, exerciseId: UUID, name: String, loadMode: WorkoutTrackerLoadMode) throws {
+        guard planIndex == occurrences.count + (additionalOccurrences?.count ?? 0), loadMode != .duration,
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.utf16.count <= 200 else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        var next = self
+        next.additionalOccurrences = (additionalOccurrences ?? []) + [AdditionalOccurrence(sourceOccurrenceId: UUID(), planIndex: planIndex,
+            exerciseKey: "custom:" + exerciseId.uuidString.lowercased(), name: name, loadMode: loadMode,
+            sets: [SetBinding(sourceSetId: UUID(), lifeSetId: nil, slotIndex: 1)])]
+        try next.validate(); self = next
+    }
 
     mutating func bindAdditionalSet(exerciseIndex: Int, slotIndex: Int, sourceSetId: UUID) throws {
-        guard occurrences.indices.contains(exerciseIndex), slotIndex > 0 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        guard slotIndex > 0 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        if !occurrences.indices.contains(exerciseIndex) {
+            guard var additional = additionalOccurrences, let index = additional.firstIndex(where: { $0.planIndex == exerciseIndex }) else {
+                throw WorkoutTrackerContractError.invalidSnapshot
+            }
+            if let existing = additional[index].sets.first(where: { $0.slotIndex == slotIndex }) {
+                guard existing.sourceSetId == sourceSetId else { throw WorkoutTrackerContractError.invalidSnapshot }; return
+            }
+            additional[index].sets.append(SetBinding(sourceSetId: sourceSetId, lifeSetId: nil, slotIndex: slotIndex))
+            var next = self; next.additionalOccurrences = additional
+            try next.validate(); self = next; return
+        }
         if let existing = occurrences[exerciseIndex].sets.first(where: { $0.slotIndex == slotIndex }) {
             guard existing.sourceSetId == sourceSetId else { throw WorkoutTrackerContractError.invalidSnapshot }
             return
         }
         guard slotIndex > manifest.exerciseOccurrences[exerciseIndex].sets.count else { throw WorkoutTrackerContractError.invalidSnapshot }
-        occurrences[exerciseIndex].sets.append(SetBinding(sourceSetId: sourceSetId, lifeSetId: nil, slotIndex: slotIndex))
-        try validate()
+        var next = self
+        next.occurrences[exerciseIndex].sets.append(SetBinding(sourceSetId: sourceSetId, lifeSetId: nil, slotIndex: slotIndex))
+        try next.validate(); self = next
     }
 
     init(manifest: WorkoutTrackerManifest, timeZone: String = TimeZone.current.identifier, connection: Connection? = nil) throws {
@@ -181,6 +240,24 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
                 guard (1...200).contains(set.slotIndex) else { throw WorkoutTrackerContractError.invalidSnapshot }
                 let target = prescribed.sets.indices.contains(set.slotIndex - 1) ? prescribed.sets[set.slotIndex - 1].lifeSetId : nil
                 guard set.lifeSetId == target, ids.insert(set.sourceSetId).inserted else {
+                    throw WorkoutTrackerContractError.invalidSnapshot
+                }
+            }
+        }
+        let additional = additionalOccurrences ?? []
+        guard additional.count + occurrences.count <= 50,
+              Set(occurrences.map(\.sourceOccurrenceId) + additional.map(\.sourceOccurrenceId)).count == occurrences.count + additional.count,
+              additional.map(\.planIndex) == Array(occurrences.count..<(occurrences.count + additional.count)) else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        for occurrence in additional {
+            guard occurrence.exerciseKey.hasPrefix("custom:"), UUID(uuidString: String(occurrence.exerciseKey.dropFirst(7))) != nil,
+                  !occurrence.name.isEmpty, occurrence.name.utf16.count <= 200, occurrence.loadMode != .duration,
+                  !occurrence.sets.isEmpty, Set(occurrence.sets.map(\.slotIndex)).count == occurrence.sets.count else {
+                throw WorkoutTrackerContractError.invalidSnapshot
+            }
+            for set in occurrence.sets {
+                guard set.lifeSetId == nil, (1...200).contains(set.slotIndex), ids.insert(set.sourceSetId).inserted else {
                     throw WorkoutTrackerContractError.invalidSnapshot
                 }
             }

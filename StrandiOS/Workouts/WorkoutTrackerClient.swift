@@ -50,6 +50,16 @@ final class WorkoutTrackerClient: ObservableObject {
         next.message = "Connection ID created. Tracker is still off."
         try commit(next)
     }
+
+    /// Existing UUID vocabulary IDs are reused. Legacy IDs get a durable key, never a name match.
+    func sourceExerciseIdentity(nativeId: String, deviceID: String) throws -> UUID {
+        if let id = UUID(uuidString: nativeId) { return id }
+        let key = deviceID + "\u{0}" + nativeId
+        guard !nativeId.isEmpty, key.utf16.count <= 1000 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        if let id = state.legacyExerciseIdentities[key] { return id }
+        let id = UUID(); var next = state; next.legacyExerciseIdentities[key] = id
+        try commit(next); return id
+    }
     func configure(origin: String, token: String, installationId: UUID) throws {
         guard !busy else { throw WorkoutSyncTransportError.configuration }
         let value = WorkoutSyncConfiguration(origin: origin, installationId: installationId, credential: token)

@@ -42,4 +42,26 @@ final class WorkoutTrackerManifestTests: XCTestCase {
         let recorded = try JSONDecoder().decode(WorkoutTrackerManifest.self, from: JSONSerialization.data(withJSONObject: json))
         XCTAssertThrowsError(try WorkoutTrackerCaptureBinding(manifest: recorded))
     }
+
+    func testRepeatedActualExercisesKeepDistinctIdsAndNeverChangePrescriptions() throws {
+        let original = try manifest(), exercise = UUID()
+        var binding = try WorkoutTrackerCaptureBinding(manifest: original)
+        try binding.bindAdditionalExercise(planIndex: 1, exerciseId: exercise, name: "Dumbbell press", loadMode: .dumbbellEach)
+        try binding.bindAdditionalExercise(planIndex: 2, exerciseId: exercise, name: "Dumbbell press", loadMode: .dumbbellEach)
+        let extras = try XCTUnwrap(binding.additionalOccurrences)
+        XCTAssertEqual(binding.manifest, original)
+        XCTAssertEqual(extras.map(\.exerciseKey), Array(repeating: "custom:" + exercise.uuidString.lowercased(), count: 2))
+        XCTAssertNotEqual(extras[0].sourceOccurrenceId, extras[1].sourceOccurrenceId)
+        XCTAssertNotEqual(extras[0].sets[0].sourceSetId, extras[1].sets[0].sourceSetId)
+        XCTAssertTrue(extras.flatMap(\.sets).allSatisfy { $0.lifeSetId == nil })
+        let id = UUID()
+        try binding.bindAdditionalSet(exerciseIndex: 2, slotIndex: 2, sourceSetId: id)
+        XCTAssertEqual(binding.identity(exerciseIndex: 2, slotIndex: 2)?.sourceSetId, id)
+        let restored = try JSONDecoder().decode(WorkoutTrackerCaptureBinding.self, from: JSONEncoder().encode(binding))
+        try restored.validate()
+        XCTAssertEqual(restored, binding)
+        let beforeFailure = binding
+        XCTAssertThrowsError(try binding.bindAdditionalSet(exerciseIndex: 2, slotIndex: 3, sourceSetId: id))
+        XCTAssertEqual(binding, beforeFailure, "Rejected duplicate IDs cannot corrupt the durable binding")
+    }
 }

@@ -57,6 +57,17 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(client.state.deliveries[0].revision, 1)
         XCTAssertNotNil(client.state.deliveries[0].bytes, "Local save does not depend on a readable credential")
     }
+    func testLegacyExerciseIdsKeepStableSourceKeysAcrossRelaunchAndRemainDeviceScoped() async throws {
+        let f = try await fixture()
+        let client = WorkoutTrackerClient(store: f.file, readCredential: { nil })
+        let id = try client.sourceExerciseIdentity(nativeId: "legacy-exercise", deviceID: "strap")
+        XCTAssertEqual(try client.sourceExerciseIdentity(nativeId: "legacy-exercise", deviceID: "strap"), id)
+        let restored = WorkoutTrackerClient(store: f.file, readCredential: { nil })
+        XCTAssertEqual(try restored.sourceExerciseIdentity(nativeId: "legacy-exercise", deviceID: "strap"), id)
+        XCTAssertNotEqual(try restored.sourceExerciseIdentity(nativeId: "legacy-exercise", deviceID: "other"), id)
+        let nativeUUID = UUID()
+        XCTAssertEqual(try restored.sourceExerciseIdentity(nativeId: nativeUUID.uuidString, deviceID: "strap"), nativeUUID)
+    }
 
     func testTimeoutRelaunchRetriesExactEventAndPendingReconciliationDoesNotReplaceCapture() async throws {
         let f = try await fixture()

@@ -25,11 +25,14 @@ struct WorkoutCapturePayload: Encodable {
         }
     }
     struct Occurrence: Encodable {
+        let occurrenceKind: String
         let sourceOccurrenceId: String
-        let sessionExerciseId: Int
+        let sessionExerciseId: Int?
         let programSlotId: Int?
         let slotKey: String?
         let exerciseKey: String
+        let name: String?
+        let loadMode: WorkoutTrackerLoadMode?
         let executionOrder: Int
         let sets: [WorkoutSetObservation]
     }
@@ -60,43 +63,44 @@ struct WorkoutCapturePayload: Encodable {
         guard ids.count == sets.count, sets.count <= 200,
               deletedSetIds.count <= 200, Set(deletedSetIds).count == deletedSetIds.count,
               Set(deletedSetIds).isDisjoint(with: sets.compactMap { UUID(uuidString: $0.id) }) else { throw WorkoutTrackerContractError.invalidSnapshot }
-        let known = Set(binding.occurrences.flatMap(\.sets).map { $0.sourceSetId.uuidString.lowercased() })
+        let known = Set((binding.occurrences.flatMap(\.sets) + (binding.additionalOccurrences ?? []).flatMap(\.sets)).map { $0.sourceSetId.uuidString.lowercased() })
         // Additional sets need an explicit occurrence binding; never attach them by a display name.
         guard ids.isSubset(of: known) else { throw WorkoutTrackerContractError.invalidSnapshot }
         let formatter = ISO8601DateFormatter()
         func date(_ seconds: Int) -> String { formatter.string(from: Date(timeIntervalSince1970: Double(seconds))) }
+        func observe(_ identity: WorkoutTrackerCaptureBinding.SetBinding, basis: String) throws -> WorkoutSetObservation? {
+            guard let row = sets.first(where: { UUID(uuidString: $0.id) == identity.sourceSetId }) else { return nil }
+            var observed = WorkoutSetObservation(sourceSetId: identity.sourceSetId, setType: row.isWarmup ? .warmup : .work, loadBasis: try self.basis(basis))
+            observed.lifeSetId = identity.lifeSetId.map(WorkoutObservationPatch.value) ?? .clear
+            observed.completed = (row.reps ?? 0) > 0
+            observed.loadKg = row.weightKg.map(WorkoutObservationPatch.value) ?? .clear
+            observed.reps = row.reps.map(WorkoutObservationPatch.value) ?? .clear
+            observed.rpe = row.rpe.map(WorkoutObservationPatch.value) ?? .clear
+            observed.notes = row.note.map(WorkoutObservationPatch.value) ?? .clear
+            observed.enteredLoad = .clear
+            observed.startedAt = row.startTs.map { .value(date($0)) } ?? .clear
+            observed.endedAt = row.endTs.map { .value(date($0)) } ?? .clear
+            observed.heartRateSummary = heartRateEvidence[identity.sourceSetId].map(WorkoutObservationPatch.value) ?? .clear
+            observed.executionOrder = row.ord
+            try observed.validate(); return observed
+        }
         var occurrences: [Occurrence] = []
         for (order, identity) in binding.occurrences.enumerated() where !deleting {
             guard let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == identity.sessionExerciseId }) else {
                 throw WorkoutTrackerContractError.invalidSnapshot
             }
-            var observations: [WorkoutSetObservation] = []
-            for set in identity.sets {
-                guard let row = sets.first(where: { UUID(uuidString: $0.id) == set.sourceSetId }) else { continue }
-                var observed = WorkoutSetObservation(sourceSetId: set.sourceSetId,
-                    setType: row.isWarmup ? .warmup : .work,
-                    loadBasis: try basis(prescribed.loadBasis))
-                observed.lifeSetId = set.lifeSetId.map(WorkoutObservationPatch.value) ?? .clear
-                observed.completed = (row.reps ?? 0) > 0
-                observed.loadKg = row.weightKg.map(WorkoutObservationPatch.value) ?? .clear
-                observed.reps = row.reps.map(WorkoutObservationPatch.value) ?? .clear
-                observed.rpe = row.rpe.map(WorkoutObservationPatch.value) ?? .clear
-                observed.notes = row.note.map(WorkoutObservationPatch.value) ?? .clear
-                // The legacy native row retains kg, not the original text/unit entry.
-                observed.enteredLoad = .clear
-                observed.startedAt = row.startTs.map { .value(date($0)) } ?? .clear
-                observed.endedAt = row.endTs.map { .value(date($0)) } ?? .clear
-                if let evidence = heartRateEvidence[set.sourceSetId] {
-                    observed.heartRateSummary = .value(evidence)
-                } else { observed.heartRateSummary = .clear }
-                observed.executionOrder = row.ord
-                try observed.validate()
-                observations.append(observed)
-            }
-            occurrences.append(Occurrence(sourceOccurrenceId: identity.sourceOccurrenceId.uuidString.lowercased(),
+            let observations = try identity.sets.compactMap { try observe($0, basis: prescribed.loadBasis) }
+            occurrences.append(Occurrence(occurrenceKind: "prescribed", sourceOccurrenceId: identity.sourceOccurrenceId.uuidString.lowercased(),
                 sessionExerciseId: identity.sessionExerciseId, programSlotId: prescribed.programSlotId,
-                slotKey: prescribed.slotKey, exerciseKey: prescribed.exerciseKey,
+                slotKey: prescribed.slotKey, exerciseKey: prescribed.exerciseKey, name: nil, loadMode: prescribed.loadMode,
                 executionOrder: order, sets: observations))
+        }
+        if !deleting {
+            for extra in binding.additionalOccurrences ?? [] {
+                occurrences.append(Occurrence(occurrenceKind: "actual_only", sourceOccurrenceId: extra.sourceOccurrenceId.uuidString.lowercased(),
+                    sessionExerciseId: nil, programSlotId: nil, slotKey: nil, exerciseKey: extra.exerciseKey, name: extra.name, loadMode: extra.loadMode,
+                    executionOrder: extra.planIndex, sets: try extra.sets.compactMap { try observe($0, basis: extra.loadMode.loadBasis) }))
+            }
         }
         return WorkoutCapturePayload(eventId: eventId.uuidString.lowercased(), sourceWorkoutId: binding.sourceWorkoutId.uuidString.lowercased(),
             installationId: installationId.uuidString.lowercased(), sourceRevision: revision, operation: deleting ? "delete" : "upsert",
@@ -142,9 +146,19 @@ struct WorkoutCaptureAcknowledgement: Decodable {
             let sourceWorkoutId: UUID?
             let sourceSetId: UUID?
         }
+        struct OccurrenceTarget: Decodable {
+            let kind: String
+            let sessionExerciseId: Int?
+            let programSlotId: Int?
+            let slotKey: String?
+            let exerciseKey: String
+            let sourceWorkoutId: UUID?
+            let sourceOccurrenceId: UUID?
+        }
         let session: Session
         let sets: [String: Int]
         let setTargets: [String: SetTarget]?
+        let occurrenceTargets: [String: OccurrenceTarget]?
     }
     struct Reconciliation: Decodable {
         let state: String
@@ -189,9 +203,10 @@ struct WorkoutCaptureAcknowledgement: Decodable {
         guard mappings.session.kind == "programmed", mappings.session.cycleId == binding.manifest.cycleId,
               mappings.session.sessionId == binding.manifest.sessionId else { throw WorkoutSyncTransportError.invalidResponse }
         for row in sets {
-            guard let id = UUID(uuidString: row.id),
-                  let occurrence = binding.occurrences.first(where: { $0.sets.contains(where: { $0.sourceSetId == id }) }),
-                  let identity = occurrence.sets.first(where: { $0.sourceSetId == id }) else {
+            guard let id = UUID(uuidString: row.id) else { throw WorkoutSyncTransportError.invalidResponse }
+            let occurrence = binding.occurrences.first(where: { $0.sets.contains(where: { $0.sourceSetId == id }) })
+            let extra = binding.additionalOccurrences?.first(where: { $0.sets.contains(where: { $0.sourceSetId == id }) })
+            guard let identity = (occurrence?.sets ?? extra?.sets)?.first(where: { $0.sourceSetId == id }) else {
                 throw WorkoutSyncTransportError.invalidResponse
             }
             let target = mappings.setTargets?[row.id.lowercased()]
@@ -199,11 +214,16 @@ struct WorkoutCaptureAcknowledgement: Decodable {
                 guard mappings.sets[row.id.lowercased()] == expected else { throw WorkoutSyncTransportError.invalidResponse }
                 if let target {
                     guard target.kind == "workout_set", target.lifeSetId == expected,
-                          target.sessionExerciseId == occurrence.sessionExerciseId else { throw WorkoutSyncTransportError.invalidResponse }
+                          target.sessionExerciseId == occurrence?.sessionExerciseId else { throw WorkoutSyncTransportError.invalidResponse }
                 }
             } else {
                 guard let target, target.kind == "capture_set", target.sourceWorkoutId == binding.sourceWorkoutId,
                       target.sourceSetId == id, mappings.sets[row.id.lowercased()] == nil else { throw WorkoutSyncTransportError.invalidResponse }
+            }
+            if let extra {
+                guard let target = mappings.occurrenceTargets?[extra.sourceOccurrenceId.uuidString.lowercased()],
+                      target.kind == "capture_occurrence", target.sourceWorkoutId == binding.sourceWorkoutId,
+                      target.sourceOccurrenceId == extra.sourceOccurrenceId, target.exerciseKey == extra.exerciseKey else { throw WorkoutSyncTransportError.invalidResponse }
             }
         }
     }

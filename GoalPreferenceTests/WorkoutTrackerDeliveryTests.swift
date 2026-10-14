@@ -13,6 +13,39 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
             scheduledDate: nil, status: "planned", manifestRevision: "hash", lifeRevision: 0, exerciseOccurrences: [occurrence], sourceWorkoutId: nil)
         return try WorkoutTrackerCaptureBinding(manifest: manifest)
     }
+    func testAddedOccurrencePayloadAndReceiptUseCaptureIdsWithoutNumericTargets() throws {
+        var binding = try binding()
+        try binding.bindAdditionalExercise(planIndex: 1, exerciseId: UUID(), name: "Bench", loadMode: .dumbbellEach)
+        let extra = try XCTUnwrap(binding.additionalOccurrences?.first)
+        let record = LiftSessionRow(id: binding.sourceWorkoutId.uuidString.lowercased(), deviceId: "strap", startTs: 1000, endTs: 1600, sport: "Strength Training", programId: nil, programName: nil, sessionRpe: nil, note: nil)
+        let set = LiftSetRow(id: extra.sets[0].sourceSetId.uuidString.lowercased(), deviceId: "strap", sessionId: record.id, ord: 0, exercise: "Bench", primaryMuscle: nil, setIndex: 1,
+            weightKg: 25, reps: 8, rpe: 8.5, isWarmup: false, startTs: nil, endTs: nil, restSec: nil, note: "Per hand")
+        let event = UUID()
+        let bytes = try WorkoutCapturePayload.make(record: record, sets: [set], binding: binding, installationId: UUID(), revision: 1, eventId: event).bytes()
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        let occurrences = try XCTUnwrap(json["exerciseOccurrences"] as? [[String: Any]])
+        let observed = try XCTUnwrap(occurrences.first { $0["occurrenceKind"] as? String == "actual_only" })
+        XCTAssertEqual(observed["exerciseKey"] as? String, extra.exerciseKey)
+        XCTAssertNil(observed["sessionExerciseId"])
+        XCTAssertNil(observed["programSlotId"])
+        let sets = try XCTUnwrap(observed["sets"] as? [[String: Any]])
+        XCTAssertTrue(sets[0]["lifeSetId"] is NSNull)
+        XCTAssertEqual(sets[0]["loadBasis"] as? String, "per_hand")
+        XCTAssertEqual(sets[0]["loadKg"] as? Double, 25)
+        XCTAssertEqual(sets[0]["notes"] as? String, "Per hand")
+        XCTAssertTrue(sets[0]["startedAt"] is NSNull)
+        var ack: [String: Any] = ["schemaVersion": 1, "eventId": event.uuidString, "sourceWorkoutId": record.id, "acceptedSourceRevision": 1,
+            "outcome": "applied", "lifeRevision": 1, "receiptLifeRevision": 1, "preservedFields": [], "reconciliation": ["state": "done"],
+            "mappings": ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [:],
+                "setTargets": [set.id: ["kind": "capture_set", "sourceWorkoutId": record.id, "sourceSetId": set.id]],
+                "occurrenceTargets": [extra.sourceOccurrenceId.uuidString.lowercased(): ["kind": "capture_occurrence", "sourceWorkoutId": record.id,
+                    "sourceOccurrenceId": extra.sourceOccurrenceId.uuidString.lowercased(), "exerciseKey": extra.exerciseKey]]]]
+        func decode() throws -> WorkoutCaptureAcknowledgement { try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: JSONSerialization.data(withJSONObject: ack)) }
+        try decode().validate(binding: binding, sets: [set])
+        ack["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [:],
+            "setTargets": [set.id: ["kind": "capture_set", "sourceWorkoutId": record.id, "sourceSetId": set.id]]]
+        XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]), "A set receipt without its exact added occurrence cannot be accepted")
+    }
     func testPreparedIntentRequiresExactLocalSessionAndSetPersistence() async throws {
         let binding = try binding(), id = binding.sourceWorkoutId.uuidString.lowercased()
         let setID = try XCTUnwrap(binding.occurrences.first?.sets.first?.sourceSetId).uuidString.lowercased()
