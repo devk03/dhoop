@@ -1,5 +1,6 @@
 import XCTest
 import WhoopStore
+import WhoopProtocol
 @testable import DhoopGoalTests
 
 @MainActor
@@ -757,6 +758,160 @@ final class WorkoutTrackerClientTests: XCTestCase {
                 try await f.db.upsertLiftSets(sets)
             }
             do { _ = try await client.prepareHistoryOnly(reviewId: review.id, store: f.db); XCTFail("A changed review cannot prepare") }
+            catch WorkoutTrackerContractError.sessionChanged {}
+            XCTAssertEqual(client.state.deliveries.count, 2)
+        }
+    }
+
+    private func localDeletion(_ client: WorkoutTrackerClient, fixture f: Fixture) async throws -> UUID {
+        try await ready(client, fixture: f)
+        try await client.synchronize(store: f.db)
+        let prepared = try await client.prepareHistoryChange(record: f.record, sets: f.sets, store: f.db, deleting: true)
+        let event = try XCTUnwrap(prepared)
+        _ = try await f.db.deleteLiftRecording(f.record)
+        try await client.confirmPersistence(event, store: f.db)
+        return event
+    }
+
+    func testReviewedDeletionPreservesIdentityAndNewerSourceValuesAfterRoutineRetirement() async throws {
+        let f = try await fixture()
+        var posts = [Data]()
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            switch endpoint {
+            case .observations:
+                let body = try XCTUnwrap(body); posts.append(body)
+                if posts.count == 2 { throw WorkoutSyncTransportError.rejected(.lifeRevisionConflict) }
+                var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: self.receipt(body, fixture: f)) as? [String: Any])
+                if posts.count == 3 {
+                    ack["outcome"] = "manual_preserved"; ack["currentTombstone"] = true
+                    ack["currentSourceRevision"] = 5; ack["projectionState"] = "retired"; ack["projectionPolicy"] = "apply"
+                    ack["lifeRevision"] = 3; ack["receiptLifeRevision"] = 3; ack["preservedFields"] = ["set:1:actualLoad"]
+                    ack["reconciliation"] = ["state": "not_requested"]
+                }
+                return try JSONSerialization.data(withJSONObject: ack)
+            case .captures:
+                var object = try self.historyCapture(f, sourceRevision: 4)
+                object["session"] = ["timeZone": f.binding.timeZone, "notes": "Newer source note", "rpe": 9,
+                    "startedAt": "2026-10-13T12:00:00Z", "endedAt": "2026-10-13T12:30:00Z"]
+                var sets = try XCTUnwrap(object["sets"] as? [[String: Any]])
+                sets[0]["raw"] = ["loadKg": 70, "loadBasis": "total", "reps": 12]
+                object["sets"] = sets
+                return try JSONSerialization.data(withJSONObject: object)
+            default: XCTFail("Full deletion must not require a replacement manifest"); throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        let event = try await localDeletion(client, fixture: f)
+        _ = try await f.db.insert(Streams(hr: [HRSample(ts: 1020, bpm: 90)]), deviceId: f.record.deviceId)
+        let unrelated = LiftSessionRow(id: UUID().uuidString, deviceId: f.record.deviceId, startTs: 2000, endTs: 2300,
+            sport: "Strength Training", programId: nil, programName: "Unrelated", sessionRpe: nil, note: nil)
+        try await f.db.saveLiftRecording(session: unrelated, sets: [], workout: WorkoutRow(startTs: 2000, endTs: 2300,
+            sport: "Strength Training", source: "manual", durationS: 300, energyKcal: nil, avgHr: nil, maxHr: nil,
+            strain: nil, distanceM: nil, zonesJSON: nil, notes: nil, steps: nil))
+        do { try await client.synchronize(store: f.db, deliveryId: event); XCTFail("Synthetic definite rejection") }
+        catch WorkoutSyncTransportError.rejected(.lifeRevisionConflict) {}
+        let original = try XCTUnwrap(client.delivery(event))
+        let review = try await client.reviewDeletion(deliveryId: event)
+        XCTAssertTrue(review.includesNewerSource); XCTAssertTrue(review.canPrepare)
+        XCTAssertEqual(review.capture.session.notes, "Newer source note")
+        let id = try await client.prepareReviewedDeletion(reviewId: review.id, store: f.db)
+        let prepared = try XCTUnwrap(client.delivery(id))
+        XCTAssertEqual(posts.count, 2, "Review/preparation cannot write to Life")
+        XCTAssertEqual(prepared.sourceWorkoutId, original.sourceWorkoutId); XCTAssertEqual(prepared.revision, 5)
+        XCTAssertEqual(prepared.binding, original.binding); XCTAssertTrue(prepared.paused == true)
+        XCTAssertEqual(try client.delivery(event)?.bytes, original.bytes)
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(prepared.bytes)) as? [String: Any])
+        XCTAssertEqual(body["operation"] as? String, "delete"); XCTAssertEqual(body["projectionPolicy"] as? String, "apply")
+        XCTAssertEqual(body["manifestRevision"] as? String, "hash")
+        XCTAssertEqual((body["exerciseOccurrences"] as? [Any])?.count, 0)
+        XCTAssertEqual((body["deletedSetIds"] as? [Any])?.count, 0)
+        XCTAssertNil(body["planAtStart"])
+        let patch = try XCTUnwrap(body["session"] as? [String: Any])
+        XCTAssertEqual(Set(patch.keys), ["status", "timeZone"], "Older local measurements/notes must not overwrite current raw provenance")
+        do { try await client.synchronize(store: f.db, deliveryId: event); XCTFail("Superseded deletion cannot replay older metadata") }
+        catch WorkoutTrackerContractError.deliverySuperseded {}
+        do { _ = try await client.prepareReviewedDeletion(reviewId: review.id, store: f.db); XCTFail("No duplicate preparation") }
+        catch WorkoutTrackerContractError.sessionChanged {}
+        let restored = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            guard endpoint == .observations else { throw WorkoutSyncTransportError.invalidResponse }
+            posts.append(try XCTUnwrap(body))
+            var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: self.receipt(try XCTUnwrap(body), fixture: f)) as? [String: Any])
+            ack["outcome"] = "manual_preserved"; ack["currentTombstone"] = true; ack["currentSourceRevision"] = 5
+            ack["projectionState"] = "retired"; ack["projectionPolicy"] = "apply"
+            ack["preservedFields"] = ["set:1:actualLoad"]; ack["reconciliation"] = ["state": "not_requested"]
+            return try JSONSerialization.data(withJSONObject: ack)
+        }, readCredential: { f.config })
+        try await restored.synchronize(store: f.db)
+        XCTAssertEqual(posts.count, 2)
+        try await restored.synchronize(store: f.db, deliveryId: id)
+        XCTAssertTrue(try XCTUnwrap(restored.delivery(id)).hasVerifiedDeletionReceipt)
+        XCTAssertEqual(try restored.delivery(id)?.status, .accepted)
+        let sensors = try await f.db.measuredHeartRateStats(deviceId: f.record.deviceId, from: 1000, toExclusive: 1600)
+        XCTAssertEqual(sensors.n, 1)
+        let untouched = try await f.db.liftSessions(deviceId: f.record.deviceId, fromTs: 2000, toTs: 2300)
+        XCTAssertEqual(untouched, [unrelated])
+    }
+
+    func testDeletionReviewHoldsUnknownReceiptsAndDoesNotRecreateAlreadyTombstonedSources() async throws {
+        for scenario in ["unknown", "legacy", "missing", "foreign", "tombstone"] {
+            let f = try await fixture()
+            let sender: (WorkoutSyncEndpoint, Data?, WorkoutSyncConfiguration) async throws -> Data = { endpoint, body, _ in
+                switch endpoint {
+                case .observations: return try self.receipt(try XCTUnwrap(body), fixture: f)
+                case .captures:
+                    if scenario == "missing" { throw WorkoutSyncTransportError.captureNotFound }
+                    var object = try self.historyCapture(f)
+                    if scenario == "foreign" { object["sourceWorkoutId"] = UUID().uuidString }
+                    if scenario == "tombstone" {
+                        object["sourceRevision"] = 2; object["tombstone"] = true
+                        var sets = try XCTUnwrap(object["sets"] as? [[String: Any]])
+                        sets[0]["raw"] = ["deleted": true, "loadKg": 60, "loadBasis": "total", "reps": 8]; object["sets"] = sets
+                    }
+                    return try JSONSerialization.data(withJSONObject: object)
+                default: throw WorkoutSyncTransportError.invalidResponse
+                }
+            }
+            let client = WorkoutTrackerClient(store: f.file, send: sender, readCredential: { f.config })
+            let event = try await localDeletion(client, fixture: f)
+            var state = try f.file.load()
+            if ["unknown", "legacy"].contains(scenario) {
+                state.deliveries[state.deliveries.count - 1].submissionAttempted = scenario == "unknown" ? true : nil
+                try f.file.save(state)
+            }
+            let candidate = WorkoutTrackerClient(store: f.file, send: sender, readCredential: { f.config })
+            do {
+                let review = try await candidate.reviewDeletion(deliveryId: event)
+                XCTAssertEqual(scenario, "tombstone")
+                XCTAssertFalse(review.canPrepare)
+                do { _ = try await candidate.prepareReviewedDeletion(reviewId: review.id, store: f.db); XCTFail("No new event for an existing tombstone") }
+                catch WorkoutTrackerContractError.sessionChanged {}
+            } catch { XCTAssertNotEqual(scenario, "tombstone") }
+            XCTAssertEqual(candidate.state.deliveries.count, 2)
+        }
+    }
+
+    func testDeletionPreparationRejectsChangedReviewOrRestoredLocalRecording() async throws {
+        for scenario in ["tracker", "local"] {
+            let f = try await fixture()
+            var changed = false
+            let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+                switch endpoint {
+                case .observations: return try self.receipt(try XCTUnwrap(body), fixture: f)
+                case .captures:
+                    var object = try self.historyCapture(f)
+                    if changed && scenario == "tracker" { object["heartRateSummary"] = ["sampleCount": 9] }
+                    return try JSONSerialization.data(withJSONObject: object)
+                default: throw WorkoutSyncTransportError.invalidResponse
+                }
+            }, readCredential: { f.config })
+            let event = try await localDeletion(client, fixture: f)
+            let review = try await client.reviewDeletion(deliveryId: event)
+            changed = true
+            if scenario == "local" {
+                try await f.db.saveLiftRecording(session: f.record, sets: f.sets, workout: WorkoutRow(startTs: 1000, endTs: 1600,
+                    sport: "Strength Training", source: "manual", durationS: 600, energyKcal: nil, avgHr: nil, maxHr: nil,
+                    strain: nil, distanceM: nil, zonesJSON: nil, notes: nil, steps: nil))
+            }
+            do { _ = try await client.prepareReviewedDeletion(reviewId: review.id, store: f.db); XCTFail("Changed review cannot prepare") }
             catch WorkoutTrackerContractError.sessionChanged {}
             XCTAssertEqual(client.state.deliveries.count, 2)
         }

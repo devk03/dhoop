@@ -30,14 +30,34 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
         guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return false }
         return object["projectionPolicy"] as? String == "capture_only"
     }
-    /// Source acceptance survives retired canonical targets. It does not claim canonical application.
-    var hasVerifiedSourceReceipt: Bool {
+    private var sourceAcceptanceReceipt: WorkoutCaptureAcknowledgement? {
         guard valid, operation != .delete, let acknowledgement,
               let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
               (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil,
-              (try? ack.validate(binding: binding, sets: sets)) != nil else { return false }
-        return ack.acceptedSourceRevision == revision && (ack.currentSourceRevision ?? revision) == revision &&
-            ack.currentTombstone != true && ["applied", "captured_only", "manual_preserved", "duplicate"].contains(ack.outcome)
+              (try? ack.validate(binding: binding, sets: sets)) != nil,
+              ack.acceptedSourceRevision == revision,
+              ["applied", "captured_only", "manual_preserved", "duplicate"].contains(ack.outcome) else { return nil }
+        return ack
+    }
+    /// Historical acceptance survives newer source data and retired canonical targets.
+    var hasVerifiedSourceAcceptance: Bool { sourceAcceptanceReceipt != nil }
+    var hasVerifiedSourceReceipt: Bool {
+        guard let ack = sourceAcceptanceReceipt else { return false }
+        return (ack.currentSourceRevision ?? revision) == revision && ack.currentTombstone != true
+    }
+    var hasVerifiedDeletionReceipt: Bool {
+        guard valid, operation == .delete, let acknowledgement,
+              let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
+              (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil,
+              (try? ack.validate(binding: binding, sets: [])) != nil else { return false }
+        return !ack.needsSourceReview(revision: revision, deleting: true)
+    }
+    var submissionOutcomeResolvedForReview: Bool {
+        if hasVerifiedSourceAcceptance || hasVerifiedDeletionReceipt { return true }
+        let rejected = status == .review && acknowledgement == nil &&
+            [.lifeRevisionConflict, .manifestConflict, .sessionRetired, .setRetired, .prescriptionInconsistent].contains(rejection)
+        let neverSubmitted = [.ready, .review].contains(status) && submissionAttempted == false && acknowledgement == nil && rejection == nil
+        return rejected || neverSubmitted
     }
     var writeManifestRevision: String? {
         guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return nil }
@@ -99,6 +119,70 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     }
 }
 
+/// Full deletion is reviewed against accepted source history, including retired targets.
+struct WorkoutTrackerDeletionReview: Identifiable {
+    let id: UUID
+    let original: WorkoutTrackerDelivery
+    let accepted: WorkoutTrackerDelivery
+    let capture: WorkoutTrackerCaptureSnapshot
+    let checkedAt: Date
+    var canPrepare: Bool { !capture.tombstone }
+    var includesNewerSource: Bool { capture.sourceRevision > accepted.revision }
+
+    static func validate(original: WorkoutTrackerDelivery, accepted: WorkoutTrackerDelivery,
+                         capture: WorkoutTrackerCaptureSnapshot) throws {
+        try original.validateBody(); try accepted.validateBody()
+        guard original.valid, original.operation == .delete, !original.isHistoryOnly,
+              original.localPersistenceConfirmed == true, accepted.hasVerifiedSourceAcceptance,
+              original.sourceWorkoutId == accepted.sourceWorkoutId, original.origin == accepted.origin,
+              original.installationId == accepted.installationId,
+              original.binding.connection == accepted.binding.connection,
+              original.binding.connection?.origin == original.origin,
+              original.binding.connection?.installationId == original.installationId,
+              original.binding.manifest == accepted.binding.manifest,
+              capture.sourceRevision >= accepted.revision, capture.nextCursor == nil,
+              capture.readEvidence?.isEmpty == false else { throw WorkoutTrackerContractError.invalidSnapshot }
+        guard original.submissionOutcomeResolvedForReview else { throw WorkoutTrackerContractError.invalidSnapshot }
+        try capture.validate(for: original.binding)
+        try capture.validateKnownBindings(binding: original.binding, allowingTombstones: true)
+        guard Set(accepted.sets.compactMap { UUID(uuidString: $0.id) }).isSubset(of: Set(capture.sets.map(\.sourceSetId))) else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+    }
+
+    /// Minimal deletion patch retains newer measurements, notes and start provenance by omission.
+    func replacement(eventId: UUID = UUID()) throws -> WorkoutTrackerDelivery {
+        try Self.validate(original: original, accepted: accepted, capture: capture)
+        guard canPrepare, let bytes = original.bytes,
+              var object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+              eventId != original.id else { throw WorkoutTrackerContractError.invalidSnapshot }
+        var priorContent = object
+        object["projectionPolicy"] = "apply"
+        object["session"] = ["status": "cancelled", "timeZone": capture.session.timeZone]
+        object["exerciseOccurrences"] = []; object["deletedSetIds"] = []
+        for key in ["deletedOccurrenceIds", "planAtStart", "collectionSessionId", "heartRateSummary"] { object.removeValue(forKey: key) }
+        var newContent = object
+        for key in ["eventId", "baseLifeRevision", "sourceRevision"] { priorContent.removeValue(forKey: key); newContent.removeValue(forKey: key) }
+        let unchanged = NSDictionary(dictionary: priorContent).isEqual(to: newContent)
+        let highest = max(original.revision, capture.sourceRevision)
+        guard highest < 9_007_199_254_740_991 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        let revision = unchanged && original.revision > capture.sourceRevision ? original.revision : highest + 1
+        object["eventId"] = eventId.uuidString.lowercased(); object["sourceRevision"] = revision
+        object["baseLifeRevision"] = capture.lifeRevision
+        let body = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+        var result = WorkoutTrackerDelivery(id: eventId, sourceWorkoutId: original.sourceWorkoutId,
+            installationId: original.installationId, origin: original.origin, revision: revision, bytes: body,
+            record: original.record, sets: original.sets, binding: original.binding, operation: .delete)
+        result.status = .ready; result.localPersistenceConfirmed = true; result.paused = true
+        result.submissionAttempted = false; result.createdAt = Date(); result.recoveryOf = original.id
+        result.reviewedManifest = original.reviewedManifest
+        result.message = "Reviewed deletion prepared locally. Not sent; manual website edits and retained sensor readings are preserved."
+        guard result.valid else { throw WorkoutTrackerContractError.invalidSnapshot }
+        try result.validateBody()
+        return result
+    }
+}
+
 /// An owner-reviewed source-history correction. No current routine or canonical write is implied.
 struct WorkoutTrackerHistoryReview: Identifiable {
     let id: UUID
@@ -112,7 +196,7 @@ struct WorkoutTrackerHistoryReview: Identifiable {
         try original.validateBody(); try accepted.validateBody()
         guard original.valid, accepted.valid, original.localPersistenceConfirmed == true,
               original.operation != .delete, accepted.operation != .delete,
-              accepted.hasVerifiedSourceReceipt,
+              accepted.hasVerifiedSourceAcceptance,
               original.sourceWorkoutId == accepted.sourceWorkoutId, original.origin == accepted.origin,
               original.installationId == accepted.installationId,
               original.binding.connection == accepted.binding.connection,
@@ -125,11 +209,7 @@ struct WorkoutTrackerHistoryReview: Identifiable {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         // Unknown network outcomes must recover their exact original receipt first.
-        let knownRejected = original.status == .review && original.acknowledgement == nil &&
-            [.lifeRevisionConflict, .manifestConflict, .sessionRetired, .setRetired, .prescriptionInconsistent].contains(original.rejection)
-        let neverSubmitted = [.ready, .review].contains(original.status) && original.submissionAttempted == false &&
-            original.acknowledgement == nil && original.rejection == nil
-        guard original.hasVerifiedSourceReceipt || neverSubmitted || knownRejected else {
+        guard original.submissionOutcomeResolvedForReview else {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         try capture.validate(for: original.binding)

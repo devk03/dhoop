@@ -223,6 +223,7 @@ struct WorkoutCaptureAcknowledgement: Decodable {
                 (!deleting && (projectionState == "retired" || currentProjectionState == "retired"))
         return outcome == "stale" || acceptedSourceRevision != revision ||
             (currentSourceRevision ?? revision) > revision || (currentTombstone == true && !deleting) ||
+            (deleting && (currentTombstone != true || !["deleted", "manual_preserved", "duplicate"].contains(outcome))) ||
             mismatchedPolicy
     }
 

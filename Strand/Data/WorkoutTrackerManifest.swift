@@ -1,13 +1,14 @@
 import Foundation
 
 enum WorkoutTrackerContractError: LocalizedError {
-    case invalidSnapshot, unavailableCapture, deliveryInProgress, sessionChanged, backupConflict, historyReviewRequired, deliverySuperseded
+    case invalidSnapshot, unavailableCapture, deliveryInProgress, sessionChanged, backupConflict, historyReviewRequired, deliverySuperseded, deletionReviewRequired
     var errorDescription: String? {
         switch self {
         case .invalidSnapshot: return "Workout data could not be validated. Local entries are kept; review or refresh before continuing."
         case .unavailableCapture: return "This tracker workout already has observations. Review it before starting another capture."
         case .historyReviewRequired: return "History-only correction requires an accepted capture and resolved earlier receipts. Recover the original receipt or compare tracker data. Local entries are retained."
-        case .deliverySuperseded: return "A reviewed history-only correction replaced this intent. Open that correction; the original event is retained and will not be sent."
+        case .deliverySuperseded: return "A reviewed replacement superseded this intent. Open that delivery; the original event is retained and will not be sent."
+        case .deletionReviewRequired: return "Deletion review requires a known accepted capture and resolved earlier receipts. Local deletion remains separate; original events are retained."
         case .deliveryInProgress: return "Another workout tracker operation is in progress. Your edits are kept; try again after it finishes."
         case .sessionChanged: return "The active workout changed before this action could be applied. Your input is kept."
         case .backupConflict: return "Backup metadata conflicts with an existing event or exercise identity. Nothing was replaced."

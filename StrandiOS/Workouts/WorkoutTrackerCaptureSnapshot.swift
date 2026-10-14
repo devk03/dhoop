@@ -99,11 +99,11 @@ struct WorkoutTrackerCaptureSnapshot: Decodable, Equatable {
     }
 
     /// Accepted source identity is checked against captured UUID bindings, never display names.
-    func validateKnownBindings(binding: WorkoutTrackerCaptureBinding) throws {
+    func validateKnownBindings(binding: WorkoutTrackerCaptureBinding, allowingTombstones: Bool = false) throws {
         let remote = self
         guard let remoteOccurrences = remote.occurrences else { throw WorkoutTrackerContractError.invalidSnapshot }
         for (key, observed) in remoteOccurrences {
-            guard let id = UUID(uuidString: key), observed.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
+            guard let id = UUID(uuidString: key), allowingTombstones || observed.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
             if let occurrence = binding.occurrences.first(where: { $0.sourceOccurrenceId == id }),
                let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }) {
                 guard observed.kind == "prescribed", observed.sessionExerciseId == occurrence.sessionExerciseId,
@@ -119,7 +119,7 @@ struct WorkoutTrackerCaptureSnapshot: Decodable, Equatable {
             } else { throw WorkoutTrackerContractError.invalidSnapshot }
         }
         for set in remote.sets {
-            guard set.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
+            guard allowingTombstones || set.raw.deleted != true else { throw WorkoutTrackerContractError.invalidSnapshot }
             if let occurrence = binding.occurrences.first(where: { $0.sourceOccurrenceId == set.sourceOccurrenceId }),
                let identity = occurrence.sets.first(where: { $0.sourceSetId == set.sourceSetId }),
                let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }) {

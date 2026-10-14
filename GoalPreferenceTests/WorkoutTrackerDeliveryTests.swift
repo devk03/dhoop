@@ -186,11 +186,11 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
         object["currentSourceRevision"] = 1
         object["currentTombstone"] = true
         XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: false))
-        XCTAssertFalse(try decode().needsSourceReview(revision: 1, deleting: true))
+        XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: true), "An upsert receipt or missing deletion state cannot verify a deletion")
         object["currentTombstone"] = false
         object["currentProjectionState"] = "retired"
         XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: false))
-        XCTAssertFalse(try decode().needsSourceReview(revision: 1, deleting: true))
+        XCTAssertTrue(try decode().needsSourceReview(revision: 1, deleting: true), "An upsert receipt or missing deletion state cannot verify a deletion")
         object["outcome"] = "captured_only"
         object["projectionPolicy"] = "capture_only"
         object["projectionState"] = "capture_only"
@@ -202,6 +202,27 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
         XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]), "A response for another set is not a delivery receipt")
         object["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 99], "sets": [setID: 1]]
         XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]))
+    }
+
+    func testDeletionReceiptRequiresCurrentTombstoneAndAllowsPreservedManualFields() throws {
+        let binding = try binding(), event = UUID()
+        var object: [String: Any] = ["schemaVersion": 1, "eventId": event.uuidString, "sourceWorkoutId": binding.sourceWorkoutId.uuidString,
+            "acceptedSourceRevision": 2, "outcome": "manual_preserved", "lifeRevision": 12, "receiptLifeRevision": 12,
+            "preservedFields": ["set:1:actualLoad"], "currentSourceRevision": 2, "currentTombstone": true,
+            "projectionPolicy": "apply", "projectionState": "retired", "currentProjectionState": "retired",
+            "mappings": ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "sets": [:]],
+            "reconciliation": ["state": "not_requested"]]
+        func decode() throws -> WorkoutCaptureAcknowledgement { try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: JSONSerialization.data(withJSONObject: object)) }
+        let ack = try decode()
+        try ack.validate(eventId: event, sourceWorkoutId: binding.sourceWorkoutId, revision: 2)
+        try ack.validate(binding: binding, sets: [])
+        XCTAssertFalse(ack.needsSourceReview(revision: 2, deleting: true), "Manual preservation can accompany a verified full source tombstone")
+        object["currentTombstone"] = false
+        XCTAssertTrue(try decode().needsSourceReview(revision: 2, deleting: true))
+        object.removeValue(forKey: "currentTombstone"); object["outcome"] = "deleted"
+        XCTAssertTrue(try decode().needsSourceReview(revision: 2, deleting: true), "An outcome alone is not current source-state evidence")
+        object["currentTombstone"] = true; object["currentSourceRevision"] = 3
+        XCTAssertTrue(try decode().needsSourceReview(revision: 2, deleting: true))
     }
 
     func testAdditionalSetRemainsCaptureOnlyAndCannotBeAcknowledgedAsAPrescribedSet() throws {
