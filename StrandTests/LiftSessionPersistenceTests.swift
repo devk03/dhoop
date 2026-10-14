@@ -89,10 +89,41 @@ final class LiftSessionPersistenceTests: XCTestCase {
         XCTAssertTrue(controller.addExercise("Row", primaryMuscle: nil, secondaryMuscles: [], sourceExerciseId: UUID(), loadMode: .machine))
         XCTAssertNotEqual(controller.identity(for: slot), id)
         XCTAssertEqual(controller.trackerBinding?.additionalOccurrences?.first?.name, "Row")
+        let completedSlot = LiftSlot(exerciseIndex: 0, setIndex: 1), completedId = controller.identity(for: LiftSlot(exerciseIndex: 0, setIndex: 1))
+        controller.start(completedSlot); controller.advance()
+        let observed = try XCTUnwrap(controller.trackerBindingForSave())
+        XCTAssertEqual(observed.observedSetOrder?[completedId], 0)
+        XCTAssertNil(observed.observedSetOrder?[controller.identity(for: slot)], "Unperformed rows have no observed order even when shown before a completed exercise")
+        XCTAssertEqual(observed.manifest, controller.trackerBinding?.manifest)
         controller.discard(); restored.discard()
     }
 
     private let t0 = 1_700_000_000
+
+    @MainActor
+    func testReplacementRelaunchKeepsOldSetIdentityNotesAndNewBodyweightSource() throws {
+        let controller = LiftSessionController(buzz: { _ in XCTFail("Replacement cannot request a buzz") }, setStrapHandler: { _ in })
+        XCTAssertTrue(controller.start(plan: [LiftPlanItem(exercise: "Leg press", targetSets: 3)], programId: "routine", programName: "Lower A"))
+        let originalSlot = LiftSlot(exerciseIndex: 0, setIndex: 1), originalId = controller.identity(for: LiftSlot(exerciseIndex: 0, setIndex: 1))
+        controller.start(originalSlot)
+        controller.advance()
+        controller.setNote("Original machine", for: originalSlot)
+        let replacementIndex = try XCTUnwrap(controller.replaceExercise(0, with: "Air squat", primaryMuscle: nil, secondaryMuscles: [], sourceExerciseId: UUID(), loadMode: .bodyweight))
+        let newSlot = LiftSlot(exerciseIndex: replacementIndex, setIndex: 1), newId = controller.identity(for: LiftSlot(exerciseIndex: replacementIndex, setIndex: 1))
+        controller.setLastSession(["Air squat": [1: LiftSetCarry(weightKg: 80, reps: 12)]])
+        XCTAssertNil(controller.carry(for: newSlot).weightKg)
+        let snapshot = try XCTUnwrap(LiftSessionPersistence.load())
+        let restored = LiftSessionController(buzz: { _ in XCTFail("Relaunch cannot request a buzz") }, setStrapHandler: { _ in })
+        restored.resume(from: snapshot)
+        XCTAssertEqual(restored.engine?.exerciseReplacements, [0: replacementIndex])
+        XCTAssertEqual(restored.identity(for: originalSlot), originalId)
+        XCTAssertEqual(restored.identity(for: newSlot), newId)
+        XCTAssertNotEqual(newId, originalId)
+        XCTAssertEqual(restored.note(for: originalSlot), "Original machine")
+        XCTAssertEqual(restored.trackerLoadMode(exerciseIndex: replacementIndex), .bodyweight)
+        XCTAssertFalse(restored.engine?.unperformedSlots.contains(LiftSlot(exerciseIndex: 0, setIndex: 2)) == true)
+        controller.discard(); restored.discard()
+    }
 
     /// A snapshot exactly as the PREVIOUS build wrote it: no `programItemId`, because the field did
     /// not exist until the set count could be changed mid-session.

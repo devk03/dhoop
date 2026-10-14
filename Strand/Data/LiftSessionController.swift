@@ -574,7 +574,7 @@ final class LiftSessionController: ObservableObject {
                                 secondaryMuscles: secondaryMuscles.filter { $0 != primaryMuscle },
                                 targetSets: 1, targetRepsLow: 0, targetWeightKg: loadMode?.hasMass == false ? nil : 0,
                                 note: loadMode?.explanation,
-                                programItemId: UUID().uuidString, addedInSession: true)
+                                programItemId: UUID().uuidString, addedInSession: true, sourceLoadMode: loadMode)
         guard engine?.addExercise(line) == true else { return false }
         trackerBinding = nextBinding
         persist()
@@ -582,6 +582,7 @@ final class LiftSessionController: ObservableObject {
     }
 
     func trackerLoadMode(exerciseIndex: Int) -> WorkoutTrackerLoadMode? {
+        if let plan = engine?.plan, plan.indices.contains(exerciseIndex), let mode = plan[exerciseIndex].sourceLoadMode { return mode }
         guard let binding = trackerBinding else { return nil }
         if binding.manifest.exerciseOccurrences.indices.contains(exerciseIndex) { return binding.manifest.exerciseOccurrences[exerciseIndex].loadMode }
         return binding.additionalOccurrences?.first { $0.planIndex == exerciseIndex }?.loadMode
@@ -592,6 +593,38 @@ final class LiftSessionController: ObservableObject {
         guard !isSaving, engine?.moveExercise(index, by: offset) == true else { return false }
         persist()
         return true
+    }
+
+    func trackerBindingForSave() -> WorkoutTrackerCaptureBinding? {
+        guard let engine, trackerBinding != nil else { return nil }
+        let order = Dictionary(uniqueKeysWithValues: engine.sets.enumerated().map { (identity(for: $0.element.slot), $0.offset) })
+        guard var binding = trackerBinding else { return nil }
+        let known = Set((binding.occurrences.flatMap(\.sets) + (binding.additionalOccurrences ?? []).flatMap(\.sets)).map(\.sourceSetId))
+        binding.observedSetOrder = order.filter { known.contains($0.key) }
+        return binding
+    }
+
+    @discardableResult
+    func replaceExercise(_ index: Int, with name: String, primaryMuscle: LiftMuscle?, secondaryMuscles: [LiftMuscle],
+                         sourceExerciseId: UUID? = nil, loadMode: WorkoutTrackerLoadMode? = nil) -> Int? {
+        guard !isSaving, let engine, engine.canReplaceExercise(index), !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        var nextBinding = trackerBinding
+        var bindingNeedsReview = false
+        if var binding = nextBinding {
+            guard let sourceExerciseId, let loadMode, loadMode != .duration else { return nil }
+            do {
+                try binding.bindReplacementExercise(planIndex: engine.plan.count, replacing: index, exerciseId: sourceExerciseId, name: name, loadMode: loadMode)
+                nextBinding = binding
+            } catch { bindingNeedsReview = true }
+        }
+        let replacement = LiftPlanItem(exercise: name, primaryMuscle: primaryMuscle,
+            secondaryMuscles: secondaryMuscles.filter { $0 != primaryMuscle }, restSec: engine.plan[index].restSec,
+            note: loadMode?.explanation, sourceLoadMode: loadMode)
+        guard let replacementIndex = self.engine?.replaceExercise(index, with: replacement) else { return nil }
+        trackerBinding = nextBinding
+        if bindingNeedsReview { log("Strength: replacement was kept locally; tracker identity binding needs review") }
+        persist()
+        return replacementIndex
     }
 
     /// Drop the last pending set of an exercise. See `LiftSessionEngine.canRemoveSet(fromExercise:)`

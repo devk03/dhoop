@@ -48,6 +48,7 @@ struct LiftPlanItem: Equatable {
     /// Added while the session ran (`LiftSessionEngine.addExercise`), so the program has no line for it
     /// yet; finishing offers to add one.
     var addedInSession: Bool
+    var sourceLoadMode: WorkoutTrackerLoadMode?
 
     /// Rest used when a program line does not specify one. Two minutes sits in the middle of the
     /// range the hypertrophy literature uses for compound work, and is only a starting value: what
@@ -65,7 +66,7 @@ struct LiftPlanItem: Equatable {
          targetWeightKg: Double? = nil,
          note: String? = nil,
          programItemId: String? = nil,
-         addedInSession: Bool = false) {
+         addedInSession: Bool = false, sourceLoadMode: WorkoutTrackerLoadMode? = nil) {
         self.exercise = exercise
         self.primaryMuscle = primaryMuscle
         self.secondaryMuscles = secondaryMuscles
@@ -78,6 +79,7 @@ struct LiftPlanItem: Equatable {
         self.note = note
         self.programItemId = programItemId
         self.addedInSession = addedInSession
+        self.sourceLoadMode = sourceLoadMode
     }
 }
 
@@ -129,6 +131,8 @@ struct LiftSessionEngine: Equatable {
     private(set) var plan: [LiftPlanItem]
     /// Presentation and suggestion order. Slot indices stay fixed so moving a card never relabels data.
     private(set) var exerciseOrder: [Int]
+    /// Original indices remain present as history; only their unfinished slots are replaced.
+    private(set) var exerciseReplacements: [Int: Int]
     /// When the session began (unix seconds).
     let startTs: Int
     private(set) var stage: Stage
@@ -151,6 +155,7 @@ struct LiftSessionEngine: Equatable {
     private struct Snapshot: Equatable {
         var plan: [LiftPlanItem]
         var exerciseOrder: [Int]
+        var exerciseReplacements: [Int: Int]
         var stage: Stage
         var sets: [LiftRecordedSet]
         var stageStartedAt: Int
@@ -159,6 +164,7 @@ struct LiftSessionEngine: Equatable {
     init(plan: [LiftPlanItem], startTs: Int) {
         self.plan = plan
         self.exerciseOrder = Array(plan.indices)
+        self.exerciseReplacements = [:]
         self.startTs = startTs
         self.stage = .warmup
         self.sets = []
@@ -170,9 +176,10 @@ struct LiftSessionEngine: Equatable {
     /// The undo history is deliberately NOT restored: it is a within-sitting convenience, and a
     /// stack that survives a relaunch invites reaching back past a save boundary.
     init(restoring plan: [LiftPlanItem], startTs: Int, stage: Stage,
-         sets: [LiftRecordedSet], stageStartedAt: Int, exerciseOrder: [Int]? = nil) {
+         sets: [LiftRecordedSet], stageStartedAt: Int, exerciseOrder: [Int]? = nil, exerciseReplacements: [Int: Int] = [:]) {
         self.plan = plan
         self.exerciseOrder = exerciseOrder.flatMap { $0.count == plan.count && Set($0) == Set(plan.indices) ? $0 : nil } ?? Array(plan.indices)
+        self.exerciseReplacements = exerciseReplacements
         self.startTs = startTs
         self.stage = stage
         self.sets = sets
@@ -188,7 +195,9 @@ struct LiftSessionEngine: Equatable {
     }
 
     /// Every slot in the whole session, in plan order.
-    var allSlots: [LiftSlot] { exerciseOrder.flatMap { slots(forExercise: $0) } }
+    var allSlots: [LiftSlot] {
+        exerciseOrder.flatMap { index in slots(forExercise: index).filter { exerciseReplacements[index] == nil || isCompleted($0) } }
+    }
 
     func recordedSet(for slot: LiftSlot) -> LiftRecordedSet? {
         sets.first { $0.slot == slot }
@@ -228,7 +237,7 @@ struct LiftSessionEngine: Equatable {
     /// your sets on the machine you are standing at. The skipped exercise is not forgotten — it is
     /// still pending, and it is what you get once the current one is done.
     func slotAfter(_ slot: LiftSlot) -> LiftSlot? {
-        slots(forExercise: slot.exerciseIndex).first { !isCompleted($0) } ?? nextPendingSlot
+        (exerciseReplacements[slot.exerciseIndex] == nil ? slots(forExercise: slot.exerciseIndex).first { !isCompleted($0) } : nil) ?? nextPendingSlot
     }
 
     /// The set the session is heading to after the current one — what the minimised bar and the Lock
@@ -241,7 +250,7 @@ struct LiftSessionEngine: Equatable {
         case .warmup:
             return nextPendingSlot
         case .working(let slot), .resting(let slot, _):
-            return slots(forExercise: slot.exerciseIndex).first { !isCompleted($0) && $0 != slot }
+            return (exerciseReplacements[slot.exerciseIndex] == nil ? slots(forExercise: slot.exerciseIndex).first { !isCompleted($0) && $0 != slot } : nil)
                 ?? allSlots.first { !isCompleted($0) && $0 != slot }
         case .finished:
             return nil
@@ -252,7 +261,7 @@ struct LiftSessionEngine: Equatable {
     var isFinished: Bool { stage == .finished }
     var canUndo: Bool { !history.isEmpty }
 
-    var plannedWorkingSets: Int { plan.reduce(0) { $0 + $1.targetSets } }
+    var plannedWorkingSets: Int { allSlots.count }
     var completedWorkingSets: Int { sets.filter { !$0.isWarmup }.count }
 
     func planItem(for slot: LiftSlot) -> LiftPlanItem? {
@@ -327,7 +336,7 @@ struct LiftSessionEngine: Equatable {
     /// because nothing was finished. Starting an already-completed slot re-opens it for a redo,
     /// dropping its previous record so the set is not counted twice.
     mutating func start(_ slot: LiftSlot, now: Int) {
-        guard planItem(for: slot) != nil else { return }
+        guard let item = planItem(for: slot), (1...item.targetSets).contains(slot.setIndex), exerciseReplacements[slot.exerciseIndex] == nil else { return }
         pushHistory()
         sets.removeAll { $0.slot == slot }
         stage = .working(slot)
@@ -402,6 +411,7 @@ struct LiftSessionEngine: Equatable {
     @discardableResult
     mutating func addSet(toExercise index: Int) -> Bool {
         guard plan.indices.contains(index),
+              exerciseReplacements[index] == nil,
               plan[index].targetSets < LiftSessionEngine.maxSetsPerExercise else { return false }
         pushHistory()
         plan[index].targetSets += 1
@@ -417,7 +427,7 @@ struct LiftSessionEngine: Equatable {
     /// The set being worked or rested from is excluded for the same reason it cannot be renumbered:
     /// the session is standing on it.
     func canRemoveSet(fromExercise index: Int) -> Bool {
-        guard plan.indices.contains(index), plan[index].targetSets > 1 else { return false }
+        guard plan.indices.contains(index), exerciseReplacements[index] == nil, plan[index].targetSets > 1 else { return false }
         let last = LiftSlot(exerciseIndex: index, setIndex: plan[index].targetSets)
         return !isCompleted(last) && currentSlot != last
     }
@@ -446,6 +456,28 @@ struct LiftSessionEngine: Equatable {
     /// The most lines one session may hold: the importer's cap on one program, so a session grown during
     /// the workout stays inside the bound its crash snapshot (written on every change) was sized for.
     static let maxExercises = 200
+
+    func canReplaceExercise(_ index: Int) -> Bool {
+        guard stage != .finished, plan.indices.contains(index), exerciseReplacements[index] == nil,
+              plan.count < Self.maxExercises else { return false }
+        if case .working(let slot) = stage, slot.exerciseIndex == index { return false }
+        return slots(forExercise: index).contains { !isCompleted($0) }
+    }
+
+    /// A replacement is a new exercise. Completed original sets and an ongoing rest remain intact.
+    @discardableResult
+    mutating func replaceExercise(_ index: Int, with item: LiftPlanItem) -> Int? {
+        guard canReplaceExercise(index), let position = exerciseOrder.firstIndex(of: index) else { return nil }
+        pushHistory()
+        var replacement = item
+        replacement.targetSets = max(1, slots(forExercise: index).filter { !isCompleted($0) }.count)
+        replacement.programItemId = nil; replacement.addedInSession = false
+        let replacementIndex = plan.count
+        plan.append(replacement)
+        exerciseReplacements[index] = replacementIndex
+        exerciseOrder.insert(replacementIndex, at: position + 1)
+        return replacementIndex
+    }
 
     /// Append an exercise the program does not have, as ONE set at the end of the sheet (Utku, 21 Sep
     /// 2026). Any set count the caller gives is ignored: a line starts with one set, and ⊕/⊖ change it
@@ -479,13 +511,14 @@ struct LiftSessionEngine: Equatable {
         guard let previous = history.popLast() else { return }
         plan = previous.plan
         exerciseOrder = previous.exerciseOrder
+        exerciseReplacements = previous.exerciseReplacements
         stage = previous.stage
         sets = previous.sets
         stageStartedAt = previous.stageStartedAt
     }
 
     private mutating func pushHistory() {
-        history.append(Snapshot(plan: plan, exerciseOrder: exerciseOrder, stage: stage,
+        history.append(Snapshot(plan: plan, exerciseOrder: exerciseOrder, exerciseReplacements: exerciseReplacements, stage: stage,
                                 sets: sets, stageStartedAt: stageStartedAt))
     }
 }

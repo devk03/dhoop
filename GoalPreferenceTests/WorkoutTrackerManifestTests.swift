@@ -64,4 +64,22 @@ final class WorkoutTrackerManifestTests: XCTestCase {
         XCTAssertThrowsError(try binding.bindAdditionalSet(exerciseIndex: 2, slotIndex: 3, sourceSetId: id))
         XCTAssertEqual(binding, beforeFailure, "Rejected duplicate IDs cannot corrupt the durable binding")
     }
+    func testReplacementPreservesOriginalBindingAndRejectsUnknownOrSelfLineage() throws {
+        let original = try manifest()
+        var binding = try WorkoutTrackerCaptureBinding(manifest: original)
+        let prior = binding.occurrences
+        try binding.bindReplacementExercise(planIndex: 1, replacing: 0, exerciseId: UUID(), name: "Machine press", loadMode: .machine)
+        XCTAssertEqual(binding.occurrences, prior)
+        XCTAssertEqual(binding.manifest, original)
+        let replacement = try XCTUnwrap(binding.additionalOccurrences?.first)
+        XCTAssertEqual(replacement.replacesSourceOccurrenceId, prior[0].sourceOccurrenceId)
+        XCTAssertNil(replacement.sets[0].lifeSetId)
+        XCTAssertNotEqual(replacement.sets[0].sourceSetId, prior[0].sets[0].sourceSetId)
+        let restored = try JSONDecoder().decode(WorkoutTrackerCaptureBinding.self, from: JSONEncoder().encode(binding))
+        XCTAssertEqual(restored, binding)
+        for invalid in [UUID(), replacement.sourceOccurrenceId] {
+            var wrong = binding; wrong.additionalOccurrences?[0].replacesSourceOccurrenceId = invalid
+            XCTAssertThrowsError(try wrong.validate())
+        }
+    }
 }

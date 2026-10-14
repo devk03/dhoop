@@ -43,6 +43,7 @@ enum LiftSessionPersistence {
         var setIdentities: [SetIdentity]? = nil
         var setNotes: [SetNote]? = nil
         var exerciseOrder: [Int]? = nil
+        var exerciseReplacements: [Int: Int]? = nil
 
         struct SetNote: Codable, Equatable {
             let exerciseIndex: Int
@@ -87,6 +88,7 @@ enum LiftSessionPersistence {
             /// True for a line added during the session. Absent from a snapshot written before lines
             /// could be added, which decodes to nil: a line from the program.
             var addedInSession: Bool?
+            var sourceLoadMode: WorkoutTrackerLoadMode? = nil
         }
 
         /// The stage as a flat, forward-compatible record rather than an encoded enum: a persisted
@@ -141,6 +143,11 @@ enum LiftSessionPersistence {
                   Set(identities.map(\.id)).count == identities.count else { return nil }
         }
         if let order = raw.exerciseOrder, order.count != raw.plan.count || Set(order) != Set(raw.plan.indices) { return nil }
+        if let replacements = raw.exerciseReplacements {
+            guard Set(replacements.values).count == replacements.count,
+                  replacements.allSatisfy({ raw.plan.indices.contains($0.key) && raw.plan.indices.contains($0.value) && $0.value > $0.key }) else { return nil }
+            if raw.stage.kind == "working", let index = raw.stage.item, replacements[index] != nil { return nil }
+        }
         return raw
     }
 
@@ -196,7 +203,7 @@ enum LiftSessionPersistence {
                                   note: $0.note,
                                   programItemId: $0.programItemId,
                                   // Written only when true, so a session nobody added to encodes as before.
-                                  addedInSession: $0.addedInSession ? true : nil)
+                                  addedInSession: $0.addedInSession ? true : nil, sourceLoadMode: $0.sourceLoadMode)
             },
             stage: box(engine.stage),
             sets: engine.sets.map {
@@ -220,7 +227,7 @@ enum LiftSessionPersistence {
             sourceDeviceId: sourceDeviceId, recordingId: recordingId, trackerBinding: trackerBinding,
             setIdentities: setIdentities?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) },
             setNotes: setNotes?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) },
-            exerciseOrder: engine.exerciseOrder)
+            exerciseOrder: engine.exerciseOrder, exerciseReplacements: engine.exerciseReplacements)
     }
 
     /// The numbers typed in advance, back as the controller holds them.
@@ -254,7 +261,7 @@ enum LiftSessionPersistence {
                          targetWeightKg: $0.targetWeightKg,
                          note: $0.note,
                          programItemId: $0.programItemId,
-                         addedInSession: $0.addedInSession ?? false)
+                         addedInSession: $0.addedInSession ?? false, sourceLoadMode: $0.sourceLoadMode)
         }
         let sets = s.sets.map {
             LiftRecordedSet(exerciseIndex: $0.exerciseIndex, setIndex: $0.setIndex,
@@ -263,7 +270,8 @@ enum LiftSessionPersistence {
                             restSec: $0.restSec)
         }
         return LiftSessionEngine(restoring: plan, startTs: s.startSec,
-                                 stage: unbox(s.stage), sets: sets, stageStartedAt: s.stageStartedAt, exerciseOrder: s.exerciseOrder)
+                                 stage: unbox(s.stage), sets: sets, stageStartedAt: s.stageStartedAt, exerciseOrder: s.exerciseOrder,
+                                 exerciseReplacements: s.exerciseReplacements ?? [:])
     }
 
     private static func box(_ stage: LiftSessionEngine.Stage) -> Snapshot.StageBox {

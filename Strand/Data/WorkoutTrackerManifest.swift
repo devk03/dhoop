@@ -7,7 +7,7 @@ enum WorkoutTrackerContractError: LocalizedError {
         case .invalidSnapshot: return "Workout data could not be validated. Local entries are kept; review or refresh before continuing."
         case .unavailableCapture: return "This tracker workout already has observations. Review it before starting another capture."
         case .deliveryInProgress: return "Another workout tracker operation is in progress. Your edits are kept; try again after it finishes."
-        case .sessionChanged: return "The active workout changed before the exercise could be added. Your input is kept."
+        case .sessionChanged: return "The active workout changed before this action could be applied. Your input is kept."
         case .backupConflict: return "Backup metadata conflicts with an existing event or exercise identity. Nothing was replaced."
         }
     }
@@ -166,6 +166,7 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
         let name: String
         let loadMode: WorkoutTrackerLoadMode
         var sets: [SetBinding]
+        var replacesSourceOccurrenceId: UUID? = nil
     }
     let sourceWorkoutId: UUID
     let manifest: WorkoutTrackerManifest
@@ -173,6 +174,23 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
     let connection: Connection?
     var occurrences: [Occurrence]
     var additionalOccurrences: [AdditionalOccurrence]? = nil
+    /// Observed completion order is separate from plan/card order; legacy captures may not carry it.
+    var observedSetOrder: [UUID: Int]? = nil
+
+    func sourceOccurrenceId(exerciseIndex: Int) -> UUID? {
+        if occurrences.indices.contains(exerciseIndex) { return occurrences[exerciseIndex].sourceOccurrenceId }
+        return additionalOccurrences?.first { $0.planIndex == exerciseIndex }?.sourceOccurrenceId
+    }
+
+    mutating func bindReplacementExercise(planIndex: Int, replacing originalIndex: Int, exerciseId: UUID, name: String, loadMode: WorkoutTrackerLoadMode) throws {
+        guard let originalId = sourceOccurrenceId(exerciseIndex: originalIndex), originalIndex < planIndex else { throw WorkoutTrackerContractError.invalidSnapshot }
+        var next = self
+        try next.bindAdditionalExercise(planIndex: planIndex, exerciseId: exerciseId, name: name, loadMode: loadMode)
+        guard var additional = next.additionalOccurrences, let last = additional.indices.last else { throw WorkoutTrackerContractError.invalidSnapshot }
+        additional[last].replacesSourceOccurrenceId = originalId
+        next.additionalOccurrences = additional
+        try next.validate(); self = next
+    }
 
     func identity(exerciseIndex: Int, slotIndex: Int) -> SetBinding? {
         if occurrences.indices.contains(exerciseIndex) {
@@ -253,6 +271,10 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         for occurrence in additional {
+            if let priorId = occurrence.replacesSourceOccurrenceId {
+                let priorIndex = occurrences.firstIndex { $0.sourceOccurrenceId == priorId } ?? additional.first { $0.sourceOccurrenceId == priorId }?.planIndex
+                guard let priorIndex, priorIndex < occurrence.planIndex else { throw WorkoutTrackerContractError.invalidSnapshot }
+            }
             guard occurrence.exerciseKey.hasPrefix("custom:"), UUID(uuidString: String(occurrence.exerciseKey.dropFirst(7))) != nil,
                   !occurrence.name.isEmpty, occurrence.name.utf16.count <= 200, occurrence.loadMode != .duration,
                   !occurrence.sets.isEmpty, Set(occurrence.sets.map(\.slotIndex)).count == occurrence.sets.count else {
@@ -265,5 +287,9 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
             }
         }
         guard ids.count <= 200 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        if let observedSetOrder {
+            guard Set(observedSetOrder.keys).isSubset(of: ids), Set(observedSetOrder.values).count == observedSetOrder.count,
+                  observedSetOrder.values.allSatisfy({ (0...1000).contains($0) }) else { throw WorkoutTrackerContractError.invalidSnapshot }
+        }
     }
 }
