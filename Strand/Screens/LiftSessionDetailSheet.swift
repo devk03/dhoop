@@ -30,6 +30,7 @@ struct LiftSessionDetailSheet: View {
     /// Previous performance per exercise, for the "vs last time" comparison.
     @State private var previousVolume: [String: Double] = [:]
     @State private var loaded = false
+    @State private var loadError: String?
     @State private var confirmingDelete = false
     @State private var deleting = false
     @State private var deleteError: String?
@@ -55,6 +56,13 @@ struct LiftSessionDetailSheet: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 if !loaded {
                     ComingSoon(what: "Reading the session…", symbol: "dumbbell")
+                } else if let loadError {
+                    NoopCard {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                            Text(loadError).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical)
+                            NoopButton("Retry loading session", systemImage: "arrow.clockwise", kind: .secondary) { Task { await load() } }
+                        }
+                    }
                 } else {
                     figuresSection
                     heartRateSection
@@ -123,9 +131,13 @@ struct LiftSessionDetailSheet: View {
     }
 
     private func deleteSession() async {
-        guard !deleting, let store = await repo.storeHandle() else { return }
+        guard !deleting else { return }
         deleting = true
         defer { deleting = false }
+        guard let store = await repo.storeHandle() else {
+            deleteError = "Storage is unavailable. The session was kept."
+            return
+        }
 
         do { _ = try await store.deleteLiftRecording(session) }
         catch { deleteError = error.localizedDescription; return }
@@ -493,8 +505,18 @@ struct LiftSessionDetailSheet: View {
     // MARK: - Load
 
     private func load() async {
-        guard let store = await repo.storeHandle() else { sessionRpe = session.sessionRpe; loaded = true; return }
-        sets = (try? await store.liftSets(sessionId: session.id)) ?? []
+        loaded = false; loadError = nil
+        guard let store = await repo.storeHandle() else {
+            loadError = "Storage is unavailable. The session could not be checked."
+            loaded = true
+            return
+        }
+        do { sets = try await store.liftSets(sessionId: session.id) }
+        catch {
+            loadError = "Session loading failed: \(error.localizedDescription)"
+            loaded = true
+            return
+        }
         // Re-read rather than trusting the row this sheet was opened with: the edit sheet can change it.
         let stored = try? await store.liftSessions(deviceId: session.deviceId,
                                                    fromTs: session.startTs, toTs: session.startTs)
