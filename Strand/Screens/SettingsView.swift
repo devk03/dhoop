@@ -210,6 +210,9 @@ struct SettingsView: View {
 
     /// Raw-sensor CSV export (experimental diagnostic, #308/#276/#322). Holds the last-written file so
     /// macOS can "Reveal in Finder" after a share, mirroring the puffin-capture export.
+    @State private var strapLogBusy = false
+    @State private var preparedStrapLogURL: URL?
+    @State private var strapLogPreparedAt: Date?
     @State private var rawCsvBusy = false
     @State private var lastRawCsvURL: URL?
     @State private var rawCsvPreparedAt: Date?
@@ -1521,25 +1524,35 @@ struct SettingsView: View {
                 rowDivider
                 // MARK: Strap log — a Settings shortcut so people don't have to hunt for it on the Live
                 // screen (#507: couldn't find it on Mac; #509: same on iPhone). Same text as the Live card.
-                HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                     Text("STRAP LOG").font(StrandFont.overline).tracking(StrandFont.overlineTracking)
                         .foregroundStyle(StrandPalette.textSecondary)
-                    Spacer()
-                    Button("Copy") { PlatformPasteboard.copy(live.exportableLogText()) }
-                        .buttonStyle(.plain).font(StrandFont.mono).foregroundStyle(StrandPalette.accent)
-                    Button("Save…") {
-                        Task {
-                            let extra = await DebugDataDiagnostics.dynamicLines(repo: model.repo)
-                            FileExport.exportText(live.exportableLogText(extraHeaderLines: extra),
-                                                  suggestedName: FileExport.timestampedName("noop-strap-log", ext: "txt"))
+                    NoopAsyncButton("Copy current log", systemImage: "doc.on.doc", kind: .secondary, fullWidth: true) {
+                        guard PlatformPasteboard.copy(live.exportableLogText()) else {
+                            throw SettingsOperationFailure(message: "The current log could not be copied. Try again.")
                         }
                     }
-                    .buttonStyle(.plain).font(StrandFont.mono).foregroundStyle(StrandPalette.accent)
+                    NoopAsyncButton("Prepare strap log", systemImage: "doc.badge.plus", kind: .secondary, fullWidth: true) {
+                        try await prepareStrapLog()
+                    }.disabled(strapLogBusy)
+                    if let url = preparedStrapLogURL {
+                        NoopAsyncButton("Save prepared log", systemImage: "square.and.arrow.down", kind: .secondary, fullWidth: true) {
+                            guard !strapLogBusy else { throw SettingsOperationFailure(message: "Another log operation is in progress.") }
+                            strapLogBusy = true
+                            defer { strapLogBusy = false }
+                            _ = try await FileExport.saveCopyVerified(at: url)
+                        }.id(url).disabled(strapLogBusy)
+                        ShareLink(item: url) { Label("Share prepared log", systemImage: "square.and.arrow.up") }
+                            .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true)).disabled(strapLogBusy)
+                        if let strapLogPreparedAt {
+                            Text("Prepared \(strapLogPreparedAt.formatted(date: .abbreviated, time: .shortened)) · saving is separate")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                    Text("Prepare a local diagnostic snapshot for a bug report. Saving and sharing are separate; preparing it sends no strap commands and uploads nothing.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Grab this when you report a bug. It tells me what the app saw. (The full live log is also on the Live screen.)")
-                    .font(StrandFont.caption)
-                    .foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
 
                 // #518: Continuous HRV capture, "Overnight only" and the HRV window picker moved to the
                 // "HRV" card under Advanced (see `hrvCard`) — same @AppStorage bindings, same BLE + re-score
@@ -1645,7 +1658,7 @@ struct SettingsView: View {
         // longer being attempted. The `bonded && connected` arm below is that fix, matching the Android
         // twin (`SettingsLogic.strapStatusLine`).
         if live.encryptedBond && live.connected {
-            return String(localized: "Your strap is paired and sending data. Open Live for a real-time heart rate.")
+            return String(localized: "Your strap is securely paired. Connection alone does not verify incoming or saved data. Open Data collection from Today to inspect sample counts and freshness.")
         }
         // An actionable hint outranks the generic arm: the suppression hint names the one action that
         // restores the handshake, which "not fully paired" alone does not.
@@ -1653,7 +1666,7 @@ struct SettingsView: View {
         // Live HR over the UNBONDED standard profile (#69). True whenever the handshake is suppressed or
         // simply has not landed, and the honest description either way.
         if live.bonded && live.connected {
-            return String(localized: "Live heart rate is streaming, but your strap is not fully paired. The encrypted pairing is what carries motion, skin temperature, SpO₂ and respiratory rate — without it, sleep is staged from heart rate alone. Buzz, alarms and history sync need it too.")
+            return String(localized: "Connected over the standard heart-rate profile, but your strap is not fully paired. Connection alone does not verify readable heart-rate samples. Full pairing is needed for proprietary history sync, buzzes and alarms. Check Data collection from Today for the readings actually received and saved.")
         }
         if live.connected { return String(localized: "Connected. Finishing the secure pairing handshake…") }
         if live.bonded { return String(localized: "Previously paired but not currently connected. Re-scan to reconnect.") }
@@ -1664,6 +1677,25 @@ struct SettingsView: View {
         if pct <= 15 { return .critical }
         if pct <= 30 { return .warning }
         return .positive
+    }
+
+    @MainActor
+    private func prepareStrapLog() async throws {
+        guard !strapLogBusy else { throw SettingsOperationFailure(message: "Another log operation is in progress.") }
+        strapLogBusy = true
+        defer { strapLogBusy = false }
+        let source = model.repo.deviceId
+        let extra = await DebugDataDiagnostics.dynamicLines(repo: model.repo)
+        try Task.checkCancellation()
+        guard model.repo.deviceId == source else {
+            throw SettingsOperationFailure(message: "The active device changed while preparing the log. The previous prepared log is retained; prepare a new snapshot.")
+        }
+        let text = live.exportableLogText(extraHeaderLines: extra)
+        let name = FileExport.timestampedName("dhoop-strap-log", ext: "txt")
+        let url = try await Task.detached(priority: .utility) { try PreparedTextExport.write(text, suggestedName: name) }.value
+        try Task.checkCancellation()
+        preparedStrapLogURL = url
+        strapLogPreparedAt = Date()
     }
 
     // MARK: - Recovery (Charge baseline)
@@ -2084,7 +2116,7 @@ struct SettingsView: View {
                         rawCsvBusy = true
                         defer { rawCsvBusy = false }
                         _ = try await FileExport.saveCopyVerified(at: url)
-                    }.disabled(rawCsvBusy)
+                    }.id(url).disabled(rawCsvBusy)
                     ShareLink(item: url) { Label("Share prepared CSV", systemImage: "square.and.arrow.up") }
                         .buttonStyle(NoopButtonStyle(.secondary)).disabled(rawCsvBusy)
                     if let rawCsvPreparedAt {
