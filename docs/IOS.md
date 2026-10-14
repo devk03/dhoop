@@ -857,6 +857,19 @@ the physical iPhone.
 
 ### Shared alarm, summary and activity actions
 
+Previous-performance reads now use the active strength capture's recorded source identity. Foreign
+rows and late superseded results cannot replace its carry values. A failed read retains known carry
+and typed pending values with an explicit retry; an unknown legacy source is not inferred from a
+newly selected strap. Carry caches are cleared between physical sessions.
+
+Meditation start/pause/resume/cancel and storage retry use shared action controls tied to actual
+local transition results. Saved timer state does not confirm cue delivery. Pairing invitation/import
+and wearer-confirmation controls similarly use verified local results, with retained failed pasted
+input and explicit file-import errors. Pending inbox/outbox checks display their actual bounded-work
+state without manufacturing success. Wake-alarm ownership, cue policy and network limits are unchanged.
+The [previous/timer/pairing study](design/dhoop-previous-meditation-pairing-actions-study.png) and
+[built-in prompts](design/dhoop-previous-meditation-pairing-actions-study.prompt.txt) contain demo states.
+
 Alarm editing uses the shared asynchronous Save control. The editor remains open with its current
 draft after permission, validation or storage failure; editing/dismissal is held only while saving.
 Local save completion means the definition was persisted. Strap storage and felt vibration remain

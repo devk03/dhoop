@@ -130,6 +130,21 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - No database migration was written or applied. The six-field approval request for variations,
   supersets and persisted pause windows remains pending. The full goal remains incomplete.
 
+## Build 484 previous-performance and alert controls
+
+- Thirteen selected previous-performance/pending-input tests passed. The new cases verify using
+  the recorded strap after active selection changes, rejecting foreign rows, preserving typed
+  pending values and known carry on read failure, and rejecting late superseded results.
+- Twenty-one Meditation session, enrollment and remote-state tests passed. They verify the pure
+  state/enrollment boundaries; they do not directly execute the iOS controllers, Keychain import UI,
+  notification scheduling, live network requests or physical cues.
+- iOS generic-device build passed (`/private/tmp/dhoop-strength-alerts-484-ios-build.log`). The macOS
+  app/test host compiled the shared controller/view changes as part of the selected app tests.
+- Test logs: `/private/tmp/dhoop-previous-performance-tests.log`,
+  `/private/tmp/dhoop-meditation-buzz-state-tests.log`. Source comment hygiene passed.
+- No timer was started, credential imported, motor cue sent, wake configuration changed or physical
+  installation performed by these checks. Build 484 UI/hardware verification remains outstanding.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
