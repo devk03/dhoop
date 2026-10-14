@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import StrandDesign
 
 @MainActor
 final class HIITController: ObservableObject {
@@ -8,6 +9,7 @@ final class HIITController: ObservableObject {
     @Published private(set) var selectedKind: HIITWorkoutKind = .hiit
     @Published private(set) var historyRevision = 0
     @Published private(set) var isSaving = false
+    @Published private(set) var saveState: NoopActionState = .idle
     @Published var cuesEnabled = true {
         didSet { if !cuesEnabled { app?.ble.buzzDelivery.cancel(owner: buzzOwner) } }
     }
@@ -83,6 +85,7 @@ final class HIITController: ObservableObject {
         guard !hasSession, !otherSessionActive, ready, app?.activeWorkout == nil,
               let app, let run = HIITSession(deviceId: app.repo.deviceId, plan: plan, zones: zones, kind: selectedKind) else { return }
         guard app.ble.buzzDelivery.claim(buzzOwner) else { message = "Finish or pause the other WHOOP cue session first."; return }
+        saveState = .idle
         working = run; session = run; lastReceipt = run.startedAt.timeIntervalSince1970
         if let data = try? JSONEncoder().encode(plan) { UserDefaults.standard.set(data, forKey: configurationKey) }
         UserDefaults.standard.set(cuesEnabled, forKey: "dhoop.hiit.cues")
@@ -106,7 +109,7 @@ final class HIITController: ObservableObject {
         let paused = run
         run.finish()
         let completed = run, location = directory, title = selectedKind.title
-        isSaving = true; message = "Saving workout…"
+        isSaving = true; saveState = .working; message = "Saving workout…"
         Task { @MainActor in
             defer { isSaving = false }
             do {
@@ -114,12 +117,16 @@ final class HIITController: ObservableObject {
                     try JSONEncoder().encode(paused).write(to: location.appendingPathComponent("active.json"), options: .atomic)
                     return try HIITWorkoutFiles(directory: location).save(completed)
                 }.value
-                guard working?.id == completed.id else { return }
+                guard working?.id == completed.id else { saveState = .idle; return }
+                saveState = .succeeded
                 historyRevision += 1
                 working = nil; session = nil; currentBPM = nil
                 message = cleanupError.map { "\(title) saved. Draft cleanup could not finish: \($0)" }
                     ?? "\(title) saved on this phone."
-            } catch { message = "Could not save workout: \(error.localizedDescription). Your session remains open." }
+            } catch {
+                let failure = "Could not save workout: \(error.localizedDescription). Your session remains open."
+                saveState = .failed(failure); message = failure
+            }
         }
     }
 

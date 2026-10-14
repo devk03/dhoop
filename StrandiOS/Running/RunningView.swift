@@ -311,9 +311,10 @@ private struct RunningContent: View, Equatable {
             Button("I felt it · stop buzzes") { controller.acknowledgeCompletion() }
                 .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
-        Button(controller.isSaving ? "Saving…" : run.phase == .completed ? "Stop buzzes & save" : "End early & save") { controller.endAndSave() }
-            .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent).frame(minHeight: NoopMetrics.minimumTouchTarget)
-            .disabled(controller.isSaving)
+        NoopActionButton(run.phase == .completed ? "Stop buzzes & save" : "End early & save",
+                         systemImage: "stop.fill", fullWidth: true,
+                         state: controller.saveState) { controller.endAndSave() }
+            .accessibilityHint("Stops completion buzzes and saves this workout. Ending before the time goal does not mark the goal achieved.")
     }
 
     private var alertsCard: some View {

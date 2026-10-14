@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import StrandDesign
 
 /// Owns an explicitly started run across tab changes; Today never subscribes to this object.
 @MainActor
@@ -16,6 +17,7 @@ final class RunningSessionController: ObservableObject {
     @Published private(set) var buzzTestMessage: String?
     @Published private(set) var summaries: [RunningSessionSummary] = []
     @Published private(set) var isSaving = false
+    @Published private(set) var saveState: NoopActionState = .idle
     @Published private(set) var completionBuzzActive = false
     @Published private(set) var isConnected = false
     @Published private(set) var strapAlertsReady = false
@@ -233,6 +235,7 @@ final class RunningSessionController: ObservableObject {
               let run = RunningZoneSession(deviceId: app.repo.deviceId, target: target, goalSeconds: Double(targetMinutes * 60)) else { return }
         guard app.ble.buzzDelivery.claim("zone-run") else { statusMessage = "Finish or pause the other WHOOP cue session first."; return }
         saveConfiguration()
+        saveState = .idle
         workingSession = run; session = run
         lastConsumedAt = run.startedAt.timeIntervalSince1970
         elapsedBeforeResume = 0; elapsedSeconds = 0; currentBPM = nil
@@ -277,7 +280,7 @@ final class RunningSessionController: ObservableObject {
             inZoneSeconds: run.inZoneSeconds, goalSeconds: run.goalSeconds, observedSeconds: run.observedSeconds,
             readableSamples: run.readableSamples, averageBPM: run.averageBPM, maximumBPM: run.maximumBPM, goalMet: run.inZoneSeconds >= run.goalSeconds)
         persistDraft()
-        isSaving = true; statusMessage = "Saving workout…"
+        isSaving = true; saveState = .working; statusMessage = "Saving workout…"
         let preferences = defaults
         Task { @MainActor in
             defer { isSaving = false }
@@ -285,7 +288,8 @@ final class RunningSessionController: ObservableObject {
                 let saved = try await Task.detached(priority: .userInitiated) {
                     try RunningSessionStorage(defaults: preferences).saveSummary(summary)
                 }.value
-                guard workingSession?.id == summary.id else { return }
+                guard workingSession?.id == summary.id else { saveState = .idle; return }
+                saveState = .succeeded
                 summaries = saved
                 let cleanupWarning: String?
                 do { try RunningSessionStorage(defaults: preferences).discardDraft(id: summary.id); cleanupWarning = nil }
@@ -293,7 +297,10 @@ final class RunningSessionController: ObservableObject {
                 workingSession = nil; session = nil; currentBPM = nil; runningSinceUptime = nil
                 elapsedBeforeResume = 0; elapsedSeconds = 0
                 statusMessage = cleanupWarning ?? (summary.goalMet ? "Goal complete. Run saved on this phone." : "Run saved on this phone.")
-            } catch { statusMessage = "Could not finish saving: \(error.localizedDescription). Your session remains paused." }
+            } catch {
+                let failure = "Could not finish saving: \(error.localizedDescription). Your session remains paused."
+                saveState = .failed(failure); statusMessage = failure
+            }
         }
     }
 

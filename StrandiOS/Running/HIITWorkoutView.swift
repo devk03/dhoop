@@ -116,8 +116,8 @@ struct HIITWorkoutView: View {
                 Button { controller.resume() } label: { Label("Resume \(controller.selectedKind.title)", systemImage: "play.fill").frame(maxWidth: .infinity) }
                     .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan).disabled(!canStart)
             }
-            Button { controller.save() } label: { Label(controller.isSaving ? "Saving…" : "End and save", systemImage: "stop.fill").frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget) }
-                .buttonStyle(NoopButtonStyle(.secondary)).disabled(controller.isSaving)
+            NoopActionButton("End and save", systemImage: "stop.fill", kind: .secondary,
+                             fullWidth: true, state: controller.saveState) { controller.save() }
             Button(role: .destructive) { discardID = run.id } label: {
                 Label("Discard workout", systemImage: "trash").font(StrandFont.subhead)
                     .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
