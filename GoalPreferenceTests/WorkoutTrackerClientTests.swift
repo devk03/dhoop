@@ -648,6 +648,28 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertTrue(client.state.locallyKeptSources.contains(f.binding.sourceWorkoutId))
     }
 
+    func testRetiredCanonicalReceiptStillProvesAcceptedSourceHistory() async throws {
+        let f = try await fixture()
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            switch endpoint {
+            case .observations:
+                var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: self.receipt(try XCTUnwrap(body), fixture: f)) as? [String: Any])
+                ack["projectionState"] = "retired"; ack["currentProjectionState"] = "retired"
+                return try JSONSerialization.data(withJSONObject: ack)
+            case .captures: return try JSONSerialization.data(withJSONObject: self.historyCapture(f))
+            default: throw WorkoutSyncTransportError.invalidResponse
+            }
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let event = client.state.deliveries[0].id
+        try await client.synchronize(store: f.db)
+        XCTAssertEqual(try client.delivery(event)?.status, .review, "Retired canonical targets must not imply canonical application")
+        XCTAssertTrue(try XCTUnwrap(client.delivery(event)).hasVerifiedSourceReceipt)
+        let review = try await client.reviewHistoryOnly(deliveryId: event)
+        let replacement = try await client.prepareHistoryOnly(reviewId: review.id, store: f.db)
+        XCTAssertTrue(try XCTUnwrap(client.delivery(replacement)).isHistoryOnly)
+    }
+
     func testHistoryOnlyReviewRejectsUncertainSubmissionsAndChangedAcceptedIdentityOrProvenance() async throws {
         for scenario in ["unknown", "legacy", "newer", "tombstone", "identity", "provenance", "missing", "removedSet"] {
             let f = try await fixture()

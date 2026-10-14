@@ -30,6 +30,15 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
         guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return false }
         return object["projectionPolicy"] as? String == "capture_only"
     }
+    /// Source acceptance survives retired canonical targets. It does not claim canonical application.
+    var hasVerifiedSourceReceipt: Bool {
+        guard valid, operation != .delete, let acknowledgement,
+              let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
+              (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil,
+              (try? ack.validate(binding: binding, sets: sets)) != nil else { return false }
+        return ack.acceptedSourceRevision == revision && (ack.currentSourceRevision ?? revision) == revision &&
+            ack.currentTombstone != true && ["applied", "captured_only", "manual_preserved", "duplicate"].contains(ack.outcome)
+    }
     var writeManifestRevision: String? {
         guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return nil }
         return object["manifestRevision"] as? String
@@ -103,7 +112,7 @@ struct WorkoutTrackerHistoryReview: Identifiable {
         try original.validateBody(); try accepted.validateBody()
         guard original.valid, accepted.valid, original.localPersistenceConfirmed == true,
               original.operation != .delete, accepted.operation != .delete,
-              accepted.status == .accepted, let acknowledgement = accepted.acknowledgement,
+              accepted.hasVerifiedSourceReceipt,
               original.sourceWorkoutId == accepted.sourceWorkoutId, original.origin == accepted.origin,
               original.installationId == accepted.installationId,
               original.binding.connection == accepted.binding.connection,
@@ -120,13 +129,7 @@ struct WorkoutTrackerHistoryReview: Identifiable {
             [.lifeRevisionConflict, .manifestConflict, .sessionRetired, .setRetired, .prescriptionInconsistent].contains(original.rejection)
         let neverSubmitted = [.ready, .review].contains(original.status) && original.submissionAttempted == false &&
             original.acknowledgement == nil && original.rejection == nil
-        guard original.status == .accepted || neverSubmitted || knownRejected else {
-            throw WorkoutTrackerContractError.invalidSnapshot
-        }
-        let receipt = try JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement)
-        try receipt.validate(eventId: accepted.id, sourceWorkoutId: accepted.sourceWorkoutId, revision: accepted.revision)
-        try receipt.validate(binding: accepted.binding, sets: accepted.sets)
-        guard !receipt.needsSourceReview(revision: accepted.revision, deleting: false, expectingHistoryOnly: accepted.isHistoryOnly) else {
+        guard original.hasVerifiedSourceReceipt || neverSubmitted || knownRejected else {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         try capture.validate(for: original.binding)

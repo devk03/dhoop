@@ -309,7 +309,7 @@ final class WorkoutTrackerClient: ObservableObject {
             throw WorkoutTrackerContractError.deliveryInProgress
         }
         let history = try history(for: original.sourceWorkoutId)
-        guard history.last?.id == original.id, let accepted = history.last(where: { $0.status == .accepted }) else {
+        guard history.last?.id == original.id, let accepted = history.last(where: \.hasVerifiedSourceReceipt) else {
             throw WorkoutTrackerContractError.historyReviewRequired
         }
         guard history.filter({ $0.revision > accepted.revision && $0.id != original.id }).allSatisfy({
