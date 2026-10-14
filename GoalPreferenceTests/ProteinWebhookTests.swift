@@ -53,7 +53,7 @@ final class ProteinWebhookTests: XCTestCase {
     @MainActor func testSavedLogsIncludeFoodProteinAndFailClosedOnCorruption() throws {
         let defaults = UserDefaults(suiteName: "dhoop-protein-webhook-test-" + UUID().uuidString)!
         let store = ProteinLogStore(defaults: defaults)
-        store.add(grams: 25, name: "Test", day: "2026-10-05")
+        try store.add(grams: 25, name: "Test", day: "2026-10-05")
         defaults.set(Data(#"{"2026-10-05":[{"protein":30.5},{"protein":null}]}"#.utf8),forKey:"cut.food")
         let values = try ProteinWebhookProjection.savedEntries(defaults: defaults)
         XCTAssertEqual(values.count,2); XCTAssertEqual(values.map(\.grams).reduce(0,+),55.5)

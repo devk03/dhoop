@@ -12,7 +12,7 @@ final class ProteinLogStoreTests: XCTestCase {
         XCTAssertEqual(store.entries.count, 1)
         XCTAssertNil(store.entries.first?.loggedAt)
         let at = Date(timeIntervalSince1970: 1_791_200_000)
-        store.add(grams: 15, name: "Snack", day: "2026-10-04", now: at)
+        try store.add(grams: 15, name: "Snack", day: "2026-10-04", now: at)
         let reopened = ProteinLogStore(defaults: defaults)
         XCTAssertNil(reopened.entries.first?.loggedAt)
         XCTAssertEqual(reopened.entries.last?.loggedAt, at)
@@ -20,7 +20,7 @@ final class ProteinLogStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testProteinPersistsWithoutCreatingCalorieDaysOrChangingWeightGoals() {
+    func testProteinPersistsWithoutCreatingCalorieDaysOrChangingWeightGoals() throws {
         let suite = "ProteinLogTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -30,9 +30,9 @@ final class ProteinLogStoreTests: XCTestCase {
         defaults.set(false, forKey: CutGoalPreferences.enabledKey)
         let store = ProteinLogStore(defaults: defaults)
         XCTAssertNil(store.targetGrams, "Protein targets must not come from a weight goal")
-        store.add(grams: 25, name: "Lunch", day: "2026-10-04")
-        store.add(grams: 15, name: "Snack", day: "2026-10-04")
-        store.add(grams: 30, name: "Yesterday", day: "2026-10-03")
+        try store.add(grams: 25, name: "Lunch", day: "2026-10-04")
+        try store.add(grams: 15, name: "Snack", day: "2026-10-04")
+        try store.add(grams: 30, name: "Yesterday", day: "2026-10-03")
         let reopened = ProteinLogStore(defaults: defaults)
         XCTAssertEqual(reopened.total(day: "2026-10-04", foodProtein: 10), 50)
         XCTAssertEqual(reopened.total(day: "2026-10-05"), 0)
@@ -42,16 +42,16 @@ final class ProteinLogStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testIndependentTargetAndRemovalSurviveRestart() {
+    func testIndependentTargetAndRemovalSurviveRestart() throws {
         let suite = "ProteinLogTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = ProteinLogStore(defaults: defaults)
-        store.targetGrams = 120
-        store.add(grams: 25, name: "Meal", day: "2026-10-04")
+        try store.setTarget(120)
+        try store.add(grams: 25, name: "Meal", day: "2026-10-04")
         XCTAssertEqual(ProteinLogStore(defaults: defaults).targetGrams, 120)
-        store.remove(store.entries[0].id)
-        store.targetGrams = nil
+        try store.remove(store.entries[0].id)
+        try store.setTarget(nil)
         let reopened = ProteinLogStore(defaults: defaults)
         XCTAssertNil(reopened.targetGrams)
         XCTAssertEqual(reopened.total(day: "2026-10-04"), 0)
@@ -64,8 +64,58 @@ final class ProteinLogStoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = ProteinLogStore(defaults: defaults)
         for grams in [0, -1, Double.nan, Double.infinity] {
-            store.add(grams: grams, name: "Invalid", day: "2026-10-04")
+            XCTAssertThrowsError(try store.add(grams: grams, name: "Invalid", day: "2026-10-04"))
         }
         XCTAssertTrue(store.entries.isEmpty)
+    }
+    @MainActor
+    func testUnreadableHistoryIsPreservedAndWritesRequireAValidRead() throws {
+        let suite = "ProteinLogTests.corrupt." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let corrupt = Data("broken protein history".utf8)
+        defaults.set(corrupt, forKey: ProteinLogStore.entriesKey)
+        let store = ProteinLogStore(defaults: defaults)
+        XCTAssertTrue(store.storageUnavailable)
+        XCTAssertNotNil(store.storageError)
+        XCTAssertThrowsError(try store.add(grams: 25, name: "Lunch", day: "2026-10-14"))
+        XCTAssertThrowsError(try store.remove(UUID()))
+        XCTAssertEqual(defaults.data(forKey: ProteinLogStore.entriesKey), corrupt)
+        // A user-owned restoration can be read without erasing or rewriting the source bytes.
+        let restored = Data("[]".utf8); defaults.set(restored, forKey: ProteinLogStore.entriesKey)
+        try store.reload()
+        XCTAssertFalse(store.storageUnavailable)
+        XCTAssertEqual(defaults.data(forKey: ProteinLogStore.entriesKey), restored)
+        try store.add(grams: 25, name: "Lunch", day: "2026-10-14")
+        XCTAssertEqual(store.total(day: "2026-10-14"), 25)
+    }
+    @MainActor
+    func testEncodingFailureKeepsTheLastSavedEntriesAndTarget() throws {
+        let suite = "ProteinLogTests.encoding." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = ProteinLogStore(defaults: defaults)
+        try store.add(grams: 20, name: "Breakfast", day: "2026-10-14")
+        try store.setTarget(120)
+        let original = defaults.data(forKey: ProteinLogStore.entriesKey)
+        XCTAssertThrowsError(try store.add(grams: 25, name: "Keep this input", day: "2026-10-14", now: Date(timeIntervalSince1970: .infinity)))
+        XCTAssertEqual(defaults.data(forKey: ProteinLogStore.entriesKey), original)
+        XCTAssertEqual(store.entries.count, 1)
+        XCTAssertThrowsError(try store.setTarget(.nan))
+        XCTAssertEqual(store.targetGrams, 120)
+        XCTAssertEqual(defaults.double(forKey: ProteinLogStore.targetKey), 120)
+    }
+    @MainActor
+    func testTwoStoreInstancesCannotOverwriteEachOthersNewerEntries() throws {
+        let suite = "ProteinLogTests.concurrent." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = ProteinLogStore(defaults: defaults), second = ProteinLogStore(defaults: defaults)
+        try first.add(grams: 25, name: "Lunch", day: "2026-10-14")
+        try second.add(grams: 15, name: "Snack", day: "2026-10-14")
+        XCTAssertEqual(second.total(day: "2026-10-14"), 40)
+        XCTAssertEqual(ProteinLogStore(defaults: defaults).entries.map(\.name), ["Lunch", "Snack"])
+        try first.remove(first.entries[0].id)
+        XCTAssertEqual(ProteinLogStore(defaults: defaults).total(day: "2026-10-14"), 15)
     }
 }
