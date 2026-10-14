@@ -23,11 +23,14 @@ struct SettingsView: View {
 
     /// Profile-photo picker selection (PhotosUI). Cleared back to nil once the bytes are loaded.
     @State private var avatarPickerItem: PhotosPickerItem?
+    @StateObject private var avatarImport = ImageSelectionController()
 
     /// Custom background image (#custom-background). The store owns the decoded image + toggles; the
     /// picker selection + the file-importer flag are local UI state.
     @ObservedObject private var backgroundStore = BackgroundImageStore.shared
     @State private var backgroundPickerItem: PhotosPickerItem?
+    @StateObject private var backgroundImport = ImageSelectionController()
+    @State private var backgroundPickerError: String?
     @State private var showBackgroundFileImporter = false
 
     /// Backup & restore UI state.
@@ -605,6 +608,7 @@ struct SettingsView: View {
 
                 if hasAvatar {
                     Button {
+                        avatarImport.cancel(); avatarPickerItem = nil
                         profile.clearAvatar()
                     } label: {
                         Image(systemName: "trash")
@@ -615,22 +619,45 @@ struct SettingsView: View {
                 }
             }
 
+            imageImportFeedback(avatarImport, clear: { avatarPickerItem = nil })
+
             Text("Optional. Add a photo for your avatar. It stays on \(Platform.deviceNounPhrase) and is never uploaded.")
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        // Load the picked photo's bytes, then hand them to the store (which downscales + persists).
-        // Clearing the selection afterwards lets the user re-pick the same photo if they want.
         .onChange(of: avatarPickerItem) { newItem in
             guard let newItem else { return }
+            let target = profile
+            let token = avatarImport.select(read: { try await newItem.loadTransferable(type: Data.self) }, commit: { data in
+                guard target.setAvatar(data) else { throw ImageSelectionController.Failure.invalidImage }
+            })
             Task {
-                let data = try? await newItem.loadTransferable(type: Data.self)
-                await MainActor.run {
-                    if let data { profile.setAvatar(data) }
-                    avatarPickerItem = nil
+                if await avatarImport.load(token), avatarImport.isCurrent(token) { avatarPickerItem = nil }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func imageImportFeedback(_ operation: ImageSelectionController, clear: @escaping () -> Void) -> some View {
+        if operation.hasInput {
+            if operation.isWorking { ProgressView("Loading selected image…").font(StrandFont.caption) }
+            if let error = operation.error {
+                Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+            }
+            if !operation.isWorking {
+                NoopActionButton("Retry selected image", systemImage: "arrow.clockwise", kind: .secondary,
+                                 fullWidth: true, state: operation.state) {
+                    let token = operation.selectionID
+                    Task { if await operation.retry(), operation.isCurrent(token) { clear() } }
                 }
             }
+            NoopButton("Cancel selected image", systemImage: "xmark", kind: .tertiary) {
+                operation.cancel(); clear()
+            }
+        } else if operation.state == .succeeded {
+            Label("Image applied", systemImage: "checkmark.circle")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
     }
 
@@ -697,13 +724,20 @@ struct SettingsView: View {
                                         ? backgroundStore.thumbnails[index] : nil,
                                     mode: backgroundStore.recents[index].fillMode,
                                     active: index == 0,
-                                    action: { backgroundStore.applyRecent(index) })
+                                    action: {
+                                        backgroundImport.cancel(); backgroundPickerItem = nil; backgroundPickerError = nil
+                                        do { try backgroundStore.applyRecent(index) }
+                                        catch { backgroundPickerError = error.localizedDescription }
+                                    })
                             }
                         }
                     }
                 }
 
-                Toggle(isOn: $backgroundStore.enabled) {
+                Toggle(isOn: Binding(get: { backgroundStore.enabled }, set: { enabled in
+                    backgroundImport.cancel(); backgroundPickerItem = nil; backgroundPickerError = nil
+                    backgroundStore.enabled = enabled
+                })) {
                     Text("Show custom background")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
@@ -726,6 +760,7 @@ struct SettingsView: View {
                 }
 
                 Button {
+                    backgroundImport.cancel(); backgroundPickerItem = nil; backgroundPickerError = nil
                     backgroundStore.clearImage()
                 } label: {
                     Text("Remove image")
@@ -734,31 +769,46 @@ struct SettingsView: View {
                 .accessibilityHint("Removes the custom background and restores the day-cycle sky")
             }
 
+            imageImportFeedback(backgroundImport, clear: { backgroundPickerItem = nil })
+            if let backgroundPickerError {
+                Text(backgroundPickerError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+            }
+
             Text("Optional. Use your own photo behind every tab, in place of the day-cycle sky. It stays on \(Platform.deviceNounPhrase) and is never uploaded. Pair it with Transparent cards above to let it show through.")
                 .font(StrandFont.caption)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // Load the picked photo's bytes, hand them to the store (which downscales + persists), then clear
-        // the selection so the same photo can be re-picked. Mirrors the avatar row.
         .onChange(of: backgroundPickerItem) { newItem in
             guard let newItem else { return }
+            backgroundPickerError = nil
+            let target = backgroundStore
+            let token = backgroundImport.select(read: { try await newItem.loadTransferable(type: Data.self) }, commit: { data in
+                try target.setImage(from: data)
+            })
             Task {
-                let data = try? await newItem.loadTransferable(type: Data.self)
-                await MainActor.run {
-                    if let data { backgroundStore.setImage(from: data) }
-                    backgroundPickerItem = nil
-                }
+                if await backgroundImport.load(token), backgroundImport.isCurrent(token) { backgroundPickerItem = nil }
             }
         }
-        // "Browse files" — the system file browser. The picked URL is security-scoped (outside the
-        // sandbox), so bracket the one-time read; we copy the bytes into our own file immediately.
         .fileImporter(isPresented: $showBackgroundFileImporter, allowedContentTypes: [.image]) { result in
-            guard case .success(let url) = result else { return }
-            let didAccess = url.startAccessingSecurityScopedResource()
-            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-            if let data = try? Data(contentsOf: url) { backgroundStore.setImage(from: data) }
+            do {
+                let url = try result.get()
+                backgroundPickerError = nil
+                let target = backgroundStore
+                let token = backgroundImport.select(read: {
+                    let access = url.startAccessingSecurityScopedResource()
+                    defer { if access { url.stopAccessingSecurityScopedResource() } }
+                    return try await Task.detached(priority: .utility) { try Data(contentsOf: url, options: .mappedIfSafe) }.value
+                }, commit: { data in
+                    try target.setImage(from: data)
+                })
+                Task {
+                    if await backgroundImport.load(token), backgroundImport.isCurrent(token) { backgroundPickerItem = nil }
+                }
+            } catch {
+                if (error as? CocoaError)?.code != .userCancelled { backgroundPickerError = error.localizedDescription }
+            }
         }
     }
 
