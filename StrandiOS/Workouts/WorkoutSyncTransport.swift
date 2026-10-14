@@ -38,7 +38,22 @@ final class WorkoutSyncTransport: NSObject, URLSessionTaskDelegate, @unchecked S
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (stream, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw WorkoutSyncTransportError.invalidResponse }
-        guard http.statusCode == 200 else { throw WorkoutSyncTransportError.http(http.statusCode) }
+        if http.statusCode != 200 {
+            // A small JSON conflict code is useful for review; HTML, unknown codes and details are not.
+            if http.statusCode == 409, http.mimeType?.lowercased() == "application/json", response.expectedContentLength <= 4096 {
+                var errorBody = Data()
+                for try await byte in stream {
+                    try Task.checkCancellation()
+                    guard errorBody.count < 4096 else { throw WorkoutSyncTransportError.http(http.statusCode) }
+                    errorBody.append(byte)
+                }
+                struct Rejection: Decodable { let error: String }
+                if let body = try? JSONDecoder().decode(Rejection.self, from: errorBody), let reason = WorkoutSyncRejection(rawValue: body.error) {
+                    throw WorkoutSyncTransportError.rejected(reason)
+                }
+            }
+            throw WorkoutSyncTransportError.http(http.statusCode)
+        }
         guard http.mimeType?.lowercased() == "application/json" else { throw WorkoutSyncTransportError.invalidResponse }
         guard response.expectedContentLength <= Self.responseLimit else { throw WorkoutSyncTransportError.responseTooLarge }
         var result = Data()

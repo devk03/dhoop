@@ -357,6 +357,9 @@ final class WorkoutTrackerClient: ObservableObject {
                         message: ack.reconciliation.pending ? "\(receipt) · derived progress is pending; Sync retries the same receipt" : receipt,
                         acknowledgement: response)
                 }
+            } catch WorkoutSyncTransportError.rejected(let reason) {
+                try updateDelivery(item.id, status: .review, message: reason.explanation + " Local values are retained.", rejection: reason)
+                throw WorkoutSyncTransportError.rejected(reason)
             } catch WorkoutSyncTransportError.http(let code) {
                 try updateDelivery(item.id, status: code == 409 ? .review : .failed,
                     message: code == 409 ? "Tracker revision or binding changed. Review before retrying." : "Tracker returned HTTP \(code). Saved locally; retry uses the same event.")
@@ -368,10 +371,11 @@ final class WorkoutTrackerClient: ObservableObject {
         }
     }
 
-    private func updateDelivery(_ id: UUID, status: WorkoutTrackerDelivery.Status, message: String, acknowledgement: Data? = nil) throws {
+    private func updateDelivery(_ id: UUID, status: WorkoutTrackerDelivery.Status, message: String, acknowledgement: Data? = nil, rejection: WorkoutSyncRejection? = nil) throws {
         var next = state
         guard let index = next.deliveries.firstIndex(where: { $0.id == id }) else { return }
         next.deliveries[index].status = status; next.deliveries[index].message = message
+        next.deliveries[index].rejection = rejection
         if let acknowledgement { next.deliveries[index].acknowledgement = acknowledgement }
         try commit(next)
     }

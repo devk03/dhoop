@@ -152,6 +152,24 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(reads, 2)
         XCTAssertEqual(client.state.deliveries, before)
     }
+    func testKnownConflictSurvivesRelaunchAndOriginalRecoveryClearsItOnlyAfterReceipt() async throws {
+        let f = try await fixture()
+        let failing = WorkoutTrackerClient(store: f.file, send: { _, _, _ in throw WorkoutSyncTransportError.rejected(.lifeRevisionConflict) }, readCredential: { f.config })
+        try await ready(failing, fixture: f)
+        let original = try XCTUnwrap(failing.state.deliveries.first)
+        do { try await failing.synchronize(store: f.db); XCTFail("A conflict must fail the action") }
+        catch WorkoutSyncTransportError.rejected(let reason) { XCTAssertEqual(reason, .lifeRevisionConflict) }
+        let restored = WorkoutTrackerClient(store: f.file, send: { _, body, _ in
+            XCTAssertEqual(body, original.bytes)
+            return try self.receipt(try XCTUnwrap(body), fixture: f)
+        }, readCredential: { f.config })
+        XCTAssertEqual(restored.state.deliveries.first?.rejection, .lifeRevisionConflict)
+        XCTAssertEqual(restored.state.deliveries.first?.status, .review)
+        try await restored.synchronize(store: f.db, deliveryId: original.id)
+        XCTAssertNil(restored.state.deliveries.first?.rejection)
+        XCTAssertEqual(restored.state.deliveries.first?.status, .accepted)
+        XCTAssertEqual(restored.state.deliveries.first?.bytes, original.bytes)
+    }
 
     func testSelectedRecoveryRefusesStaleLocalValuesBeforeSending() async throws {
         let f = try await fixture()
@@ -250,6 +268,11 @@ final class WorkoutTrackerClientTests: XCTestCase {
         var completed = state
         let item = completed.deliveries[0]
         completed.deliveries[0].acknowledgement = try receipt(try XCTUnwrap(item.bytes), fixture: f)
+        var unverified = completed
+        var invalidReceipt = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(completed.deliveries[0].acknowledgement)) as? [String: Any])
+        invalidReceipt["mappings"] = ["session": ["kind": "programmed", "cycleId": 4, "sessionId": 999], "sets": [:]]
+        unverified.deliveries[0].acknowledgement = try JSONSerialization.data(withJSONObject: invalidReceipt)
+        XCTAssertTrue(try f.file.compact(unverified, protecting: []).archives.isEmpty, "Matching event/revision alone does not verify target mappings")
         // A file at the archive-directory path makes archive creation fail without deleting anything.
         try Data("preserve-this-file".utf8).write(to: f.file.archiveDirectory)
         XCTAssertThrowsError(try f.file.compact(completed, protecting: []))

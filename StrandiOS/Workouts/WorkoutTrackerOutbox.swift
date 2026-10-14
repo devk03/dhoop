@@ -20,11 +20,13 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var paused: Bool? = nil
     var localPersistenceConfirmed: Bool? = nil
     var createdAt: Date? = nil
+    var rejection: WorkoutSyncRejection? = nil
     var canArchive: Bool {
         if paused == true && localPersistenceConfirmed == true { return true }
         guard status == .accepted, !needsReconciliation, let acknowledgement,
               let ack = try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: acknowledgement),
-              (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil else { return false }
+              (try? ack.validate(eventId: id, sourceWorkoutId: sourceWorkoutId, revision: revision)) != nil,
+              (try? ack.validate(binding: binding, sets: operation == .delete ? [] : sets)) != nil else { return false }
         return !ack.needsSourceReview(revision: revision, deleting: operation == .delete)
     }
     func sameIntent(as other: WorkoutTrackerDelivery) -> Bool {

@@ -64,6 +64,27 @@ final class WorkoutSyncTransportTests: XCTestCase {
             catch { XCTFail("Unexpected transport result") }
         }
     }
+    func testKnownConflictCodeIsRetainedWithoutPrivateDetailsAndUnknownBodiesStayGeneric() async {
+        for (body, reason) in [("{\"error\":\"life_revision_conflict\",\"details\":\"private owner data\"}", WorkoutSyncRejection.lifeRevisionConflict),
+                               ("{\"error\":\"manifest_conflict\"}", WorkoutSyncRejection.manifestConflict)] {
+            WorkoutMockProtocol.handler = { _ in (409, ["Content-Type": "application/json"], Data(body.utf8)) }
+            do {
+                _ = try await WorkoutSyncTransport().send(to: .catalog, credentials: credentials(), configuration: config())
+                XCTFail("A reviewed code is still a rejection")
+            } catch WorkoutSyncTransportError.rejected(let received) {
+                XCTAssertEqual(received, reason)
+                XCTAssertFalse(received.explanation.contains("private owner data"))
+            } catch { XCTFail("Known conflict must retain its reason") }
+        }
+        for body in ["{\"error\":\"private arbitrary text\"}", String(repeating: "x", count: 4097)] {
+            WorkoutMockProtocol.handler = { _ in (409, ["Content-Type": "application/json"], Data(body.utf8)) }
+            do {
+                _ = try await WorkoutSyncTransport().send(to: .catalog, credentials: credentials(), configuration: config())
+                XCTFail("Untrusted conflict body cannot be accepted")
+            } catch WorkoutSyncTransportError.http(let status) { XCTAssertEqual(status, 409) }
+            catch { XCTFail("Unknown or oversized conflict must stay generic") }
+        }
+    }
     func testRedirectDelegateNeverForwardsARequestOrItsCredentials() throws {
         let transport = WorkoutSyncTransport()
         let session = URLSession(configuration: .ephemeral)

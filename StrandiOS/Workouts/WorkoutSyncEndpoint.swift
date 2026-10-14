@@ -49,8 +49,39 @@ enum WorkoutSyncEndpoint: Equatable {
     }
 }
 
+/// Only reviewed machine codes cross the transport boundary; arbitrary response text stays private.
+enum WorkoutSyncRejection: String, Codable {
+    case lifeRevisionConflict = "life_revision_conflict"
+    case manifestConflict = "manifest_conflict"
+    case prescriptionInconsistent = "prescription_inconsistent"
+    case sessionRetired = "session_retired"
+    case setRetired = "set_retired"
+    case sourceWorkoutDeleted = "source_workout_deleted"
+    case eventConflict = "event_conflict"
+    case installationConflict = "installation_conflict"
+    case bindingConflict = "binding_conflict"
+    case exerciseBindingConflict = "exercise_binding_conflict"
+    case occurrenceBindingConflict = "occurrence_binding_conflict"
+    case setBindingConflict = "set_binding_conflict"
+
+    var explanation: String {
+        switch self {
+        case .lifeRevisionConflict: return "The website revision changed. Compare the current tracker before reviewing a new delivery."
+        case .manifestConflict: return "The prescription changed. Original workout IDs are retained; targets will not be guessed."
+        case .prescriptionInconsistent: return "The tracker prescription is inconsistent. Review it in Life before starting."
+        case .sessionRetired, .setRetired: return "The original workout target has retired. Compare its history before deciding how to correct it."
+        case .sourceWorkoutDeleted: return "The tracker capture was deleted. An earlier delivery cannot restore it."
+        case .eventConflict: return "The tracker has different content for this event ID. The retained delivery needs review."
+        case .installationConflict: return "The original installation does not match this connection. Review the connection before sending."
+        case .bindingConflict, .exerciseBindingConflict, .occurrenceBindingConflict, .setBindingConflict:
+            return "The workout, exercise or set binding changed. Original IDs are retained for review."
+        }
+    }
+}
+
 enum WorkoutSyncTransportError: LocalizedError {
     case disabled, configuration, payloadTooLarge, invalidResponse, responseTooLarge, http(Int)
+    case rejected(WorkoutSyncRejection)
     var errorDescription: String? {
         switch self {
         case .disabled: return "Workout sync is off. Your workouts remain on this device."
@@ -59,6 +90,7 @@ enum WorkoutSyncTransportError: LocalizedError {
         case .invalidResponse: return "Workout sync received an invalid acknowledgement."
         case .responseTooLarge: return "Workout sync response exceeded its size limit."
         case .http(let code): return "Workout sync returned HTTP \(code). Local entries are kept."
+        case .rejected(let reason): return reason.explanation + " Local entries are kept."
         }
     }
 }
