@@ -40,13 +40,13 @@ private struct RunningContent: View, Equatable {
                     if section != "Train" {
                         Button { section = "Train" } label: {
                             Image(systemName: "arrow.left").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
-                        }.accessibilityLabel("Back to training")
+                        }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Back to training")
                     }
                     Text(section == "Train" ? "Exercises" : section).font(StrandFont.title1)
                     Spacer(minLength: 0)
                     if section == "Train" {
-                        Button("History") { section = "History" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        Button("Review") { section = "Review" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        Button("History") { section = "History" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(NoopFeedbackButtonStyle())
+                        Button("Review") { section = "Review" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(NoopFeedbackButtonStyle())
                     }
                 }
                 if section == "Train" {

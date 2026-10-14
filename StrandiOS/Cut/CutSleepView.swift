@@ -48,7 +48,8 @@ struct CutSleepView: View {
                 Text("Sleep").font(StrandFont.title1)
                 Spacer(minLength: NoopMetrics.space2)
                 Button(action: refresh) { Image(systemName: "arrow.clockwise").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
-                    .accessibilityLabel("Refresh sleep comparison").disabled(history.snapshot == nil && history.error == nil)
+                    .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Refresh sleep comparison")
+                    .disabled(history.isRefreshing || (history.snapshot == nil && history.error == nil))
             }
             MetricRangeControl(selection: $selection, now: capturedAt)
             if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
@@ -77,7 +78,7 @@ struct CutSleepView: View {
             if let error = history.error { Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
             if let message = result?.healthMessage {
                 Text(message).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                Button("Apple Health access") { showHealth = true }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                Button("Apple Health access") { showHealth = true }.font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.secondary))
             }
             notes
             }

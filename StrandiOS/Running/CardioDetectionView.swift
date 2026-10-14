@@ -12,15 +12,17 @@ struct CardioDetectionView: View {
     @State private var loading = false
     @State private var message: String?
     @State private var showReviewed = false
+    @State private var loadedDeviceID: String?
 
     private var loadKey: String {
-        "\(repo.deviceId)|\(repo.refreshSeq)|\(enabled)|\(sessionActive)|\(localSpans.map { "\($0.start):\($0.end)" }.joined(separator: ","))"
+        "\(repo.deviceId)|\(repo.refreshSeq)|\(enabled)|\(sessionActive)|\(saving)|\(localSpans.map { "\($0.start):\($0.end)" }.joined(separator: ","))"
     }
     private var spans: [SavedWorkoutSpan] {
         localSpans.map { SavedWorkoutSpan(startSec: $0.start, endSec: $0.end) }
     }
-    private var pending: [WorkoutReview] { reviews.filter { $0.decision == .pending } }
-    private var reviewed: [WorkoutReview] { reviews.filter { $0.decision != .pending } }
+    private var displayedReviews: [WorkoutReview] { loadedDeviceID == repo.deviceId ? reviews : [] }
+    private var pending: [WorkoutReview] { displayedReviews.filter { $0.decision == .pending } }
+    private var reviewed: [WorkoutReview] { displayedReviews.filter { $0.decision != .pending } }
 
     var body: some View {
         NoopCard {
@@ -65,7 +67,7 @@ struct CardioDetectionView: View {
                 }
             }
         }
-        .task(id: loadKey) { await load() }
+        .task(id: loadKey) { if !saving { await load() } }
     }
 
     private func reviewRow(_ review: WorkoutReview) -> some View {
@@ -90,18 +92,14 @@ struct CardioDetectionView: View {
 
     @ViewBuilder private func actions(_ review: WorkoutReview) -> some View {
         if review.decision != .workout || review.recordingRemoved {
-            Button(review.recordingRemoved ? "Save workout again" : (review.decision == .pending ? "Is a workout" : "Change to workout")) {
-                decide(review, .workout)
+            NoopAsyncButton(review.recordingRemoved ? "Save workout again" : (review.decision == .pending ? "Is a workout" : "Change to workout")) {
+                try await decide(review, .workout)
             }
-            .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent)
-            .frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
         if review.decision != .notWorkout {
-            Button(review.decision == .pending ? "Not a workout" : "Change to not a workout") {
-                decide(review, .notWorkout)
+            NoopAsyncButton(review.decision == .pending ? "Not a workout" : "Change to not a workout", kind: .secondary) {
+                try await decide(review, .notWorkout)
             }
-            .buttonStyle(NoopButtonStyle(.secondary))
-            .frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
     }
 
@@ -115,36 +113,47 @@ struct CardioDetectionView: View {
 
     @MainActor private func load() async {
         let deviceID = repo.deviceId
-        reviews = []
+        if loadedDeviceID != deviceID { reviews = [] }
         loading = true
         defer { loading = false }
         do {
             let next = try await repo.workoutReviews(discover: enabled && !sessionActive, excluding: spans)
             guard !Task.isCancelled, repo.deviceId == deviceID else { return }
-            reviews = next
+            reviews = next; loadedDeviceID = deviceID
         } catch {
             guard !Task.isCancelled, repo.deviceId == deviceID else { return }
             message = "Could not load review history. \(error.localizedDescription)"
         }
     }
 
-    private func decide(_ review: WorkoutReview, _ decision: WorkoutReview.Decision) {
-        guard review.deviceID == repo.deviceId, !sessionActive, !saving else { return }
+    private struct ReadAfterSaveFailure: LocalizedError {
+        var errorDescription: String? { "The decision was saved, but review history could not be refreshed. Your label is retained; try refreshing before changing it again." }
+    }
+    @MainActor private func decide(_ review: WorkoutReview, _ decision: WorkoutReview.Decision) async throws {
+        guard review.deviceID == repo.deviceId, !sessionActive else { throw WorkoutReviewError.unavailable }
+        guard !saving else { throw WorkoutReviewError.busy }
         saving = true
         message = nil
-        Task { @MainActor in
-            defer { saving = false }
-            do {
-                try await repo.setWorkoutReview(review.id, deviceID: review.deviceID, decision: decision, excluding: spans)
-                await repo.refresh()
-                guard repo.deviceId == review.deviceID else { return }
-                await load()
-                message = decision == .workout ? "Workout saved. You can change this label under Reviewed."
-                    : "Marked not a workout. You can change this label under Reviewed."
-            } catch {
-                guard repo.deviceId == review.deviceID else { return }
-                message = error.localizedDescription
+        defer { saving = false }
+        try await repo.setWorkoutReview(review.id, deviceID: review.deviceID, decision: decision, excluding: spans)
+        await repo.refresh()
+        guard repo.deviceId == review.deviceID else { throw WorkoutReviewError.unavailable }
+        do {
+            let next = try await repo.workoutReviews(discover: false, excluding: spans)
+            try Task.checkCancellation()
+            guard repo.deviceId == review.deviceID else { throw WorkoutReviewError.unavailable }
+            reviews = next; loadedDeviceID = review.deviceID
+        } catch is CancellationError { throw CancellationError() }
+        catch {
+            if repo.deviceId == review.deviceID, let index = reviews.firstIndex(where: { $0.id == review.id }) {
+                // The write returned successfully; do not keep presenting a committed decision as pending.
+                reviews[index].decision = decision
+                reviews[index].recordingRemoved = false
+                message = ReadAfterSaveFailure().localizedDescription
             }
+            throw ReadAfterSaveFailure()
         }
+        message = decision == .workout ? "Workout saved. You can change this label under Reviewed."
+            : "Marked not a workout. You can change this label under Reviewed."
     }
 }
