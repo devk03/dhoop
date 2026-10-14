@@ -406,6 +406,35 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - No migration, owner alarm edit/delete/report, phone launch/installation, strap command, cue,
   production update or physiological validation was performed by tooling. The full goal is incomplete.
 
+## Build 494 coherent strength detail reads
+
+- Four WhoopStore detail tests passed (`/private/tmp/dhoop-detail-snapshot-494-store-tests.log`):
+  current whole-session metadata and paired workout/prior sets, missing versus valid empty,
+  query failure versus partial/empty detail, and rejection of foreign set attribution. All fixtures
+  are in-memory; a temporary query shadow preserves the real table, and no owner DB/schema changed.
+- Four hostless detail-model tests passed (`/private/tmp/dhoop-detail-snapshot-494-model-tests.log`):
+  failed-refresh retention with fresh-authority blocking, actual missing-result clearing, identity
+  rejection, and superseded success/failure. Twenty-two existing workout/journal/cache tests passed
+  (`/private/tmp/dhoop-detail-snapshot-494-workout-decoder-tests.log`) after sharing the same decoder.
+- Signed generic-device iOS and macOS builds passed:
+  `/private/tmp/dhoop-detail-snapshot-494-ios-build.log` and
+  `/private/tmp/dhoop-detail-snapshot-494-macos-build.log`. Stable bundle/team/document type remain;
+  build 494 is not installed. Diff/comment hygiene passed.
+- One read transaction provides session, sets, exact paired workout and prior exercise rows. Errors
+  throw instead of becoming missing workout/previous history. The full current session row supplies
+  metadata and the editor, including corrected/cleared RPE and notes. Metric formulas and stored
+  values are unchanged; this read API serves Apple UI and does not change Android storage contracts.
+- Failed refresh retains a dated last-confirmed view; edit/delete require a fresh successful read.
+  Actual missing results clear the old display without creating a replacement. Late results cannot
+  replace newer reads. HR publication is tied to the successful detail-read ticket and recorded strap;
+  pending reads are distinct from no measured data. HR windows remain half-open and unsmoothed.
+- Built-in ImageGen reference `docs/design/dhoop-history-detail-read-study.png` and its prompts show
+  fictional data. An edit removes invented Health/Watch provenance. Native visual/accessibility,
+  real failure/retry behavior and physical sensor-data acceptance remain unverified.
+- No migration, owner data edit/delete, active collection, phone installation/launch, motor cue,
+  production activation or physiological validation occurred. Native phase/superset/variation storage
+  still requires approval. The full goal remains incomplete.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

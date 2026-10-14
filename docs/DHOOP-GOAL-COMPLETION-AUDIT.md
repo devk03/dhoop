@@ -1,19 +1,19 @@
 # Dhoop strength/control goal: completion audit
 
-Snapshot: October 14, 2026, build 493 source. This is a requirement audit, not a completion claim.
+Snapshot: October 14, 2026, build 494 source. This is a requirement audit, not a completion claim.
 The original objective is `/Users/devkunjadia/.codex/attachments/9031d8ef-eb18-4c66-93c8-24d84dfcc8db/pasted-text-1.txt`.
 Detailed command evidence and its limits are in `docs/DHOOP-STRENGTH-VERIFICATION.md`.
 
 | Requirement | Current authoritative evidence | Remaining acceptance |
 | --- | --- | --- |
-| Shared controls across Today/details/Sleep/Exercises/Meditation/Alarms/onboarding/Settings | StrandDesign action/button/switch components and current screen call sites; scoped failure tests and app builds | Physical taps, holds, drag-off, scrolling and chart scrubbing; detail session/workout/previous-volume read failures still need correction |
+| Shared controls across Today/details/Sleep/Exercises/Meditation/Alarms/onboarding/Settings | StrandDesign action/button/switch components and current screen call sites; scoped failure tests and app builds | Physical taps, holds, drag-off, scrolling and chart scrubbing; failed-read retention is now implemented; native runtime acceptance remains missing |
 | Actual async completion, duplicate prevention and retained input | Shared action-controller tests; protein, catalog, previous-performance, pairing, alarm and picker boundaries | Native dialogs/pickers and full screen lifecycle remain unverified |
 | Strength inside Exercises | RunningView routes Strength to the existing Lift Log | Physical navigation |
 | Exercise search/create, reusable ordered routines | Catalog browser/model and program editor; read-failure and atomic-store tests | Variation parent relationships are not implemented; native storage approval pending |
 | Weights/reps/completion/effort/notes and warm-ups | Session engine/controller, pending-input/recovery and edit tests | Real two-exercise/three-timed-set workout, saved entries and unit checks |
 | Supersets | Life source grouping contract exists | Native grouping/round persistence and UI are not implemented; approval pending |
 | Rest, add/reorder/replace, previous performance | Engine, recovery, source-owned previous reads and their scoped tests | Physical ordering/rest/replacement and relaunch checks |
-| History edit/delete/progress and data preservation | Atomic scoped store mutations, retained identities and raw HR; numeric/store tests | Detail session/workout/previous-volume reads still use fallbacks for some failures; physical edits/deletion with unrelated-record checks |
+| History edit/delete/progress and data preservation | Atomic scoped store mutations, retained identities and raw HR; numeric/store tests | Coherent detail snapshot and failed-read retention now have scoped tests; physical edits/deletion with unrelated-record checks |
 | WHOOP collection ownership across work/rest | Controller acquires/releases shared ownership; source and duplicate-claim tests | Two successive real incoming/persisted observations and actual session coverage |
 | Timed-set HR, gaps, stale/source/count reporting | Saved timestamps, half-open measured-HR store reads and history projections | True paused working intervals are not implemented; hardware evidence missing |
 | Pause/resume, lock/background, reconnect and relaunch | Existing rest/session restoration and source identity are tested | Existing restoration is not true pause/resume. Durable phase ledger requires approval, implementation, parity tests and physical checks |
@@ -42,6 +42,6 @@ existing buzz or sleep/protein credentials cannot be reused.
 ## Completion decision
 
 **Incomplete.** Remaining work is the native approved phase/superset/variation implementation,
-detail session/workout/previous-volume read-failure correction, and the complete physical acceptance list. Neither compilation,
+the complete physical acceptance list. Neither compilation,
 test existence, receiver acceptance nor Bluetooth ACKs proves streaming, persistence on the owner's
 phone, felt vibration or physiological accuracy. No official WHOOP-app writes are part of this goal.
