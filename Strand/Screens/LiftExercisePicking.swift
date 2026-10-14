@@ -58,11 +58,11 @@ struct LiftExerciseSuggestionLabel: View {
     let row: LiftExerciseRow
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: NoopMetrics.space2) {
             Image(systemName: "arrow.up.left")
-                .font(.system(size: 10, weight: .semibold))
+                .font(StrandFont.caption)
                 .foregroundStyle(StrandPalette.textTertiary)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                 Text(row.name)
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
@@ -72,6 +72,7 @@ struct LiftExerciseSuggestionLabel: View {
             }
             Spacer(minLength: 0)
         }
+        .frame(minHeight: NoopMetrics.minimumTouchTarget)
         .contentShape(Rectangle())
     }
 }
@@ -88,8 +89,8 @@ struct LiftMusclePicker: View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("Muscles", overline: "Counted once per exercise")
             NoopCard {
-                VStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                         Text("Primary").strandOverline()
                         Menu {
                             Button("Not classified") { primary = nil }
@@ -109,18 +110,20 @@ struct LiftMusclePicker: View {
                                                      : StrandPalette.textPrimary)
                                 Spacer(minLength: 0)
                                 Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(StrandFont.caption)
                                     .foregroundStyle(StrandPalette.textTertiary)
                             }
                             .contentShape(Rectangle())
                         }
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        .buttonStyle(NoopFeedbackButtonStyle())
                         .accessibilityLabel("Primary muscle")
                     }
 
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                         Text("Also works (counted as half a set)").strandOverline()
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
-                                  alignment: .leading, spacing: 8) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: NoopMetrics.minimumTouchTarget * 3), spacing: NoopMetrics.space2)],
+                                  alignment: .leading, spacing: NoopMetrics.space2) {
                             ForEach(LiftMuscle.allCases, id: \.self) { muscle in
                                 if muscle != primary {
                                     secondaryChip(muscle)
@@ -140,22 +143,10 @@ struct LiftMusclePicker: View {
 
     private func secondaryChip(_ muscle: LiftMuscle) -> some View {
         let on = secondaries.contains(muscle)
-        return Button {
+        return NoopButton(LocalizedStringKey(muscle.displayName), systemImage: on ? "checkmark" : nil,
+                          kind: on ? .primary : .secondary, fullWidth: true) {
             if on { secondaries.remove(muscle) } else { secondaries.insert(muscle) }
-        } label: {
-            Text(muscle.displayName)
-                .font(StrandFont.caption)
-                .foregroundStyle(on ? StrandPalette.effortColor : StrandPalette.textSecondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(on ? StrandPalette.effortColor.opacity(0.14) : StrandPalette.surfaceRaised)
-                )
-                .contentShape(Rectangle())
         }
-        .buttonStyle(NoopFeedbackButtonStyle())
         .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 

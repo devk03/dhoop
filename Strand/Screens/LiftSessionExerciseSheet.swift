@@ -23,9 +23,10 @@ struct LiftSessionExerciseSheet: View {
     @State private var primary: LiftMuscle?
     @State private var secondaries: Set<LiftMuscle> = []
     /// The user's own exercise names, most recently used first.
-    @State private var vocabulary: [LiftExerciseRow] = []
-    /// Set when the vocabulary is full, so the refusal is explained rather than silent.
-    @State private var vocabularyFullLimit: Int?
+    @StateObject private var catalog = LiftExerciseCatalogModel()
+    @State private var browsing = false
+    private var vocabulary: [LiftExerciseRow] { catalog.entries(for: deviceID) }
+    @State private var classificationEdited = false
     @State private var adding = false
     @State private var loadMode: WorkoutTrackerLoadMode?
 
@@ -36,15 +37,16 @@ struct LiftSessionExerciseSheet: View {
         exercise.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     private var deviceID: String { sourceDeviceId ?? repo.deviceId }
-    private var canAdd: Bool { !trimmedExercise.isEmpty && !adding && (!requiresLoadType || loadMode != nil) }
+    private var canAdd: Bool { catalog.isReady(for: deviceID) && !trimmedExercise.isEmpty && !adding && (!requiresLoadType || loadMode != nil) }
 
     var body: some View {
         ScreenScaffold(title: replacingExercise == nil ? "Add exercise" : "Replace exercise",
                        subtitle: "Pick one you have done before, or type a new name.") {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                exerciseSection
+                exerciseSection.disabled(adding)
                 if requiresLoadType { loadTypeSection }
-                LiftMusclePicker(primary: $primary, secondaries: $secondaries)
+                LiftMusclePicker(primary: Binding(get: { primary }, set: { primary = $0; classificationEdited = true }),
+                                 secondaries: Binding(get: { secondaries }, set: { secondaries = $0; classificationEdited = true })).disabled(adding)
                 Text(replacingExercise.map { "Replace the remaining sets of \($0). Completed sets keep their original exercise. Your routine stays unchanged." } ?? (requiresLoadType ? "Added to workout history. Your Life routine stays unchanged." : "It joins this session with one set. Type what you lift; finishing asks whether the program keeps it."))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
@@ -61,21 +63,15 @@ struct LiftSessionExerciseSheet: View {
         .interactiveDismissDisabled(adding)
         .keyboardDoneToolbar($focused)
         .dismissesKeyboardOnTap($focused)
-        .task { await load() }
+        .task(id: deviceID) { try? await load() }
+        .sheet(isPresented: $browsing) { LiftExerciseCatalogBrowser(catalog: catalog, deviceID: deviceID, onPick: adopt) }
         // A name typed out in full that is already known brings its muscles with it, as picking it from
         // the list does — unless muscles were already chosen here.
         .onChange(of: exercise) { _ in
-            guard primary == nil, secondaries.isEmpty,
+            guard !classificationEdited, primary == nil, secondaries.isEmpty,
                   let known = vocabulary.first(where: { $0.name == trimmedExercise }) else { return }
             primary = known.primaryMuscle
             secondaries = Set(known.secondaryMuscles)
-        }
-        .alert("You've saved the most exercises Dhoop remembers",
-               isPresented: Binding(get: { vocabularyFullLimit != nil },
-                                    set: { if !$0 { vocabularyFullLimit = nil } })) {
-            Button("OK", role: .cancel) { vocabularyFullLimit = nil }
-        } message: {
-            Text("Forget one you no longer use and this one will save. Your logged sessions are never affected.")
         }
     }
 
@@ -90,6 +86,13 @@ struct LiftSessionExerciseSheet: View {
                         .font(StrandFont.body)
                         .foregroundStyle(StrandPalette.textPrimary)
                         .focused($focused, equals: .exercise)
+                    if catalog.isLoading { ProgressView("Reading saved exercises…").font(StrandFont.caption) }
+                    if let error = catalog.error {
+                        Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                        NoopAsyncButton("Retry reading exercises", systemImage: "arrow.clockwise", kind: .secondary) { try await load() }
+                    }
+                    NoopButton("Browse all exercises", systemImage: "list.bullet", kind: .secondary) { browsing = true }
+                        .disabled(!catalog.isReady(for: deviceID))
                     if !suggestions.isEmpty {
                         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                             Text("Used before").strandOverline()
@@ -133,12 +136,18 @@ struct LiftSessionExerciseSheet: View {
         exercise = row.name
         primary = row.primaryMuscle
         secondaries = Set(row.secondaryMuscles)
+        classificationEdited = true
         focused = nil
     }
 
-    private func load() async {
-        guard let store = await repo.storeHandle() else { return }
-        vocabulary = (try? await store.liftExercises(deviceId: deviceID)) ?? []
+    @MainActor private func load() async throws {
+        try await catalog.load(deviceID: deviceID) { source in
+            guard let store = await repo.storeHandle() else { throw LiftExerciseCatalogModel.Failure.unavailable }
+            return try await store.liftExercises(deviceId: source)
+        }
+        if !classificationEdited, let known = vocabulary.first(where: { $0.name == trimmedExercise }) {
+            primary = known.primaryMuscle; secondaries = Set(known.secondaryMuscles)
+        }
     }
 
     /// Remember the exercise — a new name is saved to the vocabulary, a known one is marked used — then
@@ -148,22 +157,23 @@ struct LiftSessionExerciseSheet: View {
         adding = true
         defer { adding = false }
         let name = trimmedExercise
-        let ordered = LiftExerciseVocabulary.ordered(secondaries, excluding: primary)
+        let chosenPrimary = primary, source = deviceID
+        let ordered = LiftExerciseVocabulary.ordered(secondaries, excluding: chosenPrimary)
         let mode = loadMode
         guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
         let nativeId: String
         do {
-            nativeId = try await LiftExerciseVocabulary.remember(name, primary: primary, secondaries: ordered,
-                known: vocabulary, deviceId: deviceID, in: store)
+            nativeId = try await LiftExerciseVocabulary.remember(name, primary: chosenPrimary, secondaries: ordered,
+                known: vocabulary, deviceId: source, in: store)
         } catch let full as WhoopStore.LiftExerciseVocabularyFull {
-            vocabularyFullLimit = full.limit
-            throw full
+            throw LiftExerciseCatalogModel.Failure.full(full.limit)
         }
+        guard source == deviceID else { throw LiftExerciseCatalogModel.Failure.changedSource }
         var sourceId = UUID(uuidString: nativeId)
         #if os(iOS)
-        if requiresLoadType { sourceId = try WorkoutTrackerClient.shared.sourceExerciseIdentity(nativeId: nativeId, deviceID: deviceID) }
+        if requiresLoadType { sourceId = try WorkoutTrackerClient.shared.sourceExerciseIdentity(nativeId: nativeId, deviceID: source) }
         #endif
-        guard onAdd(name, primary, ordered, sourceId, mode) else { throw WorkoutTrackerContractError.sessionChanged }
+        guard onAdd(name, chosenPrimary, ordered, sourceId, mode) else { throw WorkoutTrackerContractError.sessionChanged }
         dismiss()
     }
 }

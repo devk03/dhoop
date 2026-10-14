@@ -17,6 +17,7 @@ import WhoopStore
 struct LiftProgramItemSheet: View {
     /// The line being edited, or nil to add a new one.
     let item: LiftProgramItemRow?
+    var sourceDeviceId: String? = nil
     /// Handed the finished line. The parent owns ordering and persistence.
     let onSave: (LiftProgramItemRow) -> Void
 
@@ -35,12 +36,17 @@ struct LiftProgramItemSheet: View {
     @State private var note: String = ""
 
     /// The user's own exercise vocabulary, for suggestions and for adopting a known classification.
-    @State private var vocabulary: [LiftExerciseRow] = []
+    @StateObject private var catalog = LiftExerciseCatalogModel()
+    @State private var browsing = false
+    @State private var saving = false
+    @State private var forgettingBusy = false
+    @State private var operationError: String?
+    @State private var classificationEdited = false
+    private var deviceID: String { sourceDeviceId ?? item?.deviceId ?? repo.deviceId }
+    private var vocabulary: [LiftExerciseRow] { catalog.entries(for: deviceID) }
     @State private var loaded = false
     /// The vocabulary entry the user is about to forget (nil = no confirmation showing).
     @State private var forgetting: LiftExerciseRow?
-    /// Set when the vocabulary is full, so the refusal is explained rather than silent.
-    @State private var vocabularyFullLimit: Int?
 
     /// The app's existing metric/imperial preference — the Lift Log never adds a second weight unit
     /// setting of its own, so the plan is typed in the same unit the session records in.
@@ -63,7 +69,16 @@ struct LiftProgramItemSheet: View {
     private var maxRpeInvalid: Bool {
         !maxRpeText.trimmingCharacters(in: .whitespaces).isEmpty && maxRpe == nil
     }
-    private var canSave: Bool { !trimmedExercise.isEmpty && !maxRpeInvalid }
+    private var targetsInvalid: Bool {
+        func invalidInteger(_ text: String, minimum: Int) -> Bool {
+            let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !value.isEmpty && (Int(value).map { $0 < minimum } ?? true)
+        }
+        let weight = weightText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return invalidInteger(setsText, minimum: 1) || invalidInteger(repsText, minimum: 0) || invalidInteger(restText, minimum: 0)
+            || (!weight.isEmpty && (LiftFormat.number(weight).map { $0 < 0 } ?? true))
+    }
+    private var canSave: Bool { catalog.isReady(for: deviceID) && !saving && !forgettingBusy && !trimmedExercise.isEmpty && !maxRpeInvalid && !targetsInvalid }
 
     private var suggestions: [LiftExerciseRow] {
         LiftExerciseVocabulary.suggestions(vocabulary, matching: exercise)
@@ -75,22 +90,28 @@ struct LiftProgramItemSheet: View {
             subtitle: "Type any name you like. Dhoop remembers it, with the muscles you give it."
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                exerciseSection
-                LiftMusclePicker(primary: $primary, secondaries: $secondaries)
-                targetsSection
-                noteSection
+                exerciseSection.disabled(saving || forgettingBusy)
+                LiftMusclePicker(primary: Binding(get: { primary }, set: { primary = $0; classificationEdited = true }),
+                                 secondaries: Binding(get: { secondaries }, set: { secondaries = $0; classificationEdited = true }))
+                    .disabled(saving || forgettingBusy)
+                targetsSection.disabled(saving || forgettingBusy)
+                noteSection.disabled(saving || forgettingBusy)
+                if targetsInvalid { Text("Use whole positive set counts and non-negative repetitions, rest and weight. Leave optional targets blank.").font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical) }
+                if let operationError { Text(operationError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical) }
                 footer
             }
         }
         #if os(iOS)
         .presentationDragIndicator(.visible)
         #else
-        .frame(width: 520, height: 720)
+        .frame(minWidth: NoopMetrics.detailSheetMinWidth, minHeight: NoopMetrics.detailSheetMinHeight)
         #endif
         .background(StrandPalette.surfaceBase)
         .keyboardDoneToolbar($focused)
         .dismissesKeyboardOnTap($focused)
+        .interactiveDismissDisabled(saving || forgettingBusy)
         .task { await loadIfNeeded() }
+        .sheet(isPresented: $browsing) { LiftExerciseCatalogBrowser(catalog: catalog, deviceID: deviceID, onPick: adopt) }
         .confirmationDialog(
             forgetting.map { Text(String(localized: "Forget \($0.name)?")) } ?? Text(""),
             isPresented: Binding(get: { forgetting != nil },
@@ -102,22 +123,20 @@ struct LiftProgramItemSheet: View {
         } message: {
             Text("It stops being offered here. Sessions you already logged with it are kept exactly as they are.")
         }
-        .alert("You've saved the most exercises Dhoop remembers",
-               isPresented: Binding(get: { vocabularyFullLimit != nil },
-                                    set: { if !$0 { vocabularyFullLimit = nil } })) {
-            Button("OK", role: .cancel) { vocabularyFullLimit = nil }
-        } message: {
-            Text("Forget one you no longer use and this one will save. Your logged sessions are never affected.")
-        }
     }
 
     /// Forget an exercise. The logged sets keep their own copy of the name and muscles, so this
     /// removes it from the picker WITHOUT touching a single recorded session.
     private func forget() async {
-        guard let row = forgetting, let store = await repo.storeHandle() else { return }
-        _ = try? await store.deleteLiftExercise(id: row.id)
-        vocabulary.removeAll { $0.id == row.id }
-        forgetting = nil
+        guard let row = forgetting else { return }
+        guard let store = await repo.storeHandle() else { operationError = LiftExerciseCatalogModel.Failure.unavailable.localizedDescription; return }
+        forgettingBusy = true; operationError = nil
+        defer { forgettingBusy = false }
+        do {
+            _ = try await store.deleteLiftExercise(id: row.id)
+            try await loadCatalog()
+            forgetting = nil
+        } catch { operationError = "The exercise could not be forgotten or the catalog refreshed. Your routine draft is retained." }
     }
 
     // MARK: - Exercise name + suggestions
@@ -132,12 +151,19 @@ struct LiftProgramItemSheet: View {
                         .font(StrandFont.body)
                         .foregroundStyle(StrandPalette.textPrimary)
                         .focused($focused, equals: .exercise)
+                    if catalog.isLoading { ProgressView("Reading saved exercises…").font(StrandFont.caption) }
+                    if let error = catalog.error {
+                        Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                        NoopAsyncButton("Retry reading exercises", systemImage: "arrow.clockwise", kind: .secondary) { try await loadCatalog() }
+                    }
+                    NoopButton("Browse all exercises", systemImage: "list.bullet", kind: .secondary) { browsing = true }
+                        .disabled(!catalog.isReady(for: deviceID))
 
                     if !suggestions.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                             Text("Used before").strandOverline()
                             ForEach(suggestions, id: \.id) { row in
-                                HStack(spacing: 8) {
+                                HStack(spacing: NoopMetrics.space2) {
                                     Button {
                                         adopt(row)
                                     } label: {
@@ -152,8 +178,9 @@ struct LiftProgramItemSheet: View {
                                         forgetting = row
                                     } label: {
                                         Image(systemName: "trash")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .font(StrandFont.caption)
                                             .foregroundStyle(StrandPalette.textTertiary)
+                                            .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
                                     }
                                     .buttonStyle(NoopFeedbackButtonStyle())
                                     .accessibilityLabel("Forget this exercise")
@@ -172,7 +199,7 @@ struct LiftProgramItemSheet: View {
         VStack(alignment: .leading, spacing: NoopMetrics.gap) {
             SectionHeader("Targets", overline: "What you're aiming for")
             NoopCard {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                     HStack(spacing: NoopMetrics.gap) {
                         field("Working sets") {
                             numberInput("4", text: $setsText, field: .sets)
@@ -242,17 +269,14 @@ struct LiftProgramItemSheet: View {
 
     private var footer: some View {
         HStack {
-            Button("Cancel") { dismiss() }
+            Button("Cancel") { dismiss() }.disabled(saving || forgettingBusy)
                 .buttonStyle(NoopFeedbackButtonStyle())
                 .font(StrandFont.body)
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer()
-            Button("Save") { Task { await save() } }
-                .buttonStyle(.noopPrimary)
-                .frame(maxWidth: 160)
+            NoopAsyncButton(item == nil ? "Add to routine draft" : "Apply to routine draft", systemImage: "checkmark") { try await save() }
                 .disabled(!canSave)
-                .opacity(canSave ? 1 : NoopButtonMetrics.disabledOpacity)
-                .accessibilityLabel("Save exercise")
+                .accessibilityLabel("Apply exercise changes to routine draft")
         }
     }
 
@@ -260,7 +284,7 @@ struct LiftProgramItemSheet: View {
 
     private func field<Content: View>(_ label: LocalizedStringKey,
                                       @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
             Text(label).strandOverline()
             content()
         }
@@ -286,6 +310,7 @@ struct LiftProgramItemSheet: View {
         exercise = row.name
         primary = row.primaryMuscle
         secondaries = Set(row.secondaryMuscles)
+        classificationEdited = true
         focused = nil
     }
 
@@ -303,42 +328,50 @@ struct LiftProgramItemSheet: View {
             maxRpeText = item.targetRpe.map { LiftFormat.trim($0) } ?? ""
             note = item.note ?? ""
         }
-        guard let store = await repo.storeHandle() else { return }
-        vocabulary = (try? await store.liftExercises(deviceId: repo.deviceId)) ?? []
+        try? await loadCatalog()
+    }
+
+    @MainActor private func loadCatalog() async throws {
+        try await catalog.load(deviceID: deviceID) { source in
+            guard let store = await repo.storeHandle() else { throw LiftExerciseCatalogModel.Failure.unavailable }
+            return try await store.liftExercises(deviceId: source)
+        }
         // An existing line adopts whatever classification its exercise already carries, so editing a
         // line shows the muscles the exercise is known by rather than an empty picker.
-        if let item, let known = vocabulary.first(where: { $0.name == item.exercise }) {
+        if !classificationEdited, let known = vocabulary.first(where: { $0.name == trimmedExercise }) {
             primary = known.primaryMuscle
             secondaries = Set(known.secondaryMuscles)
         }
     }
 
-    private func save() async {
-        guard canSave else { return }
+    @MainActor private func save() async throws {
+        guard canSave else { throw LiftExerciseCatalogModel.Failure.unavailable }
+        saving = true; operationError = nil
+        defer { saving = false }
         let name = trimmedExercise
+        let source = deviceID
 
         // Remember the exercise (and its classification) in the vocabulary, so it is offered back
         // next time.
-        if let store = await repo.storeHandle() {
-            do {
-                try await LiftExerciseVocabulary.remember(
+        guard let store = await repo.storeHandle() else { throw LiftExerciseCatalogModel.Failure.unavailable }
+        do {
+            try await LiftExerciseVocabulary.remember(
                     name, primary: primary,
                     secondaries: LiftExerciseVocabulary.ordered(secondaries, excluding: primary),
-                    known: vocabulary, deviceId: repo.deviceId, in: store)
-            } catch let full as WhoopStore.LiftExerciseVocabularyFull {
+                    known: vocabulary, deviceId: source, in: store)
+        } catch let full as WhoopStore.LiftExerciseVocabularyFull {
                 // Refused rather than silently dropped: the user typed a name and deserves to know
                 // it was not remembered.
-                vocabularyFullLimit = full.limit
-                return
-            } catch {
-                return
-            }
+                throw LiftExerciseCatalogModel.Failure.full(full.limit)
+        } catch {
+            throw error
         }
 
+        guard source == deviceID else { throw LiftExerciseCatalogModel.Failure.changedSource }
         let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
         onSave(LiftProgramItemRow(
             id: item?.id ?? UUID().uuidString,
-            deviceId: repo.deviceId,
+            deviceId: source,
             // Assigned properly by the parent on save; a placeholder here would be a second source
             // of truth for ordering.
             programId: item?.programId ?? "",
