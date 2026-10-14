@@ -316,6 +316,36 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - Next concrete controls audit: Settings alternate-icon changes still need serialization/readback
   review, and its update-check label changes while pending rather than using the shared reserved state.
 
+## Build 491 icon choices and update check
+
+- Four hostless icon-selection tests passed (`/private/tmp/dhoop-settings-icon-491-tests.log`):
+  failed native change retains the requested choice for retry, a competing pending choice cannot
+  replace it, completion without matching readback cannot claim application, and already-applied/
+  unsupported choices issue no system write. Isolated defaults and a simulated native service prove
+  controller behavior; they do not prove actual iOS Home Screen rendering or native dialog behavior.
+- Signed generic-device iOS and final macOS builds passed:
+  `/private/tmp/dhoop-settings-icon-491-ios-build.log` and
+  `/private/tmp/dhoop-settings-icon-491-macos-final-build.log`. Build 491 retains stable bundle/team/
+  document type and is not installed. Diff and source comment hygiene checks passed.
+- Settings separates requested icon choice from last-confirmed system icon, disables concurrent
+  choices, retains failures for explicit retry/keep-current, and stores the existing `appIcon.alt`
+  preference only from confirmed system state. A native setter error no longer blindly inverts a draft.
+  The same assets and identifier remain; unsupported installations show an explicit explanation.
+- The update-check control uses the shared reserved state region and unchanged label; results are
+  below a full-width control instead of competing in a narrow horizontal row. A successful read is
+  not an installation. The existing endpoint/checker/automatic-check behavior is unchanged; tooling
+  did not issue a release-network request or install an update.
+- Built-in ImageGen reference `docs/design/dhoop-settings-icon-update-study.png` and adjacent prompts
+  illustrate fictional requested/confirmed and read states. The result inset is a state illustration,
+  not a new UI card or a second installed-version authority. Actual device accessibility, gestures,
+  native icon confirmation and visual acceptance remain outstanding.
+- No migration, owner preference mutation, actual icon setter, phone launch/installation, strap
+  command or cue ran in tooling. This Apple UI state change does not change Android stored data or
+  physiological formulas. The full goal remains active.
+- Remaining concrete source findings: OnboardingWizard still has private primary/secondary styles
+  with independent hardcoded press motion and plain Back/disclosure buttons. The notification-step
+  permission callback needs a pending/navigation gate so repeated taps cannot advance twice.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
