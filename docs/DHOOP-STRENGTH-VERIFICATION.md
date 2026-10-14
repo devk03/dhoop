@@ -285,6 +285,37 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 - No migration, owner log export, clipboard write, phone launch/installation, WHOOP command or cue
   was executed by tooling. The full goal remains active, with storage approval and hardware gates pending.
 
+## Build 490 exercise operation controls
+
+- Thirteen existing hostless storage/export tests passed
+  (`/private/tmp/dhoop-exercise-controls-490-tests.log`): one complete raw archive round-trip,
+  seven interval file-store tests and five Zone 2 storage tests. They cover failure retention,
+  scoped deletion, committed archives with cleanup warnings and original record preservation.
+  They do not directly exercise UIKit controllers or native save/share pickers.
+- Signed generic-device iOS and macOS builds passed:
+  `/private/tmp/dhoop-exercise-controls-490-ios-build.log` and
+  `/private/tmp/dhoop-exercise-controls-490-macos-build.log`. Stable bundle/team/document type
+  remain. Build 490 is not installed. Source comment hygiene and diff checks passed.
+- Zone 2, HIIT and interval saves expose typed shared pending/success/failure state from the existing
+  controller operation. Labels retain their footprint while saving. Failed storage keeps the paused
+  session for retry; a committed archive with a draft-cleanup warning is still correctly reported
+  as saved. Zone 2 retains explicit early-end versus completed-goal labels and does not mark an early
+  end as goal attainment. Stored timing, HR, ownership and vibration behavior are unchanged.
+- Exercise history export uses full-width shared controls and separate prepare/save/share actions.
+  Preparing again preserves the earlier file until success. Failed deletion also retains that copy;
+  successful deletion invalidates it. Export/save/deletion operations are mutually gated. Save feedback
+  resets per file, and the prepared timestamp uses the same capture instant encoded in the JSON.
+  No in-app restore or receiver/production synchronization is added.
+- Built-in ImageGen reference `docs/design/dhoop-exercise-operation-controls-study.png` and adjacent
+  original/correction prompts contain fictional states. The correction removes invented tabs and
+  makes the retained earlier export available after failed preparation. Charts/numbers in the study
+  are not implemented as data. Physical accessibility, gestures and visual acceptance remain unverified.
+- No migration, owner export, storage deletion, clipboard write, phone launch/installation, WHOOP
+  command or cue was performed by tooling. Apple presentation/operation states changed; stored data
+  format, physiological formulas and Android schema remain unchanged. The full goal remains active.
+- Next concrete controls audit: Settings alternate-icon changes still need serialization/readback
+  review, and its update-check label changes while pending rather than using the shared reserved state.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
