@@ -32,6 +32,13 @@ struct SettingsView: View {
 
     /// Backup & restore UI state.
     @State private var backupBusy = false
+    @StateObject private var backupOperation = NoopActionController()
+    @State private var backupOperationKind: BackupOperationKind?
+    private enum BackupOperationKind { case backup, restore, csv }
+    private struct SettingsOperationFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
     @State private var backupAlertTitle = ""
     @State private var backupAlertMessage = ""
     @State private var showBackupAlert = false
@@ -202,6 +209,7 @@ struct SettingsView: View {
     /// macOS can "Reveal in Finder" after a share, mirroring the puffin-capture export.
     @State private var rawCsvBusy = false
     @State private var lastRawCsvURL: URL?
+    @State private var rawCsvPreparedAt: Date?
 
     /// Passive WHOOP 5/MG optical experiment: the picker writes local timestamp markers into the
     /// durable deep-buffer JSONL. It never calls a BLE write path.
@@ -329,7 +337,7 @@ struct SettingsView: View {
         // minting new copy that would ship English everywhere until someone translated it. The message
         // below is where the specifics live. (#1807)
         .alert("Backup problem", isPresented: $showOversizeRestoreConfirm) {
-            Button("Restore") { runImport(allowOversize: true) }
+            Button("Restore", role: .destructive) { runImport(allowOversize: true) }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text(oversizeRestoreMessage)
@@ -631,9 +639,9 @@ struct SettingsView: View {
     @ViewBuilder
     private func backgroundRecentThumb(thumb: Image?, mode: BackgroundFillMode, active: Bool,
                                        action: @escaping () -> Void) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius, style: .continuous)
         Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: NoopMetrics.space1) {
                 Group {
                     if let thumb { thumb.resizable().scaledToFill() } else { StrandPalette.surfaceInset }
                 }
@@ -646,7 +654,9 @@ struct SettingsView: View {
                     .foregroundStyle(active ? StrandPalette.accent : StrandPalette.textTertiary)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
+        .accessibilityLabel("Recent background, \(mode.label)")
+        .accessibilityAddTraits(active ? [.isSelected] : [])
     }
 
     /// Custom background image controls (#custom-background): pick from Photos or Browse the files,
@@ -2010,25 +2020,28 @@ struct SettingsView: View {
         SettingsSection(
             icon: "doc.text.magnifyingglass",
             title: "Diagnostics",
-            blurb: "A read-only export of the decoded sensor streams Dhoop already stores. Works on any strap. Nothing is written to your device, and nothing is uploaded."
+            blurb: "Prepare a CSV from sensor records already stored locally. No commands are sent to the strap and nothing is uploaded. Saving or sharing the file is separate."
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                 // MARK: Export raw sensor data (CSV) — a read-only diagnostic over the decoded streams
                 // NOOP already stores (HR, R-R, motion, steps, PPG-HR, SpO₂, skin temp, resp, events).
-                Button {
-                    exportRawSensorCSV()
-                } label: {
-                    if rawCsvBusy {
-                        HStack(spacing: NoopMetrics.space1 + 2) {
-                            ProgressView().controlSize(.small)
-                            Text("Exporting…")
-                        }
-                    } else {
-                        Label("Export raw sensor data (CSV)", systemImage: "square.and.arrow.up")
+                NoopAsyncButton("Prepare raw sensor CSV", systemImage: "doc.badge.plus", kind: .secondary) {
+                    try await prepareRawSensorCSV()
+                }.disabled(rawCsvBusy)
+                if let url = lastRawCsvURL {
+                    NoopAsyncButton("Save prepared CSV", systemImage: "square.and.arrow.up", kind: .secondary) {
+                        guard !rawCsvBusy else { throw SettingsOperationFailure(message: "Another CSV operation is in progress.") }
+                        rawCsvBusy = true
+                        defer { rawCsvBusy = false }
+                        _ = try await FileExport.saveCopyVerified(at: url)
+                    }.disabled(rawCsvBusy)
+                    ShareLink(item: url) { Label("Share prepared CSV", systemImage: "square.and.arrow.up") }
+                        .buttonStyle(NoopButtonStyle(.secondary)).disabled(rawCsvBusy)
+                    if let rawCsvPreparedAt {
+                        Text("Prepared \(rawCsvPreparedAt.formatted(date: .abbreviated, time: .shortened)) · saving is separate")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
-                .buttonStyle(NoopButtonStyle(.secondary))
-                .disabled(rawCsvBusy)
 
                 #if os(macOS)
                 if let url = lastRawCsvURL {
@@ -2046,8 +2059,8 @@ struct SettingsView: View {
         }
     }
 
-    /// Export the last 24h of decoded sensor streams for the connected strap to a CSV, then save (macOS
-    /// NSSavePanel) or share (iOS share sheet). This is the only exporter left on this screen: the Puffin
+    /// Prepare the last 24h of decoded sensor streams for the selected recorded source. Saving and
+    /// sharing are separate actions. This is the only exporter left on this screen: the Puffin
     /// capture export that shared the shape went with the research card in #2417.
     ///
     /// The strap id comes from `repo.deviceId`, NOT `model.deviceId`. The latter is a hardcoded
@@ -2059,53 +2072,20 @@ struct SettingsView: View {
     ///
     /// Read on the MainActor before the Task hop, as `LiveSessionRunner` does, rather than reaching into
     /// the actor-isolated repo from inside the task.
-    private func exportRawSensorCSV() {
+    @MainActor
+    private func prepareRawSensorCSV() async throws {
+        guard !rawCsvBusy else { throw SettingsOperationFailure(message: "Another CSV operation is in progress.") }
         rawCsvBusy = true
+        defer { rawCsvBusy = false }
         let strapId = model.repo.deviceId
-        Task {
-            let since = Date().timeIntervalSince1970 - 24 * 60 * 60
-            guard let store = await model.repo.storeHandle() else {
-                await MainActor.run {
-                    rawCsvBusy = false
-                    backupAlertTitle = String(localized: "Export failed")
-                    backupAlertMessage = String(localized: "Couldn't open the local store.")
-                    showBackupAlert = true
-                }
-                return
-            }
-            do {
-                let url = try await store.exportRawCSV(deviceId: strapId, since: since)
-                await MainActor.run {
-                    rawCsvBusy = false
-                    lastRawCsvURL = url
-                    #if os(macOS)
-                    let panel = NSSavePanel()
-                    panel.allowedContentTypes = [.commaSeparatedText]
-                    panel.nameFieldStringValue = url.lastPathComponent
-                    panel.canCreateDirectories = true
-                    guard panel.runModal() == .OK, let dest = panel.url else { return }
-                    let fm = FileManager.default
-                    do {
-                        if fm.fileExists(atPath: dest.path) { try fm.removeItem(at: dest) }
-                        try fm.copyItem(at: url, to: dest)
-                    } catch {
-                        backupAlertTitle = String(localized: "Export failed")
-                        backupAlertMessage = error.localizedDescription
-                        showBackupAlert = true
-                    }
-                    #else
-                    FileExport.exportFile(at: url)
-                    #endif
-                }
-            } catch {
-                await MainActor.run {
-                    rawCsvBusy = false
-                    backupAlertTitle = String(localized: "Export failed")
-                    backupAlertMessage = error.localizedDescription
-                    showBackupAlert = true
-                }
-            }
+        let since = Date().timeIntervalSince1970 - 24 * 60 * 60
+        guard let store = await model.repo.storeHandle() else {
+            throw SettingsOperationFailure(message: "Couldn't open the local store.")
         }
+        let url = try await store.exportRawCSV(deviceId: strapId, since: since)
+        try Task.checkCancellation()
+        lastRawCsvURL = url
+        rawCsvPreparedAt = Date()
     }
 
     private func markOpticalPhase(_ phase: PuffinOpticalExperimentPhase) {
@@ -2126,46 +2106,11 @@ struct SettingsView: View {
             blurb: "Move all your Dhoop data to another machine. Export saves everything (history, sleeps, workouts, settings) to a single file you can copy across; import replaces \(Platform.deviceNounPhrase)'s data with a backup."
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
-                // Three labelled buttons must share a narrow iPhone row without wrapping mid-word
-                // (the labels otherwise broke to one character per line). Equal width + shrink-to-fit
-                // keeps each on a single line. On iPhone the SF Symbol icons were the main space-thief
-                // (~90pt/button) and there's no room for them in a 3-up row, so we drop to icon-less
-                // text there; macOS is wide enough to keep the icons. No trailing Spacer/ProgressView
-                // inside this HStack — either would steal a share of the equal-width row. (#188)
-                HStack(spacing: NoopMetrics.space3) {
-                    Button {
-                        runExport()
-                    } label: {
-                        backupButtonLabel(String(localized: "Export…"), systemImage: "square.and.arrow.up")
-                    }
-                    .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
-                    .disabled(backupBusy)
-
-                    Button {
-                        runImport()
-                    } label: {
-                        backupButtonLabel(String(localized: "Import…"), systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
-                    .disabled(backupBusy)
-
-                    Button {
-                        runCsvExport()
-                    } label: {
-                        backupButtonLabel(String(localized: "Export CSV…"), systemImage: "tablecells")
-                    }
-                    .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
-                    .disabled(backupBusy)
-                }
-
-                if backupBusy {
-                    HStack(spacing: NoopMetrics.space2) {
-                        ProgressView().controlSize(.small)
-                        Text("Working…")
-                            .font(StrandFont.footnote)
-                            .foregroundStyle(StrandPalette.textSecondary)
-                    }
-                }
+                #if os(macOS)
+                HStack(spacing: NoopMetrics.space3) { archiveButtons }
+                #else
+                VStack(spacing: NoopMetrics.space3) { archiveButtons }
+                #endif
 
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "info.circle.fill")
@@ -2217,60 +2162,62 @@ struct SettingsView: View {
         }
     }
 
-    // Equal-width, single-line label for the three Backup buttons. iPhone is too narrow to fit
-    // an icon + text three-up, so it goes icon-less there; macOS keeps the SF Symbol. (#188)
     @ViewBuilder
-    private func backupButtonLabel(_ title: String, systemImage: String) -> some View {
-        // The NoopButtonStyle (fullWidth) owns the width + padding; the label just supplies the
-        // content and the single-line shrink-to-fit so the 3-up iPhone row never wraps mid-word (#188).
-        #if os(macOS)
-        Label(title, systemImage: systemImage)
-            .lineLimit(1).minimumScaleFactor(0.7)
-        #else
-        Text(title)
-            .lineLimit(1).minimumScaleFactor(0.6)
-        #endif
+    private var archiveButtons: some View {
+        NoopActionButton("Export backup", systemImage: "square.and.arrow.up", fullWidth: true,
+                         state: archiveState(.backup)) { runExport() }.disabled(backupBusy)
+        NoopActionButton("Restore backup", systemImage: "square.and.arrow.down", kind: .destructive, fullWidth: true,
+                         state: archiveState(.restore)) { runImport() }.disabled(backupBusy)
+        NoopActionButton("Export CSV", systemImage: "tablecells", kind: .secondary, fullWidth: true,
+                         state: archiveState(.csv)) { runCsvExport() }.disabled(backupBusy)
     }
 
-    private func runExport() {
-        backupBusy = true
-        Task {
-            let result = await DataBackup.runExport(checkpoint: { await model.repo.checkpointForBackup() })
-            handleBackup(result)
-        }
+    private func archiveState(_ kind: BackupOperationKind) -> NoopActionState {
+        guard backupOperationKind == kind else { return .idle }
+        return backupBusy ? .working : backupOperation.state
     }
+    private func runExport() { performArchive(.backup) }
+    private func runImport(allowOversize: Bool = false) { performArchive(.restore, allowOversize: allowOversize) }
+    private func runCsvExport() { performArchive(.csv) }
 
-    private func runImport(allowOversize: Bool = false) {
+    @MainActor
+    private func performArchive(_ kind: BackupOperationKind, allowOversize: Bool = false) {
+        guard !backupBusy else { return }
         backupBusy = true
-        Task {
-            let result = await DataBackup.runImport(allowOversize: allowOversize)
-            handleBackup(result)
-        }
-    }
-
-    private func runCsvExport() {
-        backupBusy = true
-        Task {
-            let result = await CsvExport.run(repo: model.repo)
-            backupBusy = false
-            switch result {
-            case .cancelled:
-                return
-            case .exported(let url):
-                backupAlertTitle = String(localized: "CSV exported")
-                backupAlertMessage = String(localized: "Saved to \(url.lastPathComponent). The zip re-imports into Dhoop (Data Sources → WHOOP Export) on any Mac, iPhone, or Android device.")
-                showBackupAlert = true
-            case .failure(let message):
-                backupAlertTitle = String(localized: "Export problem")
-                backupAlertMessage = message
-                showBackupAlert = true
+        backupOperationKind = kind
+        Task { @MainActor in
+            await backupOperation.run {
+                defer { backupBusy = false }
+                if kind == .csv {
+                    let result = await CsvExport.run(repo: model.repo)
+                    switch result {
+                    case .cancelled: throw CancellationError()
+                    case .exported(let url):
+                        backupAlertTitle = String(localized: "CSV exported")
+                        backupAlertMessage = String(localized: "Saved to \(url.lastPathComponent). The zip re-imports into Dhoop (Data Sources → WHOOP Export) on any Mac, iPhone, or Android device.")
+                        showBackupAlert = true
+                    case .failure(let message):
+                        backupAlertTitle = String(localized: "Export problem")
+                        backupAlertMessage = message; showBackupAlert = true
+                        throw SettingsOperationFailure(message: message)
+                    }
+                } else {
+                    let result = kind == .backup
+                        ? await DataBackup.runExport(checkpoint: { await model.repo.checkpointForBackup() })
+                        : await DataBackup.runImport(allowOversize: allowOversize)
+                    handleBackup(result)
+                    switch result {
+                    case .cancelled, .restoreTooLarge: throw CancellationError()
+                    case .failure(let message): throw SettingsOperationFailure(message: message)
+                    case .exported, .exportedOversize, .imported: break
+                    }
+                }
             }
         }
     }
 
     @MainActor
     private func handleBackup(_ result: DataBackup.BackupResult) {
-        backupBusy = false
         switch result {
         case .cancelled:
             return
@@ -2891,7 +2838,7 @@ private struct DiagnosticsSheet: View {
                         .font(.system(size: 20))
                         .foregroundStyle(StrandPalette.textTertiary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopIconButtonStyle())
                 .accessibilityLabel("Close")
             }
             .padding(20)
@@ -3067,7 +3014,7 @@ struct StepsCalibrationSheet: View {
                     .font(.system(size: 22))
                     .foregroundStyle(StrandPalette.textTertiary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopIconButtonStyle())
             .accessibilityLabel("Close")
         }
         .padding(20)
