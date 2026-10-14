@@ -18,19 +18,17 @@ struct SleepWebhookSettingsView: View {
                 StrandCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Toggle("Sleep", isOn: Binding(get: { client.checkpoint.enabled }, set: { enabled in
-                            perform { try client.setEnabled(enabled) }
-                            if enabled { client.enqueue(model: model, force: true) }
+                            if perform({ try client.setEnabled(enabled) }), enabled { client.enqueue(model: model, force: true) }
                         }))
-                        .font(StrandFont.headline).tint(StrandPalette.accent)
+                        .font(StrandFont.headline).toggleStyle(NoopSwitchStyle())
                         .disabled(client.storageUnavailable || (!client.checkpoint.enabled && !client.hasCredentials))
                         Text("WHOOP sleep totals and their source. Manual sleep on Life takes priority.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         Divider()
                         Toggle("Protein", isOn: Binding(get: { client.checkpoint.proteinEnabled == true }, set: { enabled in
-                            perform { try client.setProteinEnabled(enabled) }
-                            if enabled { client.enqueue(model: model, force: true) }
+                            if perform({ try client.setProteinEnabled(enabled) }), enabled { client.enqueue(model: model, force: true) }
                         }))
-                        .font(StrandFont.headline).tint(StrandPalette.accent)
+                        .font(StrandFont.headline).toggleStyle(NoopSwitchStyle())
                         .disabled(client.storageUnavailable || (client.checkpoint.proteinEnabled != true && !client.hasProteinCredentials))
                         Text("Grams logged in Dhoop. Manual totals on Life take priority. An unlogged day stays blank.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -60,11 +58,13 @@ struct SleepWebhookSettingsView: View {
                             Label("Pending event saved on this phone", systemImage: "tray.full")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
-                        Button { client.enqueue(model: model, force: true) } label: {
-                            Label(client.isSending ? "Sending…" : "Send available summaries", systemImage: "arrow.up.circle")
-                                .frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget)
-                        }.buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent)
+                        NoopAsyncButton("Check & send summaries", systemImage: "arrow.up.circle", fullWidth: true) {
+                            try await client.sendAvailableSummaries(model: model)
+                            error = nil
+                        }
                             .disabled(!client.checkpoint.anyEnabled || client.isSending || client.storageUnavailable)
+                        Text("Completion means the available-summary check finished. Only the dated receipt above confirms website acceptance.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
                 StrandCard {
@@ -80,16 +80,16 @@ struct SleepWebhookSettingsView: View {
                                 SecureField("Protein access token (optional)", text: $proteinBearer)
                                 SecureField("Cloudflare Access client ID", text: $clientId)
                                 SecureField("Cloudflare Access client secret", text: $clientSecret)
-                                Button("Save connection") {
-                                    perform {
+                                NoopAsyncButton("Save connection", systemImage: "lock.shield", kind: .secondary, fullWidth: true) {
+                                    do {
                                         try client.configure(SleepWebhookCredentials(endpoint: endpoint.trimmingCharacters(in: .whitespacesAndNewlines),
                                             bearer: bearer.trimmingCharacters(in: .whitespacesAndNewlines),
                                             clientId: clientId.trimmingCharacters(in: .whitespacesAndNewlines),
                                             clientSecret: clientSecret.trimmingCharacters(in: .whitespacesAndNewlines),
                                             proteinBearer: proteinBearer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : proteinBearer.trimmingCharacters(in: .whitespacesAndNewlines)))
-                                        bearer = ""; clientId = ""; clientSecret = ""; proteinBearer = ""
-                                    }
-                                }.frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(client.isSending)
+                                        bearer = ""; clientId = ""; clientSecret = ""; proteinBearer = ""; error = nil
+                                    } catch { throw SleepWebhookClient.ActionFailure(message: SleepWebhookClient.safeMessage(error)) }
+                                }.disabled(client.isSending || client.storageUnavailable)
                                 Text("Saving pauses delivery. Turn it on when the destination is ready.")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                             }.textInputAutocapitalization(.never).autocorrectionDisabled().textFieldStyle(.roundedBorder)
@@ -99,10 +99,22 @@ struct SleepWebhookSettingsView: View {
                             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                                 Text("Prepare a public setup file, then import the encrypted reply transferred by your paired Mac. No credential is stored in a plain-text file on your phone.")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                                Button("Prepare secure setup") { perform { try client.prepareSecureSetup() } }
-                                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                                Button("Import encrypted setup") { perform { try client.importSecureSetup() } }
-                                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                                NoopAsyncButton("Prepare secure setup", systemImage: "key", kind: .secondary, fullWidth: true) {
+                                    do {
+                                        try client.prepareSecureSetup()
+                                        guard !client.storageUnavailable else { throw SleepWebhookFailure.storage }
+                                        error = nil
+                                    }
+                                    catch { throw SleepWebhookClient.ActionFailure(message: SleepWebhookClient.safeMessage(error)) }
+                                }
+                                NoopAsyncButton("Import encrypted setup", systemImage: "square.and.arrow.down", kind: .secondary, fullWidth: true) {
+                                    do {
+                                        try client.importSecureSetup()
+                                        guard !client.storageUnavailable else { throw SleepWebhookFailure.storage }
+                                        error = nil
+                                    }
+                                    catch { throw SleepWebhookClient.ActionFailure(message: SleepWebhookClient.safeMessage(error)) }
+                                }
                             }.padding(.top, NoopMetrics.space3)
                         }.font(StrandFont.subhead).disabled(client.isSending)
                     }
@@ -115,8 +127,8 @@ struct SleepWebhookSettingsView: View {
         }
         .task { if !client.checkpoint.delivery.endpoint.isEmpty { endpoint = client.checkpoint.delivery.endpoint } }
     }
-    private func perform(_ work: () throws -> Void) {
-        do { try work(); error = nil } catch { self.error = SleepWebhookClient.safeMessage(error) }
+    @discardableResult private func perform(_ work: () throws -> Void) -> Bool {
+        do { try work(); error = nil; return true } catch { self.error = SleepWebhookClient.safeMessage(error); return false }
     }
 }
 #endif

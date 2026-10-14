@@ -76,6 +76,22 @@ final class SleepWebhookClient: ObservableObject {
             }
         }
     }
+    struct ActionFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+    /// A manual check awaits one bounded pass. Queueing work is not delivery completion.
+    func sendAvailableSummaries(model: AppModel) async throws {
+        guard !isSending, worker == nil else { throw ActionFailure(message: "A summary check is already in progress. Wait for it to finish.") }
+        guard !storageUnavailable, checkpoint.anyEnabled else {
+            throw ActionFailure(message: "Summary delivery is unavailable or off. Saved events remain on this phone.")
+        }
+        let completed = await deliver(model: model, force: true)
+        try Task.checkCancellation()
+        guard completed else {
+            throw ActionFailure(message: "The summary check encountered an interruption. Check the Sleep and Protein delivery statuses. Received summaries stay acknowledged; pending events are retained.")
+        }
+    }
     func deliver(model: AppModel, force: Bool = false) async -> Bool {
         guard !isSending, !storageUnavailable, checkpoint.anyEnabled else { return true }
         guard TimeZone.current.identifier == "America/Los_Angeles" else {
