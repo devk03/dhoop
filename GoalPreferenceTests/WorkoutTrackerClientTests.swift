@@ -42,6 +42,61 @@ final class WorkoutTrackerClientTests: XCTestCase {
         try await client.confirmPersistence(event, store: fixture.db)
     }
 
+    func testCachedStartNeedsNoCredentialOrNetworkAndDoesNotInventLegacyFetchAge() async throws {
+        let f = try await fixture()
+        var state = try f.file.load(); state.enabled = false
+        state.manifests["5"] = f.binding.manifest
+        state.capturedAt = Date(timeIntervalSince1970: 1700000000)
+        try f.file.save(state)
+        var sends = 0, credentialReads = 0
+        let client = WorkoutTrackerClient(store: f.file, send: { _, _, _ in sends += 1; return Data() }, readCredential: { credentialReads += 1; return nil })
+        let binding = try client.cachedCaptureBinding(sessionId: 5)
+        XCTAssertEqual(binding.manifest, f.binding.manifest)
+        XCTAssertEqual(binding.connection?.origin, f.config.origin)
+        XCTAssertEqual(binding.connection?.installationId, f.config.installationId)
+        XCTAssertEqual(binding.planAtStart?.provenance, .cached)
+        XCTAssertNil(binding.planAtStart?.fetchedAt, "An index read time is not a plan fetch time")
+        XCTAssertEqual(sends, 0); XCTAssertEqual(credentialReads, 0)
+        XCTAssertFalse(client.state.enabled)
+        let restored = try JSONDecoder().decode(WorkoutTrackerCaptureBinding.self, from: JSONEncoder().encode(binding))
+        XCTAssertEqual(restored, binding)
+    }
+
+    func testKnownInconsistentPlanCannotUseOldCacheAndFreshReadClearsTheBlock() async throws {
+        let f = try await fixture()
+        var state = try f.file.load(); state.manifests["5"] = f.binding.manifest
+        try f.file.save(state)
+        let blocked = WorkoutTrackerClient(store: f.file, send: { _, _, _ in throw WorkoutSyncTransportError.rejected(.prescriptionInconsistent) }, readCredential: { f.config })
+        do { _ = try await blocked.manifest(sessionId: 5); XCTFail("A reported inconsistency must fail the live read") }
+        catch WorkoutSyncTransportError.rejected(let reason) { XCTAssertEqual(reason, .prescriptionInconsistent) }
+        XCTAssertThrowsError(try blocked.cachedCaptureBinding(sessionId: 5))
+        let restored = WorkoutTrackerClient(store: f.file, send: { _, _, _ in try JSONEncoder().encode(f.binding.manifest) }, readCredential: { f.config })
+        XCTAssertEqual(restored.state.cachedPlanBlocks["5"], .inconsistent)
+        let fresh = try await restored.manifest(sessionId: 5)
+        XCTAssertNil(restored.state.cachedPlanBlocks["5"])
+        let binding = try restored.captureBinding(manifest: fresh)
+        XCTAssertEqual(binding.planAtStart?.provenance, .live)
+        XCTAssertEqual(binding.planAtStart?.fetchedAt, restored.state.manifestReadAt["5"])
+        XCTAssertNotNil(binding.planAtStart?.fetchedAt)
+        let cached = try restored.cachedCaptureBinding(sessionId: 5)
+        XCTAssertEqual(cached.planAtStart?.fetchedAt, binding.planAtStart?.fetchedAt)
+        XCTAssertEqual(cached.planAtStart?.provenance, .cached)
+    }
+
+    func testTransientNetworkFailureDoesNotInvalidateTheFrozenCachedPlan() async throws {
+        let f = try await fixture()
+        var state = try f.file.load(); state.manifests["5"] = f.binding.manifest
+        let date = Date(timeIntervalSince1970: 1700000000); state.manifestReadAt["5"] = date
+        try f.file.save(state)
+        let client = WorkoutTrackerClient(store: f.file, send: { _, _, _ in throw URLError(.timedOut) }, readCredential: { f.config })
+        do { _ = try await client.manifest(sessionId: 5); XCTFail("The timeout is still a failed read") }
+        catch is URLError {}
+        let cached = try client.cachedCaptureBinding(sessionId: 5)
+        XCTAssertEqual(cached.manifest, f.binding.manifest)
+        XCTAssertEqual(cached.planAtStart?.fetchedAt, date)
+        XCTAssertNil(client.state.cachedPlanBlocks["5"])
+    }
+
     func testConcurrentPreparationHasOneImmutableIntentAndNeedsNoCredentialRead() async throws {
         let f = try await fixture()
         let client = WorkoutTrackerClient(store: f.file, readCredential: { throw WorkoutSyncTransportError.configuration })
@@ -305,6 +360,9 @@ final class WorkoutTrackerClientTests: XCTestCase {
 
     func testMetadataBackupRestoresOfflineWithOriginalIdsAndNoCredentialsOrSQLiteWrites() async throws {
         let f = try await fixture()
+        var state = try f.file.load(); state.manifests["5"] = f.binding.manifest
+        let fetched = Date(timeIntervalSince1970: 1700000000); state.manifestReadAt["5"] = fetched
+        state.cachedPlanBlocks["5"] = .inconsistent; try f.file.save(state)
         let source = WorkoutTrackerClient(store: f.file, readCredential: { f.config })
         try await ready(source, fixture: f)
         let original = source.state.deliveries[0]
@@ -322,6 +380,9 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(restored.state.deliveries[0].bytes, original.bytes)
         XCTAssertEqual(restored.state.deliveries[0].binding, original.binding)
         XCTAssertTrue(restored.state.locallyKeptSources.contains(original.sourceWorkoutId))
+        XCTAssertEqual(restored.state.manifestReadAt["5"], fetched)
+        XCTAssertEqual(restored.state.cachedPlanBlocks["5"], .inconsistent)
+        XCTAssertThrowsError(try restored.cachedCaptureBinding(sessionId: 5), "Restoration cannot bypass a known invalid prescription")
         let db = try await WhoopStore.inMemory()
         let rows = try await db.liftSessions(deviceId: "strap", fromTs: 0, toTs: 2000)
         XCTAssertTrue(rows.isEmpty, "Metadata restoration is not a database restore")

@@ -145,6 +145,20 @@ struct WorkoutTrackerManifest: Codable, Equatable {
 
 /// Exact IDs and prescription snapshot, retained when the connection or app process disappears.
 struct WorkoutTrackerCaptureBinding: Codable, Equatable {
+    struct PlanAtStart: Codable, Equatable {
+        enum Provenance: String, Codable { case live, cached }
+        let manifestRevision: String?
+        let provenance: Provenance
+        let fetchedAt: Date?
+        init(manifest: WorkoutTrackerManifest, provenance: Provenance, fetchedAt: Date?) {
+            manifestRevision = manifest.manifestRevision.range(of: #"^[0-9a-fA-F]{64}$"#, options: .regularExpression) != nil ? manifest.manifestRevision : nil
+            self.provenance = provenance; self.fetchedAt = fetchedAt
+        }
+        func validate() throws {
+            guard manifestRevision.map({ $0.range(of: #"^[0-9a-fA-F]{64}$"#, options: .regularExpression) != nil }) ?? true,
+                  fetchedAt.map({ $0.timeIntervalSince1970.isFinite && (0...253402300799).contains($0.timeIntervalSince1970) }) ?? true else { throw WorkoutTrackerContractError.invalidSnapshot }
+        }
+    }
     struct Connection: Codable, Equatable {
         let origin: String
         let installationId: UUID
@@ -176,6 +190,7 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
     var additionalOccurrences: [AdditionalOccurrence]? = nil
     /// Observed completion order is separate from plan/card order; legacy captures may not carry it.
     var observedSetOrder: [UUID: Int]? = nil
+    var planAtStart: PlanAtStart? = nil
 
     func sourceOccurrenceId(exerciseIndex: Int) -> UUID? {
         if occurrences.indices.contains(exerciseIndex) { return occurrences[exerciseIndex].sourceOccurrenceId }
@@ -234,11 +249,12 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
         try next.validate(); self = next
     }
 
-    init(manifest: WorkoutTrackerManifest, timeZone: String = TimeZone.current.identifier, connection: Connection? = nil) throws {
+    init(manifest: WorkoutTrackerManifest, timeZone: String = TimeZone.current.identifier, connection: Connection? = nil, planAtStart: PlanAtStart? = nil) throws {
         try manifest.validate()
         guard !manifest.hasObservations, manifest.status == "planned" else { throw WorkoutTrackerContractError.unavailableCapture }
         guard TimeZone(identifier: timeZone) != nil else { throw WorkoutTrackerContractError.invalidSnapshot }
         self.sourceWorkoutId = UUID(); self.manifest = manifest; self.timeZone = timeZone; self.connection = connection
+        try planAtStart?.validate(); self.planAtStart = planAtStart
         self.occurrences = manifest.exerciseOccurrences.map { occurrence in
             Occurrence(sourceOccurrenceId: UUID(), sessionExerciseId: occurrence.sessionExerciseId,
                 sets: occurrence.sets.enumerated().map { SetBinding(sourceSetId: UUID(), lifeSetId: $0.element.lifeSetId, slotIndex: $0.offset + 1) })
@@ -247,6 +263,7 @@ struct WorkoutTrackerCaptureBinding: Codable, Equatable {
 
     func validate() throws {
         try manifest.validate()
+        try planAtStart?.validate()
         guard TimeZone(identifier: timeZone) != nil, occurrences.count == manifest.exerciseOccurrences.count,
               occurrences.map(\.sessionExerciseId) == manifest.exerciseOccurrences.map(\.sessionExerciseId),
               Set(occurrences.map(\.sourceOccurrenceId)).count == occurrences.count else { throw WorkoutTrackerContractError.invalidSnapshot }

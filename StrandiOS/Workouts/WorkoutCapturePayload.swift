@@ -24,6 +24,18 @@ struct WorkoutCapturePayload: Encodable {
             try c.encode(rpe, forKey: .rpe)
         }
     }
+    struct PlanAtStart: Encodable {
+        let manifestRevision: String?
+        let provenance: WorkoutTrackerCaptureBinding.PlanAtStart.Provenance
+        let fetchedAt: String?
+        enum CodingKeys: String, CodingKey { case manifestRevision, provenance, fetchedAt }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(manifestRevision, forKey: .manifestRevision)
+            try c.encode(provenance, forKey: .provenance)
+            try c.encode(fetchedAt, forKey: .fetchedAt)
+        }
+    }
     struct Occurrence: Encodable {
         let occurrenceKind: String
         let sourceOccurrenceId: String
@@ -60,6 +72,7 @@ struct WorkoutCapturePayload: Encodable {
     let session: Session
     let exerciseOccurrences: [Occurrence]
     let deletedSetIds: [String]
+    var planAtStart: PlanAtStart? = nil
 
     static func make(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding,
                      installationId: UUID, revision: Int, eventId: UUID = UUID(),
@@ -127,7 +140,9 @@ struct WorkoutCapturePayload: Encodable {
             binding: Binding(cycleId: binding.manifest.cycleId, sessionId: binding.manifest.sessionId),
             session: Session(title: record.programName ?? binding.manifest.title, status: deleting ? "cancelled" : "completed",
                 startedAt: date(record.startTs), endedAt: date(end), timeZone: binding.timeZone, notes: record.note, rpe: record.sessionRpe),
-            exerciseOccurrences: occurrences, deletedSetIds: deleting ? [] : deletedSetIds.map { $0.uuidString.lowercased() }.sorted())
+            exerciseOccurrences: occurrences, deletedSetIds: deleting ? [] : deletedSetIds.map { $0.uuidString.lowercased() }.sorted(),
+            planAtStart: binding.planAtStart.map { PlanAtStart(manifestRevision: $0.manifestRevision, provenance: $0.provenance,
+                fetchedAt: $0.fetchedAt.map { formatter.string(from: $0) }) })
     }
     /// Stored strap readings only; no extrapolated coverage or statistics for untimed sets.
     static func measuredEvidence(record: LiftSessionRow, sets: [LiftSetRow], store: WhoopStore) async throws -> [UUID: WorkoutObservedHeartRate] {

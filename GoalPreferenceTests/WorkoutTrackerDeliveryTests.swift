@@ -75,6 +75,26 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
         let fixture = try WorkoutCapturePayload.make(record: record, sets: [row], binding: binding, installationId: UUID(), revision: 1).bytes()
         try fixture.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("dhoop-native-replacement-478.json"), options: .atomic)
     }
+    func testStartProvenanceIsExplicitForNewCaptureAndRemainsAbsentForLegacyBinding() throws {
+        var binding = try binding()
+        let record = LiftSessionRow(id: binding.sourceWorkoutId.uuidString.lowercased(), deviceId: "strap", startTs: 1000, endTs: 1600,
+            sport: "Strength Training", programId: nil, programName: nil, sessionRpe: nil, note: nil)
+        func payload(_ binding: WorkoutTrackerCaptureBinding) throws -> [String: Any] {
+            let body = try WorkoutCapturePayload.make(record: record, sets: [], binding: binding, installationId: UUID(), revision: 1).bytes()
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        }
+        XCTAssertNil(try payload(binding)["planAtStart"])
+        binding.planAtStart = .init(manifest: binding.manifest, provenance: .cached, fetchedAt: nil)
+        let unknownAge = try XCTUnwrap(payload(binding)["planAtStart"] as? [String: Any])
+        XCTAssertEqual(unknownAge["provenance"] as? String, "cached")
+        XCTAssertTrue(unknownAge["fetchedAt"] is NSNull)
+        XCTAssertTrue(unknownAge["manifestRevision"] is NSNull, "Unsupported legacy hash formats remain unknown")
+        binding.planAtStart = .init(manifest: binding.manifest, provenance: .live, fetchedAt: Date(timeIntervalSince1970: 1700000000))
+        let knownAge = try XCTUnwrap(payload(binding)["planAtStart"] as? [String: Any])
+        XCTAssertEqual(knownAge["fetchedAt"] as? String, "2023-11-14T22:13:20Z")
+        let artifact = try WorkoutCapturePayload.make(record: record, sets: [], binding: binding, installationId: UUID(), revision: 1).bytes()
+        try artifact.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("dhoop-native-start-provenance-479.json"), options: .atomic)
+    }
     func testPreparedIntentRequiresExactLocalSessionAndSetPersistence() async throws {
         let binding = try binding(), id = binding.sourceWorkoutId.uuidString.lowercased()
         let setID = try XCTUnwrap(binding.occurrences.first?.sets.first?.sourceSetId).uuidString.lowercased()

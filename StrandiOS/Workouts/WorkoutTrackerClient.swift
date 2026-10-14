@@ -109,7 +109,7 @@ final class WorkoutTrackerClient: ObservableObject {
         guard value.valid else { throw WorkoutSyncTransportError.configuration }
         var next = state
         next.enabled = false; next.origin = origin; next.installationId = installationId
-        next.index = nil; next.manifests = [:]; next.capturedAt = nil
+        next.index = nil; next.manifests = [:]; next.manifestReadAt = [:]; next.cachedPlanBlocks = [:]; next.capturedAt = nil
         next.message = "Connection saved. Tracker remains off until you enable it."
         try commit(next)
         try saveCredential(value)
@@ -179,13 +179,35 @@ final class WorkoutTrackerClient: ObservableObject {
         guard config.enabled else { throw WorkoutSyncTransportError.disabled }
         busy = true; defer { busy = false }
         let currentGeneration = generation
-        let bytes = try await send(.manifest(sessionId), nil, config)
-        let manifest = try JSONDecoder().decode(WorkoutTrackerManifest.self, from: bytes)
-        try manifest.validate()
+        let bytes: Data
+        do { bytes = try await send(.manifest(sessionId), nil, config) }
+        catch {
+            if currentGeneration == generation {
+                var block: WorkoutTrackerState.CachedPlanBlock?
+                if case WorkoutSyncTransportError.rejected(let reason) = error {
+                    if reason == .prescriptionInconsistent { block = .inconsistent }
+                    if [.sessionRetired, .setRetired].contains(reason) { block = .unavailable }
+                }
+                if case WorkoutSyncTransportError.http(let status) = error, [404, 410].contains(status) { block = .unavailable }
+                if let block { var next = state; next.cachedPlanBlocks[String(sessionId)] = block; try commit(next) }
+            }
+            throw error
+        }
+        let manifest: WorkoutTrackerManifest
+        do {
+            manifest = try JSONDecoder().decode(WorkoutTrackerManifest.self, from: bytes)
+            try manifest.validate()
+            guard manifest.sessionId == sessionId else { throw WorkoutTrackerContractError.invalidSnapshot }
+        } catch {
+            if currentGeneration == generation { var next = state; next.cachedPlanBlocks[String(sessionId)] = .invalid; try commit(next) }
+            throw error
+        }
         guard manifest.sessionId == sessionId, !Task.isCancelled, currentGeneration == generation, state.enabled else {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
-        var next = state; next.manifests[String(sessionId)] = manifest; next.capturedAt = Date()
+        let readAt = Date()
+        var next = state; next.manifests[String(sessionId)] = manifest; next.capturedAt = readAt
+        next.manifestReadAt[String(sessionId)] = readAt; next.cachedPlanBlocks[String(sessionId)] = nil
         try commit(next)
         return manifest
     }
@@ -224,8 +246,29 @@ final class WorkoutTrackerClient: ObservableObject {
     func captureBinding(manifest: WorkoutTrackerManifest) throws -> WorkoutTrackerCaptureBinding {
         let config = try credentials()
         guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        guard state.manifests[String(manifest.sessionId)] == manifest else { throw WorkoutTrackerContractError.invalidSnapshot }
         return try WorkoutTrackerCaptureBinding(manifest: manifest,
-            connection: .init(origin: config.origin, installationId: config.installationId))
+            connection: .init(origin: config.origin, installationId: config.installationId),
+            planAtStart: .init(manifest: manifest, provenance: .live, fetchedAt: state.manifestReadAt[String(manifest.sessionId)]))
+    }
+
+    /// Explicit local start. No Keychain access, request, prescription refresh or inferred fetch age.
+    func cachedManifest(sessionId: Int) throws -> WorkoutTrackerManifest {
+        guard !storageUnavailable, state.origin != nil, state.installationId != nil,
+              state.cachedPlanBlocks[String(sessionId)] == nil,
+              let manifest = state.manifests[String(sessionId)], !manifest.hasObservations, manifest.status == "planned",
+              !manifest.exerciseOccurrences.isEmpty, manifest.exerciseOccurrences.allSatisfy({ $0.loadMode != .duration && !$0.sets.isEmpty }) else { throw WorkoutTrackerContractError.unavailableCapture }
+        if let index = state.index {
+            guard index.sessions.contains(where: { $0.sessionId == sessionId && $0.status == "planned" }) else { throw WorkoutTrackerContractError.unavailableCapture }
+        }
+        try manifest.validate(); return manifest
+    }
+    func cachedCaptureBinding(sessionId: Int) throws -> WorkoutTrackerCaptureBinding {
+        guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
+        let manifest = try cachedManifest(sessionId: sessionId)
+        guard let origin = state.origin, let installation = state.installationId else { throw WorkoutSyncTransportError.configuration }
+        return try WorkoutTrackerCaptureBinding(manifest: manifest, connection: .init(origin: origin, installationId: installation),
+            planAtStart: .init(manifest: manifest, provenance: .cached, fetchedAt: state.manifestReadAt[String(sessionId)]))
     }
 
     /// Persist the complete local intent before SQLite. Unsupported bindings remain reviewable.

@@ -102,7 +102,11 @@ extension WorkoutTrackerFileStore {
         }
         // Cached plans are only reused within the same reviewed connection; existing snapshots win.
         if next.origin == manifest.state.origin && next.installationId == manifest.state.installationId {
-            for (key, value) in manifest.state.manifests where next.manifests[key] == nil { next.manifests[key] = value }
+            for (key, value) in manifest.state.manifests where next.manifests[key] == nil {
+                next.manifests[key] = value
+                next.manifestReadAt[key] = manifest.state.manifestReadAt[key]
+                next.cachedPlanBlocks[key] = manifest.state.cachedPlanBlocks[key]
+            }
         }
         next.enabled = false
         next.message = "Metadata merged. Tracker remains off; SQLite workouts and credentials were not changed."
