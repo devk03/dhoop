@@ -237,7 +237,7 @@ final class LiftSessionController: ObservableObject {
             return false
         }
         guard setCollectionActive(true) else {
-            collectionMessage = "Finish or pause the other WHOOP workout before collecting for Strength."
+            collectionMessage = "WHOOP collection could not be claimed. Check the active workout and WHOOP alert status, then try again."
             return false
         }
         collectionClaimed = true

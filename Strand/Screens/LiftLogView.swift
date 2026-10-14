@@ -395,7 +395,7 @@ private enum StrengthStartError: LocalizedError {
         switch self {
         case .storageUnavailable: return "Storage is unavailable. Please try again."
         case .emptyRoutine: return "Add an exercise to this routine before starting."
-        case .conflictingSession: return "Another workout owns WHOOP collection. Finish or pause it before starting Strength."
+        case .conflictingSession: return "WHOOP collection could not be claimed. Check the active workout and WHOOP alert status, then try again."
         }
     }
 }
