@@ -708,6 +708,13 @@ previous mass loads. Per-hand/added/total load labels remain explicit; RIR is ne
 
 Optional set notes are written into the existing `liftSet.note` column. The active snapshot retains
 notes across relaunch; historical correction and explicit clearing preserve numeric values and timing.
+The exercise menu can move cards earlier/later within the current session. A separate durable
+presentation/suggestion order keeps plan indices, source IDs, completed sets, notes and the current
+set/rest timing unchanged. Undo and relaunch retain this order; the routine prescription is unchanged.
+This Apple session-editor behavior does not change SQLite rows, backup row shapes or shared analytics;
+Android session UI parity is not implemented by this fork change.
+The [session-order study](design/dhoop-strength-session-order-study.png) and its
+[built-in ImageGen prompt](design/dhoop-strength-session-order-study.prompt.txt) use demo data only.
 The [picker and delivery study](design/dhoop-tracker-picker-delivery-study.png) and its
 [built-in ImageGen prompt](design/dhoop-tracker-picker-delivery-study.prompt.txt) use demo data only.
 
@@ -755,5 +762,5 @@ workflow has not yet been verified on the physical iPhone.
 
 The native integration and matching Life receiver are local development work. Production deployment,
 dedicated credentials and any Cloudflare path activation require separate authorization. Additional
-occurrence reordering/replacement and reviewed conflict rebinding require further work before this
+tracker occurrence-order semantics, exercise replacement and reviewed conflict rebinding require further work before this
 integration is considered complete. Physical-device verification remains outstanding.
