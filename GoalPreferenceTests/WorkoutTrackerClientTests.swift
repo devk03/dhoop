@@ -65,6 +65,8 @@ final class WorkoutTrackerClientTests: XCTestCase {
         let restored = WorkoutTrackerClient(store: f.file, readCredential: { nil })
         XCTAssertEqual(try restored.sourceExerciseIdentity(nativeId: "legacy-exercise", deviceID: "strap"), id)
         XCTAssertNotEqual(try restored.sourceExerciseIdentity(nativeId: "legacy-exercise", deviceID: "other"), id)
+        let embedded = try restored.sourceExerciseIdentity(nativeId: "c", deviceID: "a\u{0}b")
+        XCTAssertNotEqual(try restored.sourceExerciseIdentity(nativeId: "b\u{0}c", deviceID: "a"), embedded, "An embedded delimiter cannot conflate two source exercises")
         let nativeUUID = UUID()
         XCTAssertEqual(try restored.sourceExerciseIdentity(nativeId: nativeUUID.uuidString, deviceID: "strap"), nativeUUID)
     }
@@ -125,5 +127,65 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(client.state.deliveries[0].bytes, original)
         let rows = try await f.db.liftSets(sessionId: f.record.id)
         XCTAssertEqual(rows, f.sets)
+    }
+
+    func testCaptureComparisonRejectsMixedRevisionsAndCannotSendObservations() async throws {
+        let f = try await fixture()
+        var reads = 0
+        let client = WorkoutTrackerClient(store: f.file, send: { endpoint, body, _ in
+            XCTAssertNil(body)
+            guard case .captures(let id, _, _) = endpoint else { XCTFail("Comparison must be read-only"); throw WorkoutSyncTransportError.invalidResponse }
+            XCTAssertEqual(id, f.binding.sourceWorkoutId)
+            reads += 1
+            let setID = reads == 1 ? f.sets[0].id : UUID().uuidString.lowercased()
+            let next: Any = reads == 1 ? 1 : NSNull()
+            return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "sourceWorkoutId": f.record.id,
+                "sourceRevision": reads, "lifeRevision": 2, "binding": ["kind": "programmed", "cycleId": 4, "sessionId": 5], "tombstone": false,
+                "session": ["timeZone": "Europe/London"], "ownership": [:], "projectionPolicy": "apply", "projectionState": "current", "nextCursor": next,
+                "sets": [["sourceSetId": setID, "sourceOccurrenceId": f.binding.occurrences[0].sourceOccurrenceId.uuidString.lowercased(), "exerciseKey": "bench", "setType": "work",
+                    "raw": ["sourceSetId": setID, "loadKg": 60, "reps": 8], "projection": ["actual_load": 132.2773573109265, "actual_reps": 8, "completed": 1]]]])
+        }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let before = client.state.deliveries
+        do { _ = try await client.captureSnapshot(deliveryId: before[0].id); XCTFail("Mixed snapshots cannot become a trustworthy comparison") }
+        catch WorkoutTrackerContractError.invalidSnapshot {}
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(client.state.deliveries, before)
+    }
+
+    func testSelectedRecoveryRefusesStaleLocalValuesBeforeSending() async throws {
+        let f = try await fixture()
+        var sends = 0
+        let client = WorkoutTrackerClient(store: f.file, send: { _, _, _ in sends += 1; throw URLError(.badServerResponse) }, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        var changed = f.sets[0]; changed.reps = 10
+        try await f.db.upsertLiftSets([changed])
+        do { try await client.synchronize(store: f.db, deliveryId: client.state.deliveries[0].id); XCTFail("Stale local observations cannot be replayed") }
+        catch WorkoutTrackerContractError.invalidSnapshot {}
+        XCTAssertEqual(sends, 0)
+        XCTAssertEqual(client.state.deliveries[0].status, .review)
+        let stored = try await f.db.liftSets(sessionId: f.record.id)
+        XCTAssertEqual(stored[0].reps, 10)
+    }
+
+    func testKeepLocallyStopsAutomaticDeliveryAcrossRelaunchWithoutRemovingIntent() async throws {
+        let f = try await fixture()
+        var sends = 0
+        let sender: (WorkoutSyncEndpoint, Data?, WorkoutSyncConfiguration) async throws -> Data = { _, body, _ in
+            sends += 1; return try self.receipt(try XCTUnwrap(body), fixture: f)
+        }
+        let client = WorkoutTrackerClient(store: f.file, send: sender, readCredential: { f.config })
+        try await ready(client, fixture: f)
+        let original = client.state.deliveries[0]
+        try client.keepLocally(deliveryId: original.id)
+        let restored = WorkoutTrackerClient(store: f.file, send: sender, readCredential: { f.config })
+        try await restored.synchronize(store: f.db)
+        XCTAssertEqual(sends, 0)
+        XCTAssertEqual(restored.state.deliveries[0].bytes, original.bytes)
+        XCTAssertEqual(restored.state.deliveries[0].paused, true)
+        try await restored.synchronize(store: f.db, deliveryId: original.id)
+        XCTAssertEqual(sends, 1, "Only an explicit selected recovery can send the retained original event")
+        XCTAssertEqual(restored.state.deliveries[0].status, .accepted)
+        XCTAssertEqual(restored.state.deliveries[0].paused, true)
     }
 }

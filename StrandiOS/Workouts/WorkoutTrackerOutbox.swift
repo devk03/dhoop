@@ -17,6 +17,7 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var status: Status = .prepared
     var message = "Waiting for verified local persistence"
     var acknowledgement: Data?
+    var paused: Bool? = nil
     var needsReconciliation: Bool {
         status == .accepted && acknowledgement.flatMap {
             try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0)
