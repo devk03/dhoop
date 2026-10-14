@@ -47,6 +47,9 @@ struct RootTabView: View {
     /// Selected tab — bound so tab switches can crossfade (README §Motion: ~240ms opacity swap
     /// between tab roots, calm easing). Defaults to Today.
     @State private var selectedTab: Int = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var motion = NoopMotionState.shared
+    private var poseStill: Bool { motion.poseStill(reduceMotion) }
     @State private var runningSession: RunningSessionController?
     /// One `NavigationPath` per tab, indexed by tab tag. Re-tapping the already-active tab pops
     /// that tab's stack to its root (#135) by clearing its path — an animated pop that leaves the
@@ -139,7 +142,7 @@ struct RootTabView: View {
         .noopTabBarAutoHide(bottomBarAutoHide)
             // Tab crossfade — README §Motion: ~240ms opacity swap between tab roots, global calm
             // easing cubic-bezier(0.22,1,0.36,1).
-            .animation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24), value: selectedTab)
+            .animation(poseStill ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.24), value: selectedTab)
         // Horizontal gestures belong to date filters and charts; the native tab bar owns navigation.
         .task {
             await repo.refresh()
@@ -250,10 +253,10 @@ struct RootTabView: View {
                     // Clear the floating tab bar with the same constant every screen uses, or the
                     // session bar sits on top of the tab labels.
                     .padding(.bottom, NoopMetrics.tabBarClearance)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(poseStill ? .identity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: liftSession.isActive)
+        .animation(poseStill ? nil : .easeInOut(duration: 0.25), value: liftSession.isActive)
         // A session left running by a previous launch is back before this view exists
         // (`LiftSessionController.resumeSaved`, from `StrandiOSApp.init`), as the BAR — not as a sheet
         // thrown in the user's face; they open it when they want it.
