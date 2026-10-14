@@ -197,6 +197,9 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   `/private/tmp/dhoop-deletion-lookup-486-ios-build.log` and
   `/private/tmp/dhoop-deletion-lookup-486-macos-build.log`. Build 486 retains the stable bundle,
   Loshi team and workout backup document type. It has not been installed on the physical iPhone.
+- The subsequent read-only device availability check found `0A-Homeboy` paired, with its developer
+  tunnel unavailable (`/private/tmp/dhoop-486-device-availability.json`). No phone launch, strap
+  command or container modification was attempted. Availability is not evidence of collection.
 - No SQLite migration, owner-data deletion, WHOOP command, motor cue, physiological validation or
   physical app installation occurred in this pass. Definitive cancellation of an unobserved
   in-flight event is not implemented; a negative lookup cannot authorize superseding that event.
