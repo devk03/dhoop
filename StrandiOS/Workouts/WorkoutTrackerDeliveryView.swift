@@ -15,6 +15,7 @@ struct WorkoutTrackerDeliveryView: View {
     @State private var remoteCheckedAt: Date?
     @State private var recoveryReview: WorkoutTrackerRecoveryReview?
     @State private var historyReview: WorkoutTrackerHistoryReview?
+    @State private var deletionReview: WorkoutTrackerDeletionReview?
     @State private var preparedDeliveryId: UUID?
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
@@ -45,20 +46,44 @@ struct WorkoutTrackerDeliveryView: View {
                             Text("Tracker receipt").font(StrandFont.headline)
                             Text("A local save, a received capture, and applied website values are separate states.")
                                 .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                            if let replacement = try? client.historyOnlyReplacement(for: delivery.id) {
-                                NavigationLink { WorkoutTrackerDeliveryView(deliveryId: replacement.id) } label: {
-                                    Label("Open history-only correction", systemImage: "clock.arrow.circlepath")
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }.buttonStyle(NoopSecondaryButtonStyle())
-                                Text("This original intent is retained. Sending it is disabled because you prepared a history-only replacement.")
+                            NoopAsyncButton("Find original receipt", systemImage: "doc.text.magnifyingglass", kind: .secondary) {
+                                _ = try await client.lookupReceipt(deliveryId: delivery.id)
+                            }.disabled(!client.state.enabled || client.busy || delivery.bytes == nil)
+                            Text("Reads an existing receipt without replaying the workout. Local edits and deletions do not prevent this check. A missing result remains unknown.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            if let lookup = delivery.receiptLookup {
+                                Label(lookup.status == .recorded ? "Original event receipt found" : "No receipt observed · outcome unknown",
+                                      systemImage: lookup.status == .recorded ? "doc.badge.checkmark" : "questionmark.circle")
+                                    .font(StrandFont.subhead)
+                                if let checkedAt = delivery.receiptLookupCheckedAt {
+                                    Text("Receipt checked \(checkedAt.formatted(date: .abbreviated, time: .shortened))")
+                                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                }
+                                if lookup.current?.sourcePresent == false {
+                                    Text("Current source metadata is unavailable. The original receipt is retained independently.")
+                                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                }
+                                if lookup.receipt?.outcome == "stale" {
+                                    Text("That event was processed without applying its older observations.")
+                                        .font(StrandFont.caption).foregroundStyle(StrandPalette.metricAmber)
+                                }
+                                Text("This check does not verify derived progress or replay any event.")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
-                            NoopAsyncButton(delivery.recoveryOf != nil && delivery.status == .ready ? "Send prepared delivery" : "Recover original receipt", systemImage: "arrow.clockwise") {
+                            if let replacement = try? client.reviewedReplacement(for: delivery.id) {
+                                NavigationLink { WorkoutTrackerDeliveryView(deliveryId: replacement.id) } label: {
+                                    Label(replacement.operation == .delete ? "Open reviewed deletion" : "Open history-only correction", systemImage: replacement.operation == .delete ? "trash" : "clock.arrow.circlepath")
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }.buttonStyle(NoopSecondaryButtonStyle())
+                                Text("This original intent is retained. Sending it is disabled because you prepared a reviewed replacement.")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
+                            NoopAsyncButton(LocalizedStringKey(sendTitle(delivery)), systemImage: delivery.operation == .delete ? "trash" : "arrow.clockwise", kind: delivery.operation == .delete ? .destructive : .primary) {
                                 guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
                                 try await client.synchronize(store: store, deliveryId: delivery.id)
                                 try await checkLocal(delivery)
                             }.disabled(!client.state.enabled || client.busy || delivery.bytes == nil || localVerified != true ||
-                                (try? client.historyOnlyReplacement(for: delivery.id)) != nil)
+                                (try? client.reviewedReplacement(for: delivery.id)) != nil)
                             if let originalId = delivery.recoveryOf {
                                 let original = try? client.delivery(originalId)
                                 Text(original?.sourceWorkoutId == delivery.sourceWorkoutId ? "Original event retained" : "Original event retention could not be verified")
@@ -74,6 +99,7 @@ struct WorkoutTrackerDeliveryView: View {
                                 NoopAsyncButton("Review a new delivery", systemImage: "doc.text.magnifyingglass", kind: .secondary) {
                                     recoveryReview = nil; preparedDeliveryId = nil
                                     historyReview = nil
+                                    deletionReview = nil
                                     let review = try await client.reviewRecovery(deliveryId: delivery.id)
                                     remote = review.comparison.capture; remoteCheckedAt = review.comparison.checkedAt
                                     recoveryReview = review
@@ -83,7 +109,7 @@ struct WorkoutTrackerDeliveryView: View {
                             }
                             if delivery.operation != .delete {
                                 NoopAsyncButton("Review history-only correction", systemImage: "clock.arrow.circlepath", kind: .secondary) {
-                                    historyReview = nil; recoveryReview = nil; preparedDeliveryId = nil
+                                    historyReview = nil; recoveryReview = nil; deletionReview = nil; preparedDeliveryId = nil
                                     let review = try await client.reviewHistoryOnly(deliveryId: delivery.id)
                                     remote = review.capture; remoteCheckedAt = review.checkedAt
                                     historyReview = review
@@ -91,10 +117,20 @@ struct WorkoutTrackerDeliveryView: View {
                                 Text("Requires a previously accepted workout and resolved earlier receipts. Saves source history only; website sets, manual edits and progression are not changed.")
                                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             }
+                            if delivery.operation == .delete {
+                                NoopAsyncButton("Review tracker deletion", systemImage: "doc.text.magnifyingglass", kind: .secondary) {
+                                    deletionReview = nil; historyReview = nil; recoveryReview = nil; preparedDeliveryId = nil
+                                    let review = try await client.reviewDeletion(deliveryId: delivery.id)
+                                    remote = review.capture; remoteCheckedAt = review.checkedAt
+                                    deletionReview = review
+                                }.disabled(!client.state.enabled || client.busy || localVerified != true)
+                                Text("Full deletion can retain its original IDs after a routine retires. Review current source observations and manual ownership before preparing a new event.")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }
                             NoopAsyncButton("Keep locally", systemImage: "pause.circle", kind: .tertiary) {
                                 try client.keepLocally(deliveryId: delivery.id)
                             }.disabled(client.busy || delivery.paused == true)
-                            Text("Keep locally pauses automatic delivery for this capture. Previously accepted website data is retained. Recover original receipt sends only that reviewed event.")
+                            Text("Keep locally pauses automatic delivery. Retry sends the exact stored event and may apply unchanged, locally verified observations if it was not already accepted.")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                             if !client.state.enabled {
                                 Text("Connection is off. Nothing is sent by opening this screen.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -109,6 +145,9 @@ struct WorkoutTrackerDeliveryView: View {
                     }
                     if let historyReview {
                         historyCard(historyReview)
+                    }
+                    if let deletionReview {
+                        deletionCard(deletionReview)
                     }
                     if let preparedDeliveryId {
                         NavigationLink {
@@ -170,6 +209,13 @@ struct WorkoutTrackerDeliveryView: View {
         switch delivery.status { case .accepted: return StrandPalette.metricSteps; case .review: return StrandPalette.metricHRV; case .failed: return StrandPalette.statusCritical; default: return StrandPalette.textPrimary }
     }
     private func statusTitle(_ delivery: WorkoutTrackerDelivery) -> String {
+        if delivery.receiptLookup?.status == .notObserved, delivery.acknowledgement == nil {
+            return "Outcome unknown · replay paused"
+        }
+        if delivery.status == .accepted, delivery.operation == .delete {
+            return delivery.hasVerifiedDeletionReceipt ? (delivery.reconciliationUnknown ? "Deletion verified · progress unverified" : delivery.needsReconciliation ? "Deletion verified · progress pending" : "Tracker deletion verified") : "Receipt received · deletion state unverified"
+        }
+        if delivery.status == .accepted, delivery.reconciliationUnknown { return delivery.isHistoryOnly ? "History receipt verified · progress unverified" : "Receipt verified · progress unverified" }
         if delivery.status == .accepted { return delivery.isHistoryOnly ? "History saved · website unchanged" : delivery.needsReconciliation ? "Progress pending" : "Receipt verified" }
         if delivery.recoveryOf != nil, delivery.paused == true, delivery.status == .ready { return "Prepared · not sent" }
         if delivery.paused == true { return "Kept locally" }
@@ -179,6 +225,43 @@ struct WorkoutTrackerDeliveryView: View {
         case .failed: return "Receipt not verified"
         case .prepared: return "Awaiting local confirmation"
         case .ready: return "Ready to send"
+        }
+    }
+    private func sendTitle(_ delivery: WorkoutTrackerDelivery) -> String {
+        if delivery.operation == .delete {
+            return delivery.recoveryOf != nil && delivery.status == .ready ? "Send prepared deletion" : delivery.submissionAttempted == false ? "Send stored deletion" : "Retry exact deletion"
+        }
+        return delivery.recoveryOf != nil && delivery.status == .ready ? "Send prepared delivery" : delivery.submissionAttempted == false ? "Send stored delivery" : "Retry exact stored event"
+    }
+    private func deletionCard(_ review: WorkoutTrackerDeletionReview) -> some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Label("Review full tracker deletion", systemImage: "trash").font(StrandFont.headline)
+                Text(review.capture.tombstone ? "The tracker source is already tombstoned. No new deletion will be prepared; this read is separate from the original event's receipt." : "Delete this same physical capture. Manual website values and prescriptions stay protected; raw sensor readings and recorded provenance are retained.")
+                    .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                if review.capture.projectionState == "retired" {
+                    Text("Original targets retired · replacement IDs are not required")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.metricAmber)
+                }
+                if review.includesNewerSource {
+                    Text("The tracker holds newer source observations than the retained accepted event. Preparing explicitly targets the current capture shown below, with a higher revision.")
+                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.metricAmber).fixedSize(horizontal: false, vertical: true)
+                }
+                Text("\(review.capture.ownership.values.filter { $0.origin == "manual" }.count) manually owned fields stay protected")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Text("Current tracker note: \(review.capture.session.notes ?? "None")")
+                    .font(StrandFont.subhead).fixedSize(horizontal: false, vertical: true)
+                ForEach(review.capture.sets) { observed in comparison(observed, delivery: review.original) }
+                if review.canPrepare {
+                    Text("Preparing retains the original event and creates a paused deletion. Sending is separate. The patch omits recorded values and original start provenance so they are not replaced by an older copy.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    NoopAsyncButton(review.includesNewerSource ? "Prepare deletion of current tracker data" : "Prepare reviewed deletion", systemImage: "trash", kind: .destructive) {
+                        guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
+                        preparedDeliveryId = try await client.prepareReviewedDeletion(reviewId: review.id, store: store)
+                        deletionReview = nil
+                    }.disabled(!client.state.enabled || client.busy)
+                }
+            }
         }
     }
     private func historyCard(_ review: WorkoutTrackerHistoryReview) -> some View {
