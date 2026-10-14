@@ -268,7 +268,7 @@ struct SettingsView: View {
                             Image(systemName: "chevron.right").accessibilityHidden(true)
                         }.frame(minHeight: NoopMetrics.minimumTouchTarget).foregroundStyle(StrandPalette.textPrimary)
                     }
-                }.buttonStyle(.plain)
+                }.buttonStyle(NoopFeedbackButtonStyle())
                 NavigationLink { SleepWebhookSettingsView() } label: {
                     StrandCard {
                         HStack(spacing: NoopMetrics.space3) {
@@ -278,7 +278,16 @@ struct SettingsView: View {
                             Image(systemName: "chevron.right").accessibilityHidden(true)
                         }.frame(minHeight: NoopMetrics.minimumTouchTarget).foregroundStyle(StrandPalette.textPrimary)
                     }
-                }.buttonStyle(.plain)
+                }.buttonStyle(NoopFeedbackButtonStyle())
+                NavigationLink { WorkoutTrackerSettingsView() } label: {
+                    StrandCard {
+                        HStack(spacing: NoopMetrics.space3) {
+                            Label("Workout tracker", systemImage: "dumbbell").font(StrandFont.headline)
+                            Spacer()
+                            Image(systemName: "chevron.right").accessibilityHidden(true)
+                        }.frame(minHeight: NoopMetrics.minimumTouchTarget).foregroundStyle(StrandPalette.textPrimary)
+                    }
+                }.buttonStyle(NoopFeedbackButtonStyle())
                 #endif
                 profileCard.staggeredAppear(index: 0)
                 unitsCard.staggeredAppear(index: 1)

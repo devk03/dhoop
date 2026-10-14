@@ -27,6 +27,9 @@ struct LiftLogView: View {
     /// The program being created or edited (nil = the editor is closed).
     @State private var editing: ProgramEditTarget?
     @State private var importing = false
+    #if os(iOS)
+    @State private var showingTracker = false
+    #endif
     /// The live session, owned at the app root so it survives this screen going away.
     @EnvironmentObject private var session: LiftSessionController
     /// Recent finished sessions, newest first.
@@ -65,12 +68,18 @@ struct LiftLogView: View {
         .sheet(item: $viewing) { target in
             LiftSessionDetailSheet(session: target.session) { await load() }
         }
+        #if os(iOS)
+        .sheet(isPresented: $showingTracker) { NavigationStack { WorkoutTrackerRoutinesView() } }
+        #endif
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
             if !embedded { headerCard }
             programsSection
+            #if os(iOS)
+            NoopButton("Tracker routines", systemImage: "link", kind: .secondary, fullWidth: true) { showingTracker = true }
+            #endif
             if let message = session.collectionMessage {
                 Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical)
                     .fixedSize(horizontal: false, vertical: true)
