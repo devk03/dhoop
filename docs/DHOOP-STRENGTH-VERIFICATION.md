@@ -254,6 +254,8 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   VoiceOver, picker gestures and visual acceptance remain unverified.
 - No migration, owner image import, preference reset, phone launch, strap command or cue occurred.
   The full goal remains active, including approved storage design and physical collection gates.
+- Read-only availability check still found `0A-Homeboy` unavailable on the Mac
+  (`/private/tmp/dhoop-488-device-availability.json`). No installation or container write was attempted.
 
 ## Physical checks still required
 
