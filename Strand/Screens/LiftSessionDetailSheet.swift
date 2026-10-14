@@ -345,6 +345,10 @@ struct LiftSessionDetailSheet: View {
           } else {
               Text("Set timing unavailable").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
           }
+          if let note = row.note, !note.isEmpty {
+              Text(note).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+          }
         }
     }
 

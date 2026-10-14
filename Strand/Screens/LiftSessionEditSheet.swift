@@ -33,11 +33,12 @@ struct LiftSessionEditSheet: View {
     @State private var originalSessionRpe = ""
     @State private var saving = false
     @State private var saveError: String?
+    @State private var showingNotes: Set<String> = []
     /// A weight or reps field whose 0 was emptied when it was focused.
     @State private var clearedZero: Field?
 
     @FocusState private var focused: Field?
-    private enum Field: Hashable { case weight(String), reps(String), rpe(String), sessionRpe }
+    private enum Field: Hashable { case weight(String), reps(String), rpe(String), notes(String), sessionRpe }
 
     /// One set's fields, as typed.
     struct SetForm: Equatable {
@@ -45,6 +46,7 @@ struct LiftSessionEditSheet: View {
         var reps: String
         var rpe: String
         var isWarmup: Bool
+        var notes: String = ""
     }
 
     /// One row on the sheet: a saved set (its row id) or one added here (a new id).
@@ -124,6 +126,18 @@ struct LiftSessionEditSheet: View {
                 .minimumScaleFactor(0.8)
                 ForEach(Array(group.entries.enumerated()), id: \.element.id) { position, entry in
                     setRow(exercise: index, position: position, entry: entry)
+                    if showingNotes.contains(group.name) {
+                        TextField("Set \(position + 1) notes", text: Binding(get: { self.entry(index, entry.id)?.form.notes ?? "" }, set: { text in
+                            update(index, entry.id) { $0.form.notes = text }
+                        }), axis: .vertical)
+                        .textFieldStyle(.plain).font(StrandFont.subhead).lineLimit(2...6)
+                        .focused($focused, equals: .notes(entry.id))
+                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                        .accessibilityLabel("Notes for set \(position + 1), \(group.name)")
+                    }
+                }
+                NoopButton("Set notes", systemImage: "text.bubble", kind: .tertiary) {
+                    if showingNotes.contains(group.name) { showingNotes.remove(group.name) } else { showingNotes.insert(group.name) }
                 }
                 setCountRow(index)
             }
@@ -323,7 +337,7 @@ struct LiftSessionEditSheet: View {
         SetForm(weight: row.weightKg.map { LiftFormat.trim(LiftFormat.display(fromKilograms: $0, system: system)) } ?? "",
                 reps: row.reps.map(String.init) ?? "",
                 rpe: row.rpe.map { LiftFormat.trim($0) } ?? "",
-                isWarmup: row.isWarmup)
+                isWarmup: row.isWarmup, notes: row.note ?? "")
     }
 
     /// `row` with every field that differs between `before` and `after` parsed back in. A blank field
@@ -335,6 +349,7 @@ struct LiftSessionEditSheet: View {
         if after.reps != before.reps { edited.reps = repCount(after.reps) }
         if after.rpe != before.rpe { edited.rpe = LiftFormat.number(after.rpe) }
         edited.isWarmup = after.isWarmup
+        if after.notes != before.notes { edited.note = after.notes.isEmpty ? nil : after.notes }
         return edited
     }
 
@@ -363,7 +378,7 @@ struct LiftSessionEditSheet: View {
                         secondaryMuscles: template.secondaryMuscles, setIndex: position + 1,
                         weightKg: kilograms(entry.form.weight, system), reps: repCount(entry.form.reps),
                         rpe: LiftFormat.number(entry.form.rpe), isWarmup: entry.form.isWarmup,
-                        startTs: nil, endTs: nil, restSec: nil, note: nil))
+                        startTs: nil, endTs: nil, restSec: nil, note: entry.form.notes.isEmpty ? nil : entry.form.notes))
                     nextOrd += 1
                 }
             }

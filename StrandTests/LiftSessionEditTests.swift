@@ -34,6 +34,16 @@ final class LiftSessionEditTests: XCTestCase {
         XCTAssertEqual(edited.reps, 10)
     }
 
+    func testNotesCanBeCorrectedAndClearedWithoutChangingMeasurementsOrTiming() {
+        var existing = row(); existing.note = "Original note"
+        let before = Sheet.form(for: existing, system: .imperial)
+        var after = before; after.notes = "Slow, steady\nOne more rep next time"
+        var expected = existing; expected.note = after.notes
+        XCTAssertEqual(Sheet.applying(after, over: before, to: existing, system: .imperial), expected)
+        after.notes = ""; expected.note = nil
+        XCTAssertEqual(Sheet.applying(after, over: before, to: existing, system: .imperial), expected)
+    }
+
     func testAChangedWeightIsReadInTheDisplayUnit() {
         let before = Sheet.form(for: row(), system: .imperial)
         var after = before

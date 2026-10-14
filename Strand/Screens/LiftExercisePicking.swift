@@ -26,9 +26,10 @@ enum LiftExerciseVocabulary {
     /// on (deviceId, name), so a known name is updated — its muscles, and when it was last used — never
     /// duplicated. Throws `WhoopStore.LiftExerciseVocabularyFull` for a NEW name once the vocabulary is
     /// full, which the caller explains rather than dropping the name silently.
+    @discardableResult
     static func remember(_ name: String, primary: LiftMuscle?, secondaries: [LiftMuscle],
                          known vocabulary: [LiftExerciseRow], deviceId: String,
-                         in store: WhoopStore) async throws {
+                         in store: WhoopStore) async throws -> String {
         let now = Int(Date().timeIntervalSince1970)
         let existing = vocabulary.first { $0.name == name }
         _ = try await store.upsertLiftExercises([LiftExerciseRow(
@@ -39,6 +40,10 @@ enum LiftExerciseVocabulary {
             secondaryMuscles: secondaries,
             createdAt: existing?.createdAt ?? now,
             lastUsedTs: now)])
+        guard let saved = try await store.liftExercises(deviceId: deviceId).first(where: { $0.name == name }) else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        return saved.id
     }
 
     /// Secondaries in the vocabulary's canonical order rather than `Set` iteration order, so the stored

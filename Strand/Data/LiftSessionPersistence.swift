@@ -41,6 +41,13 @@ enum LiftSessionPersistence {
         var recordingId: String? = nil
         var trackerBinding: WorkoutTrackerCaptureBinding? = nil
         var setIdentities: [SetIdentity]? = nil
+        var setNotes: [SetNote]? = nil
+
+        struct SetNote: Codable, Equatable {
+            let exerciseIndex: Int
+            let setIndex: Int
+            let text: String
+        }
 
         struct SetIdentity: Codable, Equatable {
             var exerciseIndex: Int
@@ -168,6 +175,7 @@ enum LiftSessionPersistence {
                          pendingValues: [LiftSlot: LiftSessionController.PendingSetValues],
                          pendingWarmups: Set<LiftSlot>, sourceDeviceId: String? = nil,
                          recordingId: String? = nil, trackerBinding: WorkoutTrackerCaptureBinding? = nil,
+                         setNotes: [Snapshot.SetNote]? = nil,
                          setIdentities: [Snapshot.SetIdentity]? = nil) -> Snapshot {
         Snapshot(
             startSec: engine.startTs,
@@ -208,7 +216,8 @@ enum LiftSessionPersistence {
                 .sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) }
                 .map { Snapshot.SlotBox(exerciseIndex: $0.exerciseIndex, setIndex: $0.setIndex) },
             sourceDeviceId: sourceDeviceId, recordingId: recordingId, trackerBinding: trackerBinding,
-            setIdentities: setIdentities?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) })
+            setIdentities: setIdentities?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) },
+            setNotes: setNotes?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) })
     }
 
     /// The numbers typed in advance, back as the controller holds them.

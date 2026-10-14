@@ -10,10 +10,13 @@ import WhoopStore
 
 struct LiftSessionExerciseSheet: View {
     /// Handed the exercise once it is remembered; the session adds it.
-    let onAdd: (_ name: String, _ primary: LiftMuscle?, _ secondaries: [LiftMuscle]) -> Void
+    var requiresLoadType = false
+    var sourceDeviceId: String?
+    let onAdd: (_ name: String, _ primary: LiftMuscle?, _ secondaries: [LiftMuscle], _ sourceExerciseId: UUID?, _ loadMode: WorkoutTrackerLoadMode?) -> Bool
 
     @EnvironmentObject var repo: Repository
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var exercise = ""
     @State private var primary: LiftMuscle?
@@ -23,6 +26,7 @@ struct LiftSessionExerciseSheet: View {
     /// Set when the vocabulary is full, so the refusal is explained rather than silent.
     @State private var vocabularyFullLimit: Int?
     @State private var adding = false
+    @State private var loadMode: WorkoutTrackerLoadMode?
 
     @FocusState private var focused: Field?
     private enum Field: Hashable { case exercise }
@@ -30,15 +34,17 @@ struct LiftSessionExerciseSheet: View {
     private var trimmedExercise: String {
         exercise.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    private var canAdd: Bool { !trimmedExercise.isEmpty && !adding }
+    private var deviceID: String { sourceDeviceId ?? repo.deviceId }
+    private var canAdd: Bool { !trimmedExercise.isEmpty && !adding && (!requiresLoadType || loadMode != nil) }
 
     var body: some View {
         ScreenScaffold(title: "Add exercise",
                        subtitle: "Pick one you have done before, or type a new name.") {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 exerciseSection
+                if requiresLoadType { loadTypeSection }
                 LiftMusclePicker(primary: $primary, secondaries: $secondaries)
-                Text("It joins this session with one set, its weight and reps at 0 until you type what you lift. Finishing asks whether the program keeps it.")
+                Text(requiresLoadType ? "Added to workout history. Your Life routine stays unchanged." : "It joins this session with one set. Type what you lift; finishing asks whether the program keeps it.")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -48,9 +54,10 @@ struct LiftSessionExerciseSheet: View {
         #if os(iOS)
         .presentationDragIndicator(.visible)
         #else
-        .frame(width: 520, height: 640)
+        .frame(minWidth: NoopMetrics.detailSheetMinWidth, minHeight: NoopMetrics.detailSheetMinHeight)
         #endif
         .background(StrandPalette.surfaceBase)
+        .interactiveDismissDisabled(adding)
         .keyboardDoneToolbar($focused)
         .dismissesKeyboardOnTap($focused)
         .task { await load() }
@@ -83,7 +90,7 @@ struct LiftSessionExerciseSheet: View {
                         .foregroundStyle(StrandPalette.textPrimary)
                         .focused($focused, equals: .exercise)
                     if !suggestions.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                             Text("Used before").strandOverline()
                             ForEach(suggestions, id: \.id) { row in
                                 Button { adopt(row) } label: { LiftExerciseSuggestionLabel(row: row) }
@@ -96,18 +103,27 @@ struct LiftSessionExerciseSheet: View {
         }
     }
 
+    private var loadTypeSection: some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Load type").font(StrandFont.headline)
+                Text("Choose how this exercise's weight is recorded.").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: NoopMetrics.space2), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: NoopMetrics.space2) {
+                    ForEach(WorkoutTrackerLoadMode.allCases.filter { $0 != .duration }, id: \.self) { mode in
+                        NoopButton(LocalizedStringKey(mode.title), systemImage: loadMode == mode ? "checkmark.circle.fill" : "circle",
+                                   kind: loadMode == mode ? .primary : .secondary, fullWidth: true) { loadMode = mode }
+                            .accessibilityAddTraits(loadMode == mode ? .isSelected : [])
+                    }
+                }
+                if let loadMode { Text(loadMode.explanation).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+            }
+        }.disabled(adding)
+    }
+
     private var footer: some View {
-        HStack {
-            Button("Cancel") { dismiss() }
-                .buttonStyle(NoopFeedbackButtonStyle())
-                .font(StrandFont.body)
-                .foregroundStyle(StrandPalette.textSecondary)
-            Spacer()
-            Button("Add to session") { Task { await add() } }
-                .buttonStyle(.noopPrimary)
-                .frame(maxWidth: 200)
-                .disabled(!canAdd)
-                .opacity(canAdd ? 1 : NoopButtonMetrics.disabledOpacity)
+        VStack(spacing: NoopMetrics.space2) {
+            NoopAsyncButton("Add exercise", systemImage: "plus") { try await add() }.disabled(!canAdd)
+            NoopButton("Cancel", kind: .tertiary) { dismiss() }.disabled(adding)
         }
     }
 
@@ -121,31 +137,32 @@ struct LiftSessionExerciseSheet: View {
 
     private func load() async {
         guard let store = await repo.storeHandle() else { return }
-        vocabulary = (try? await store.liftExercises(deviceId: repo.deviceId)) ?? []
+        vocabulary = (try? await store.liftExercises(deviceId: deviceID)) ?? []
     }
 
     /// Remember the exercise — a new name is saved to the vocabulary, a known one is marked used — then
     /// hand it to the session.
-    private func add() async {
-        guard canAdd else { return }
+    private func add() async throws {
+        guard canAdd else { throw WorkoutTrackerContractError.invalidSnapshot }
         adding = true
         defer { adding = false }
         let name = trimmedExercise
         let ordered = LiftExerciseVocabulary.ordered(secondaries, excluding: primary)
-        if let store = await repo.storeHandle() {
-            do {
-                try await LiftExerciseVocabulary.remember(name, primary: primary, secondaries: ordered,
-                                                          known: vocabulary, deviceId: repo.deviceId,
-                                                          in: store)
-            } catch let full as WhoopStore.LiftExerciseVocabularyFull {
-                vocabularyFullLimit = full.limit
-                return
-            } catch {
-                // Still added: every set the session saves carries its own copy of the name and muscles,
-                // so a name the vocabulary could not take this once costs nothing that is logged.
-            }
+        let mode = loadMode
+        guard let store = await repo.storeHandle() else { throw WorkoutTrackerContractError.invalidSnapshot }
+        let nativeId: String
+        do {
+            nativeId = try await LiftExerciseVocabulary.remember(name, primary: primary, secondaries: ordered,
+                known: vocabulary, deviceId: deviceID, in: store)
+        } catch let full as WhoopStore.LiftExerciseVocabularyFull {
+            vocabularyFullLimit = full.limit
+            throw full
         }
-        onAdd(name, primary, ordered)
+        var sourceId = UUID(uuidString: nativeId)
+        #if os(iOS)
+        if requiresLoadType { sourceId = try WorkoutTrackerClient.shared.sourceExerciseIdentity(nativeId: nativeId, deviceID: deviceID) }
+        #endif
+        guard onAdd(name, primary, ordered, sourceId, mode) else { throw WorkoutTrackerContractError.deliveryInProgress }
         dismiss()
     }
 }

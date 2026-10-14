@@ -43,6 +43,7 @@ struct LiftSessionView: View {
     @State private var addingExercise = false
     /// The card to bring into view once an exercise has been added — the new one, at the end.
     @State private var scrollTarget: Int?
+    @State private var expandedNotes: Set<LiftSlot> = []
 
     private enum UnfinishedChoice: Hashable { case complete, discard }
     private enum ProgramChoice: Hashable { case update, keep }
@@ -52,7 +53,7 @@ struct LiftSessionView: View {
 
     @FocusState private var focused: FocusTarget?
     private enum FocusTarget: Hashable {
-        case weight(LiftSlot), reps(LiftSlot), rpe(LiftSlot), sessionRpe
+        case weight(LiftSlot), reps(LiftSlot), rpe(LiftSlot), note(LiftSlot), sessionRpe
     }
 
     /// What the user has TYPED into a field, held until they leave it.
@@ -139,10 +140,11 @@ struct LiftSessionView: View {
                 scrollTarget = nil
             }
             .sheet(isPresented: $addingExercise) {
-                LiftSessionExerciseSheet { name, primary, secondaries in
+                LiftSessionExerciseSheet(requiresLoadType: session.trackerBinding != nil, sourceDeviceId: session.sourceDeviceId) { name, primary, secondaries, sourceId, mode in
                     guard session.addExercise(name, primaryMuscle: primary,
-                                              secondaryMuscles: secondaries) else { return }
+                                              secondaryMuscles: secondaries, sourceExerciseId: sourceId, loadMode: mode) else { return false }
                     scrollTarget = (session.engine?.plan.count ?? 1) - 1
+                    return true
                 }
             }
         }
@@ -216,9 +218,15 @@ struct LiftSessionView: View {
                 }
 
                 columnHeadings
+                NoopButton("Set notes", systemImage: "text.bubble", kind: .tertiary) {
+                    let slots = engine.slots(forExercise: index)
+                    if slots.allSatisfy({ expandedNotes.contains($0) }) { slots.forEach { expandedNotes.remove($0) } }
+                    else { slots.forEach { expandedNotes.insert($0) } }
+                }
 
                 ForEach(engine.slots(forExercise: index), id: \.self) { slot in
                     setRow(engine, slot: slot)
+                    if expandedNotes.contains(slot) { setNoteRow(slot) }
                     // The rest belongs BETWEEN two sets, because that is where it happens.
                     if isRestingAfter(engine, slot: slot) { restBand(engine) }
                 }
@@ -340,6 +348,7 @@ struct LiftSessionView: View {
                                 : String(localized: "Set \(slot.setIndex) — tap to mark it a warm-up"))
 
             setInput(weightHeading, slot: slot, field: .weight(slot), text: weightBinding(slot), ghost: ghostWeight(slot))
+                .disabled(session.trackerLoadMode(exerciseIndex: slot.exerciseIndex)?.hasMass == false)
             setInput("Reps", slot: slot, field: .reps(slot), text: repsBinding(slot), ghost: ghostReps(slot))
             setInput("RPE", slot: slot, field: .rpe(slot), text: rpeBinding(slot), ghost: ghostRpe(engine, slot: slot))
 
@@ -451,6 +460,20 @@ struct LiftSessionView: View {
         case .reps(let slot): return Text("Repetitions for set \(slot.setIndex)")
         case .rpe(let slot): return Text("RPE for set \(slot.setIndex)")
         case .sessionRpe: return Text("Session RPE")
+        case .note(let slot): return Text("Notes for set \(slot.setIndex)")
+        }
+    }
+
+    private func setNoteRow(_ slot: LiftSlot) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+            Text("Set \(slot.setIndex) notes").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            TextField("Optional set notes", text: Binding(get: { session.note(for: slot) ?? "" }, set: { session.setNote($0, for: slot) }), axis: .vertical)
+                .textFieldStyle(.plain).font(StrandFont.subhead).lineLimit(2...6)
+                .focused($focused, equals: .note(slot))
+                .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                .padding(NoopMetrics.space2)
+                .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius))
+                .accessibilityLabel("Notes for set \(slot.setIndex)")
         }
     }
 
@@ -892,7 +915,7 @@ struct LiftSessionView: View {
                 secondaryMuscles: item?.secondaryMuscles ?? [],
                 setIndex: s.slot.setIndex, weightKg: s.weightKg, reps: s.reps, rpe: s.rpe,
                 isWarmup: s.isWarmup, startTs: s.startTs, endTs: s.endTs,
-                restSec: s.restSec, note: nil)
+                restSec: s.restSec, note: session.note(for: s.slot))
         }
         // Through the SAME path a manual workout takes, so it inherits overlap dedup, the engine's
         // HR-derived strain fill and delete/merge. `strain` stays nil deliberately: the engine fills

@@ -42,14 +42,48 @@ final class LiftSessionPersistenceTests: XCTestCase {
         let slot = LiftSlot(exerciseIndex: 0, setIndex: 1)
         let recording = original.recordingId
         let set = original.identity(for: slot)
+        original.setNote("Slow, steady\nKeep form consistent", for: slot)
         XCTAssertEqual(original.identity(for: slot), set)
         let snapshot = try XCTUnwrap(LiftSessionPersistence.load())
         let restored = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
         restored.resume(from: snapshot)
         XCTAssertEqual(restored.recordingId, recording)
         XCTAssertEqual(restored.identity(for: slot), set)
+        XCTAssertEqual(restored.note(for: slot), "Slow, steady\nKeep form consistent")
+        restored.setNote("", for: slot)
+        XCTAssertNil(restored.note(for: slot))
         XCTAssertNotEqual(restored.identity(for: LiftSlot(exerciseIndex: 0, setIndex: 2)), set)
         original.discard(); restored.discard()
+    }
+
+    @MainActor
+    func testAddedBodyweightExerciseKeepsIdentityAndNotesWithoutCarryingOldMass() throws {
+        let planned = WorkoutTrackerManifest.PlannedSet(lifeSetId: 1, setNumber: 1, setType: "work", plannedLoad: 60, plannedReps: 8,
+            loadOverride: false, repsOverride: false, actualLoad: nil, actualReps: nil, rir: nil, completed: false)
+        let occurrence = WorkoutTrackerManifest.Occurrence(sessionExerciseId: 2, programSlotId: 3, slotKey: "push", exerciseKey: "bench", originalExerciseKey: "bench", name: "Bench", order: 0,
+            measurementKind: "mass_reps", loadMode: .barbell, loadBasis: "total", unit: "kg", targetRir: nil, restTargetSeconds: nil, sets: [planned])
+        let manifest = WorkoutTrackerManifest(schemaVersion: 1, cycleId: 4, sessionId: 5, sessionKey: "upper_a", title: "Upper A", scheduledDate: nil, status: "planned", manifestRevision: "hash", lifeRevision: 0,
+            exerciseOccurrences: [occurrence], sourceWorkoutId: nil)
+        let binding = try WorkoutTrackerCaptureBinding(manifest: manifest)
+        let controller = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
+        XCTAssertTrue(controller.start(plan: [LiftPlanItem(exercise: "Bench", targetSets: 1)], programId: nil, programName: nil, trackerBinding: binding))
+        XCTAssertTrue(controller.addExercise("Pull-up", primaryMuscle: nil, secondaryMuscles: [], sourceExerciseId: UUID(), loadMode: .bodyweight))
+        let slot = LiftSlot(exerciseIndex: 1, setIndex: 1), id = controller.identity(for: LiftSlot(exerciseIndex: 1, setIndex: 1))
+        controller.setNote("Full range, no added weight", for: slot)
+        controller.setLastSession(["Pull-up": [1: LiftSetCarry(weightKg: 25, reps: 8)]])
+        XCTAssertNil(controller.carry(for: slot).weightKg, "A no-load exercise cannot inherit a previous added load")
+        let snapshot = try XCTUnwrap(LiftSessionPersistence.load())
+        let restored = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
+        restored.resume(from: snapshot)
+        XCTAssertEqual(restored.identity(for: slot), id)
+        XCTAssertEqual(restored.note(for: slot), "Full range, no added weight")
+        XCTAssertEqual(restored.trackerLoadMode(exerciseIndex: 1), .bodyweight)
+        controller.undo()
+        XCTAssertNil(controller.note(for: slot), "Undoing the added exercise removes its detached note intent")
+        XCTAssertTrue(controller.addExercise("Row", primaryMuscle: nil, secondaryMuscles: [], sourceExerciseId: UUID(), loadMode: .machine))
+        XCTAssertNotEqual(controller.identity(for: slot), id)
+        XCTAssertEqual(controller.trackerBinding?.additionalOccurrences?.first?.name, "Row")
+        controller.discard(); restored.discard()
     }
 
     private let t0 = 1_700_000_000
