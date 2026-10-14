@@ -97,8 +97,8 @@ final class DhoopAlarmManager: ObservableObject {
         requestSync()
         return true
     }
-    func toggle(_ id: String, enabled: Bool) {
-        guard var definition = state.definitions.first(where: { $0.id == id && !$0.deleted }) else { return }
+    @discardableResult func toggle(_ id: String, enabled: Bool) -> Bool {
+        guard var definition = state.definitions.first(where: { $0.id == id && !$0.deleted }) else { return false }
         definition.enabled = enabled
         if enabled && definition.rule.weekdays.isEmpty,
            (definition.rule.oneTimeEpoch ?? 0) <= Int(Date().timeIntervalSince1970) {
@@ -106,16 +106,19 @@ final class DhoopAlarmManager: ObservableObject {
             if let id = definition.rule.timeZoneID, let zone = TimeZone(identifier: id) { calendar.timeZone = zone }
             definition.rule.oneTimeEpoch = AlarmOccurrencePlanner.nextWallTime(minute: definition.rule.minute, after: Date(), calendar: calendar)
         }
-        save(definition)
+        return save(definition)
     }
-    func delete(_ id: String) {
-        guard var definition = state.definitions.first(where: { $0.id == id }) else { return }
-        definition.deleted = true; definition.enabled = false; save(definition)
+    @discardableResult func delete(_ id: String) -> Bool {
+        guard var definition = state.definitions.first(where: { $0.id == id }) else { return false }
+        if definition.deleted { return true }
+        definition.deleted = true; definition.enabled = false
+        return save(definition)
     }
-    func skipNext(_ id: String, now: Date = Date()) {
-        guard var definition = state.definitions.first(where: { $0.id == id }),
-              let next = AlarmOccurrencePlanner.dates(rule: definition.rule, after: now, limit: 1).first else { return }
-        definition.rule.skippedEpochs.insert(next); save(definition, now: now)
+    @discardableResult func skipNext(_ id: String, now: Date = Date()) -> Bool {
+        guard var definition = state.definitions.first(where: { $0.id == id && !$0.deleted }),
+              let next = AlarmOccurrencePlanner.dates(rule: definition.rule, after: now, limit: 1).first else { return false }
+        definition.rule.skippedEpochs.insert(next)
+        return save(definition, now: now)
     }
     func plan(now: Date = Date()) -> [PlannedAlarmOccurrence] {
         AlarmOccurrencePlanner.plan(rules: Dictionary(uniqueKeysWithValues:
@@ -235,13 +238,13 @@ final class DhoopAlarmManager: ObservableObject {
         append("WHOOP reported alarm execution (event 57); slot and felt vibration are unconfirmed.", to: &next, now: now)
         if commit(next) { requestSync() }
     }
-    func confirmFelt(slot: Int, epoch: Int, felt: Bool, now: Date = Date()) {
+    @discardableResult func confirmFelt(slot: Int, epoch: Int, felt: Bool, now: Date = Date()) -> Bool {
         guard epoch <= Int(now.timeIntervalSince1970),
-              state.history.contains(where: { $0.deviceID == context.deviceID && $0.slot == slot && $0.epoch == epoch }) else { return }
+              state.history.contains(where: { $0.deviceID == context.deviceID && $0.slot == slot && $0.epoch == epoch }) else { return false }
         var next = state
         append(felt ? "Wearer confirmed feeling the alarm." : "Wearer reported no alarm vibration.",
                slot: slot, epoch: epoch, to: &next, now: now)
-        _ = commit(next)
+        return commit(next)
     }
     func blocksMotor(now: Date) -> Bool {
         // Conservatively protect every known nonzero slot, including external schedules.

@@ -288,4 +288,68 @@ final class DhoopAlarmManagerTests: XCTestCase {
         link.ready = true; link.connection = UUID(); manager.connectionChanged(); await settle(manager)
         XCTAssertTrue(manager.pendingRemovalRisks(now: Date()).isEmpty)
     }
+    func testLocalMutationFailuresPreserveDefinitionsHistoryAndFileWithoutStrapWork() async throws {
+        for action in ["toggle", "delete", "skip", "report"] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("alarm-mutation-\(UUID().uuidString)")
+            let file = DhoopAlarmFile(url: root.appendingPathComponent("state.json"))
+            let now = Date(), epoch = Int(now.timeIntervalSince1970) - 60
+            let value = alarm()
+            var initial = DhoopAlarmState()
+            initial.definitions = [value]
+            initial.history = [.init(at: now, deviceID: "test", slot: 6, epoch: epoch, message: "Fixture occurrence")]
+            try file.save(initial)
+            let original = try Data(contentsOf: file.url)
+            let manager = DhoopAlarmManager(file: file)
+            manager.link = { .init(deviceID: "test", ready: false, whoop5: true) }
+            var commands = 0
+            manager.exchange = { _, _ in commands += 1; throw DhoopAlarmManager.Failure.unavailable }
+            await manager.refresh()
+            let retained = root.appendingPathExtension("retained")
+            try FileManager.default.moveItem(at: root, to: retained)
+            try Data("Blocking file".utf8).write(to: root)
+            let result: Bool
+            switch action {
+            case "toggle": result = manager.toggle(value.id, enabled: false)
+            case "delete": result = manager.delete(value.id)
+            case "skip": result = manager.skipNext(value.id, now: now)
+            default: result = manager.confirmFelt(slot: 6, epoch: epoch, felt: true, now: now)
+            }
+            XCTAssertFalse(result, action)
+            XCTAssertEqual(manager.state, initial, action)
+            XCTAssertEqual(try Data(contentsOf: retained.appendingPathComponent("state.json")), original)
+            XCTAssertEqual(try Data(contentsOf: root), Data("Blocking file".utf8))
+            XCTAssertNotNil(manager.storageError)
+            XCTAssertEqual(commands, 0)
+        }
+    }
+
+    func testLocalDeletionIsIdempotentAndReportsRequireTheRecordedOccurrence() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("alarm-report-\(UUID().uuidString)")
+        let file = DhoopAlarmFile(url: root.appendingPathComponent("state.json"))
+        let now = Date(), epoch = Int(now.timeIntervalSince1970) - 60
+        let value = alarm()
+        var initial = DhoopAlarmState()
+        initial.definitions = [value]
+        initial.history = [.init(at: now, deviceID: "test", slot: 6, epoch: epoch, message: "Fixture occurrence")]
+        try file.save(initial)
+        let manager = DhoopAlarmManager(file: file)
+        manager.link = { .init(deviceID: "test", ready: false, whoop5: true) }
+        await manager.refresh()
+        XCTAssertTrue(manager.confirmFelt(slot: 6, epoch: epoch, felt: true, now: now))
+        let confirmed = try Data(contentsOf: file.url)
+        XCTAssertFalse(manager.confirmFelt(slot: 5, epoch: epoch, felt: true, now: now))
+        XCTAssertFalse(manager.confirmFelt(slot: 6, epoch: epoch + 120, felt: true, now: now))
+        XCTAssertEqual(try Data(contentsOf: file.url), confirmed)
+        XCTAssertTrue(manager.delete(value.id))
+        await settle(manager)
+        let removed = manager.state, saved = try Data(contentsOf: file.url)
+        XCTAssertTrue(manager.delete(value.id))
+        XCTAssertFalse(manager.toggle(value.id, enabled: true))
+        XCTAssertFalse(manager.skipNext(value.id, now: now))
+        XCTAssertEqual(manager.state, removed)
+        XCTAssertEqual(try Data(contentsOf: file.url), saved)
+        XCTAssertTrue(manager.definitions.isEmpty)
+        XCTAssertEqual(manager.state.history.filter { $0.message == "Wearer confirmed feeling the alarm." }.count, 1)
+    }
+
 }
