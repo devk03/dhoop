@@ -204,6 +204,35 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   physical app installation occurred in this pass. Definitive cancellation of an unobserved
   in-flight event is not implemented; a negative lookup cannot authorize superseding that event.
 
+## Build 487 settings/control and export safety pass
+
+- Three hostless file-copy tests passed (`/private/tmp/dhoop-settings-copy-487-tests.log`): successful
+  save/replacement retains the prepared source, failed source reads retain existing destinations,
+  and directories are not replaced by files. Tests use temporary fixtures, not owner data.
+- One raw sensor export regression passed (`/private/tmp/dhoop-raw-export-487-tests.log`), checking
+  eight successive exports retain distinct paths and their original device values. The same test
+  failed against the former second-only filename implementation
+  (`/private/tmp/dhoop-raw-export-487-before.log`) and passed after restoration of the fix. Only
+  platform-local temporary naming changes; sensor rows/format/schema/physiology are unchanged.
+- Three shared action-controller tests passed (`/private/tmp/dhoop-control-actions-487-tests.log`):
+  pending duplicate prevention, failure/retry and cancellation without false success. These do not
+  directly execute Settings backup dialogs or verify real native picker cancellation/restore.
+- Signed generic-device iOS and macOS builds passed:
+  `/private/tmp/dhoop-settings-controls-487-ios-build.log` and
+  `/private/tmp/dhoop-settings-controls-487-macos-build.log`. Build 487 retains bundle/team/document
+  type. It is not installed. Source comment hygiene and diff checks passed.
+- Shared feedback uses dimming for rows/cards so their bounds do not scale. Settings backup/export
+  controls report the actual asynchronous result, and iPhone labels are full-width instead of
+  compressed. The generated `docs/design/dhoop-settings-archive-feedback-study.png` and adjacent
+  prompt file contain demo states only. Actual gestures, VoiceOver, Dynamic Type and visual quality
+  remain unverified on the physical phone.
+- No DB migration, owner backup/restore, live export, phone launch, WHOOP command or motor cue was
+  performed. The full controls audit, pause/superset/variation storage awaiting migration approval, and hardware gates
+  remain outstanding. Existing physiological calculations, branding and wake configuration remain.
+- Next independent control work: avatar/background picker transfers still swallow read/decode
+  failures and clear their selection. Pending input, errors/retry and superseded selection reads
+  need review before the all-screen controls requirement can be considered complete.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

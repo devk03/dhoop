@@ -894,6 +894,21 @@ and dedicated credential activation are still separate approvals.
 The [deletion/receipt study](design/dhoop-deletion-receipt-review-study.png) and
 [built-in prompts](design/dhoop-deletion-receipt-review-study.prompt.txt) contain demo states only.
 
+Legacy tappable rows/cards now delegate to StrandDesign feedback. Their rendered bounds stay fixed
+while pressed; opacity indicates interaction and native Button tracking retains drag-off cancellation.
+Standalone controls retain the shared press policy with Reduce Motion support. History access and
+diagnostic/calibration close controls use the same accessible family.
+
+Settings backup actions share one pending-operation gate and report completion only from the native
+export/import result. Cancelled pickers and a restore awaiting size confirmation do not become
+completed operations. iPhone actions stack at full width; labels no longer shrink into a three-up row.
+Raw sensor CSV preparation, saving and sharing remain separate. The prepared source file survives a
+cancelled/failed save. Successive raw exports have unique temporary paths, and macOS copies stage a
+new file before replacing an existing destination. Sensor values/schema and backup keys are unchanged;
+temporary filenames are platform-local and are not cross-platform identity keys.
+The [settings/export study](design/dhoop-settings-archive-feedback-study.png) and
+[built-in prompts](design/dhoop-settings-archive-feedback-study.prompt.txt) are demo references.
+
 Alarm editing uses the shared asynchronous Save control. The editor remains open with its current
 draft after permission, validation or storage failure; editing/dismissal is held only while saving.
 Local save completion means the definition was persisted. Strap storage and felt vibration remain
