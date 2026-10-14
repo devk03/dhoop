@@ -597,7 +597,7 @@ extension WhoopStore {
 
         let stamp = Int(Date().timeIntervalSince1970)
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("noop-raw-sensors-\(stamp).csv")
+            .appendingPathComponent("noop-raw-sensors-\(stamp)-\(UUID().uuidString).csv")
         FileManager.default.createFile(atPath: url.path, contents: nil)
         let handle = try FileHandle(forWritingTo: url)
         defer { try? handle.close() }
