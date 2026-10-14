@@ -12,6 +12,8 @@ struct CardioHistoryView: View {
     @State private var selected: CardioHistoryGroup?
     @State private var exportURL: URL?
     @State private var preparingExport = false
+    @State private var savingExport = false
+    @State private var exportPreparedAt: Date?
     @State private var exportGeneration = 0
     @State private var exportError: String?
     @State private var pendingDelete: CardioHistoryItem?
@@ -58,7 +60,7 @@ struct CardioHistoryView: View {
                                     } label: {
                                         Image(systemName: "ellipsis").font(StrandFont.headline)
                                             .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
-                                    }.accessibilityLabel("Actions for \(group.primary.title)").disabled(deleting)
+                                    }.accessibilityLabel("Actions for \(group.primary.title)").disabled(deleting || preparingExport || savingExport)
                                 }
                             }
                         }
@@ -74,13 +76,23 @@ struct CardioHistoryView: View {
                     Text("Keep a copy of exercise history").font(StrandFont.headline)
                     Text("The general app backup excludes local zone runs and interval sessions. Export those records separately. This JSON copy has no in-app restore yet.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    NoopAsyncButton("Prepare exercise export", systemImage: "doc.badge.plus", kind: .secondary, fullWidth: true) {
+                        try await prepareExport()
+                    }.disabled(preparingExport || savingExport || deleting)
                     if let exportURL {
-                        ShareLink(item: exportURL) { Label("Save or share exercise export", systemImage: "square.and.arrow.up") }
-                            .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        Button("Prepare a fresh copy") { prepareExport() }.font(StrandFont.caption)
-                    } else {
-                        Button { prepareExport() } label: { Label(preparingExport ? "Preparing…" : "Export local exercise data", systemImage: "square.and.arrow.up") }
-                            .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(preparingExport)
+                        NoopAsyncButton("Save prepared export", systemImage: "square.and.arrow.down", kind: .secondary, fullWidth: true) {
+                            guard !preparingExport, !savingExport, !deleting else { throw ExportFailure.busy }
+                            savingExport = true
+                            defer { savingExport = false }
+                            _ = try await FileExport.saveCopyVerified(at: exportURL)
+                        }.id(exportURL).disabled(preparingExport || savingExport || deleting)
+                        ShareLink(item: exportURL) { Label("Share prepared export", systemImage: "square.and.arrow.up") }
+                            .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                            .disabled(preparingExport || savingExport || deleting)
+                        if let exportPreparedAt {
+                            Text("Prepared \(exportPreparedAt.formatted(date: .abbreviated, time: .shortened)) · saving is separate")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
                     }
                     if let exportError { Text(exportError).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
                 }
@@ -115,35 +127,42 @@ struct CardioHistoryView: View {
         }
     }
     @MainActor private func deleteRecording(_ item: CardioHistoryItem) async throws {
+        guard !preparingExport, !savingExport else { throw ExportFailure.busy }
         guard !deleting, let payload = model.payloads[item.id], canDelete(item) else { throw CocoaError(.fileReadNoSuchFile) }
         deleting = true
         defer { deleting = false }
         exportGeneration += 1
-        preparingExport = false; exportURL = nil; exportError = nil
+        preparingExport = false; exportError = nil
         model.invalidatePendingLoad()
         switch payload {
         case .zone(let run): try controller.deleteSummary(id: run.id)
         case .intervals(let url, let id): try controller.hiit.deleteWorkout(at: url, id: id)
         case .recorded(let row): try await repo.deleteCardioWorkout(row)
         }
-        exportURL = nil
+        exportURL = nil; exportPreparedAt = nil
         await model.load(repo: repo, zones: controller.summaries, window: range.window(now: now))
     }
-    private func prepareExport() {
-        guard !preparingExport, !deleting else { return }
+    private enum ExportFailure: LocalizedError {
+        case busy
+        var errorDescription: String? { "Another export or deletion is in progress. The prepared copy is retained; try again when it finishes." }
+    }
+    @MainActor private func prepareExport() async throws {
+        guard !preparingExport, !savingExport, !deleting else { throw ExportFailure.busy }
         exportGeneration += 1
         let generation = exportGeneration
-        preparingExport = true; exportError = nil; exportURL = nil
-        Task {
-            defer { if generation == exportGeneration { preparingExport = false } }
-            do {
-                let url = try await CardioLocalExport.writeCopy()
-                guard generation == exportGeneration else { return }
-                exportURL = url
-            } catch {
-                guard generation == exportGeneration else { return }
-                exportError = "Export failed: \(error.localizedDescription). Original records remain on this phone."
-            }
+        preparingExport = true; exportError = nil
+        defer { if generation == exportGeneration { preparingExport = false } }
+        let capturedAt = Date()
+        do {
+            let url = try await CardioLocalExport.writeCopy(now: capturedAt)
+            try Task.checkCancellation()
+            guard generation == exportGeneration else { throw CancellationError() }
+            exportURL = url; exportPreparedAt = capturedAt
+        } catch is CancellationError { throw CancellationError() }
+        catch {
+            guard generation == exportGeneration else { throw CancellationError() }
+            exportError = "Export failed: \(error.localizedDescription). Original records and the previous prepared copy are retained."
+            throw error
         }
     }
     private func row(_ group: CardioHistoryGroup) -> some View {

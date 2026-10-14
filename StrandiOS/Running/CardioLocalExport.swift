@@ -30,12 +30,12 @@ struct CardioLocalExport: Codable, Sendable {
             runningDraft: defaults.data(forKey: "dhoop.running.activeDraft.v1"), intervalFiles: files, zoneFiles: zones)
     }
 
-    @MainActor static func writeCopy() async throws -> URL {
+    @MainActor static func writeCopy(now: Date = Date()) async throws -> URL {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("DhoopHIIT", isDirectory: true)
         let zoneDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("DhoopZoneRuns", isDirectory: true)
-        let archive = try capture(directory: directory, zoneDirectory: zoneDirectory)
+        let archive = try capture(directory: directory, zoneDirectory: zoneDirectory, now: now)
         // Controllers commit on MainActor. Capture every input before yielding, so finishing a
         // session cannot clear a draft between enumeration and capture of its completed record.
         return try await Task.detached(priority: .userInitiated) {
