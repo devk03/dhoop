@@ -700,9 +700,16 @@ mixed revisions and check a fresh manifest before starting. No recurring polling
 A tracker capture retains exact cycle/session/occurrence/set IDs, its prescription snapshot, actual
 IANA timezone and original connection destination. Source workout and set UUIDs survive relaunch and
 save retries. Additional actual sets have source UUIDs but no prescribed Life set ID; they remain
-capture-only and do not alter Life prescriptions or progression. Added exercises without an approved
-occurrence binding remain local and require review rather than being matched by name. Bodyweight and
-per-hand load labels follow the manifest; RIR is never inferred from RPE.
+capture-only and do not alter Life prescriptions or progression. Added and repeated exercises retain
+distinct occurrence UUIDs, an explicit load mode and a stable source exercise key from the local
+vocabulary ID. Legacy vocabulary IDs receive durable device-scoped source UUIDs. No Life target is
+matched by name. Unsupported/excess bindings remain local for review. Bodyweight inputs do not carry
+previous mass loads. Per-hand/added/total load labels remain explicit; RIR is never inferred from RPE.
+
+Optional set notes are written into the existing `liftSet.note` column. The active snapshot retains
+notes across relaunch; historical correction and explicit clearing preserve numeric values and timing.
+The [picker and delivery study](design/dhoop-tracker-picker-delivery-study.png) and its
+[built-in ImageGen prompt](design/dhoop-tracker-picker-delivery-study.prompt.txt) use demo data only.
 
 Delivery intent is written atomically in the private Application Support folder before the SQLite
 recording transaction. Credentials are not needed to retain this intent. Only exact persisted session,
@@ -718,7 +725,17 @@ retries that same receipt. HTTP errors and revision conflicts retain local data.
 silently refresh IDs or overwrite website edits. Timed-set HR summaries use measured sensor rows
 for the original strap and half-open actual windows; missing timing and coverage remain unavailable.
 
+Settings delivery rows open a review screen. Opening it checks only local persistence and labels the
+check time. Tracker comparison is an explicit read, bounded to 200 sets and consistent source/Life
+revisions. Local intent, source observations and canonical website values are shown separately;
+canonical pounds convert through the exact unit factor for display. Retired targets and history-only
+observations do not imply canonical updates. No background comparison poll is started.
+
+Selected receipt recovery replays the original body only after verifying its current local recording.
+Keep locally retains the event and its data, pauses automatic delivery for that capture across relaunch,
+and leaves previously accepted website data unchanged. Explicit selected recovery remains available.
+
 The native integration and matching Life receiver are local development work. Production deployment,
 dedicated credentials and any Cloudflare path activation require separate authorization. Additional
-occurrence editing, conflict review/rebinding, archival of the bounded delivery queue and backup
+occurrence reordering/replacement, reviewed conflict rebinding, archival of the bounded delivery queue and backup
 coverage require further work before this integration is considered complete.

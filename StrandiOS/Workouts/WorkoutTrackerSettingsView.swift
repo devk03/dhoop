@@ -36,10 +36,12 @@ struct WorkoutTrackerSettingsView: View {
                                 try await client.synchronize(store: store)
                             }.disabled(!client.state.enabled || client.busy)
                             ForEach(client.state.deliveries.suffix(20).reversed()) { delivery in
-                                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                    Text(delivery.record.programName ?? "Strength workout").font(StrandFont.subhead)
-                                    Text(delivery.message).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                                }
+                                NavigationLink { WorkoutTrackerDeliveryView(deliveryId: delivery.id) } label: {
+                                    VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                                        Text(delivery.record.programName ?? "Strength workout").font(StrandFont.subhead)
+                                        Text(delivery.message).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                    }.frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget, alignment: .leading)
+                                }.buttonStyle(NoopFeedbackButtonStyle())
                             }
                         }
                     }

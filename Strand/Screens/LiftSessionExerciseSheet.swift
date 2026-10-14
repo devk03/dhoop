@@ -162,7 +162,7 @@ struct LiftSessionExerciseSheet: View {
         #if os(iOS)
         if requiresLoadType { sourceId = try WorkoutTrackerClient.shared.sourceExerciseIdentity(nativeId: nativeId, deviceID: deviceID) }
         #endif
-        guard onAdd(name, primary, ordered, sourceId, mode) else { throw WorkoutTrackerContractError.deliveryInProgress }
+        guard onAdd(name, primary, ordered, sourceId, mode) else { throw WorkoutTrackerContractError.sessionChanged }
         dismiss()
     }
 }
