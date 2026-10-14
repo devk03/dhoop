@@ -18,7 +18,8 @@ final class WorkoutTrackerClientTests: XCTestCase {
             loadOverride: false, repsOverride: false, actualLoad: nil, actualReps: nil, rir: nil, completed: false)
         let occurrence = WorkoutTrackerManifest.Occurrence(sessionExerciseId: 2, programSlotId: 3, slotKey: "push", exerciseKey: "bench", originalExerciseKey: "bench", name: "Bench", order: 0,
             measurementKind: "mass_reps", loadMode: .barbell, loadBasis: "total", unit: "kg", targetRir: 2, restTargetSeconds: nil, sets: [target])
-        let manifest = WorkoutTrackerManifest(schemaVersion: 1, cycleId: 4, sessionId: 5, sessionKey: "upper_a", title: "Upper A", scheduledDate: nil, status: "planned", manifestRevision: "hash", lifeRevision: 0, exerciseOccurrences: [occurrence], sourceWorkoutId: nil)
+        var manifest = WorkoutTrackerManifest(schemaVersion: 1, cycleId: 4, sessionId: 5, sessionKey: "upper_a", title: "Upper A", scheduledDate: nil, status: "planned", manifestRevision: "hash", lifeRevision: 0, exerciseOccurrences: [occurrence], sourceWorkoutId: nil)
+        manifest.ownership = [:]
         let binding = try WorkoutTrackerCaptureBinding(manifest: manifest, connection: .init(origin: config.origin, installationId: config.installationId))
         let record = LiftSessionRow(id: binding.sourceWorkoutId.uuidString.lowercased(), deviceId: "strap", startTs: 1000, endTs: 1600, sport: "Strength Training", programId: nil, programName: "Upper A", sessionRpe: 7.5, note: nil)
         let set = LiftSetRow(id: binding.occurrences[0].sets[0].sourceSetId.uuidString.lowercased(), deviceId: "strap", sessionId: record.id, ord: 0, exercise: "Bench", primaryMuscle: nil, setIndex: 1, weightKg: 60, reps: 8, rpe: 7, isWarmup: false, startTs: nil, endTs: nil, restSec: nil, note: "Controlled movement")
@@ -390,6 +391,19 @@ final class WorkoutTrackerClientTests: XCTestCase {
         XCTAssertEqual(new["exerciseOccurrences"] as? NSArray, old["exerciseOccurrences"] as? NSArray)
         XCTAssertEqual(new["planAtStart"] as? NSDictionary, old["planAtStart"] as? NSDictionary)
         XCTAssertEqual(replacement.sets[0].weightKg, 60, "Current targets never replace performed load")
+        XCTAssertEqual(replacement.reviewedManifest?.manifestRevision, "new-prescription")
+        var laterConflict = replacement; laterConflict.status = .review; laterConflict.rejection = .lifeRevisionConflict
+        let laterReview = WorkoutTrackerRecoveryReview(id: UUID(), original: laterConflict, comparison: review.comparison)
+        XCTAssertFalse(laterReview.prescriptionChanged, "Compare against the queued write plan, not the immutable original start plan")
+        XCTAssertEqual(try laterReview.replacement().revision, replacement.revision)
+        let restored = WorkoutTrackerClient(store: f.file, send: { _, body, _ in try self.receipt(try XCTUnwrap(body), fixture: f) }, readCredential: { f.config })
+        try await restored.synchronize(store: f.db, deliveryId: id)
+        var corrected = f.sets; corrected[0].reps = 10
+        let correctedId = try await restored.prepareHistoryChange(record: f.record, sets: corrected, store: f.db)
+        let correction = try XCTUnwrap(try restored.delivery(XCTUnwrap(correctedId)))
+        XCTAssertEqual(correction.writeManifestRevision, "new-prescription")
+        XCTAssertEqual(correction.reviewedManifest?.manifestRevision, "new-prescription")
+        XCTAssertEqual(correction.binding.planAtStart, binding.planAtStart)
     }
 
     func testReviewCannotRebaseUnknownReceiptOrChangedLocalRecording() async throws {
@@ -495,7 +509,8 @@ final class WorkoutTrackerClientTests: XCTestCase {
     }
 
     func testExistingCaptureRebaseUsesVerifiedOriginalOccurrenceAndRejectsItsTombstone() async throws {
-        for occurrenceDeleted in [false, true] {
+        for failure in ["none", "deleted", "ownership"] {
+            let occurrenceDeleted = failure == "deleted"
             let f = try await fixture()
             var posts = 0
             let sourceOccurrence = f.binding.occurrences[0].sourceOccurrenceId.uuidString.lowercased()
@@ -513,7 +528,7 @@ final class WorkoutTrackerClientTests: XCTestCase {
                 case .captures:
                     return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "sourceWorkoutId": f.record.id,
                         "sourceRevision": 1, "lifeRevision": 2, "binding": ["kind": "programmed", "cycleId": 4, "sessionId": 5],
-                        "tombstone": false, "session": ["timeZone": "Europe/London"], "ownership": [:],
+                        "tombstone": false, "session": ["timeZone": "Europe/London"], "ownership": failure == "ownership" ? [:] : ["set:1:actualLoad": ["origin": "manual"]],
                         "projectionPolicy": "apply", "projectionState": "current", "nextCursor": NSNull(),
                         "occurrences": [sourceOccurrence: ["kind": "prescribed", "sessionExerciseId": 2, "programSlotId": 3,
                             "slotKey": "push", "exerciseKey": "bench", "loadMode": "barbell", "raw": ["deleted": occurrenceDeleted]]],
@@ -533,12 +548,12 @@ final class WorkoutTrackerClientTests: XCTestCase {
             catch WorkoutSyncTransportError.rejected {}
             do {
                 let review = try await client.reviewRecovery(deliveryId: event)
-                XCTAssertFalse(occurrenceDeleted)
+                XCTAssertEqual(failure, "none")
                 XCTAssertEqual(review.comparison.manifest.ownership?["set:1:actualLoad"]?.origin, "manual")
                 let replacementId = try await client.prepareReviewedRecovery(reviewId: review.id, store: f.db)
                 XCTAssertEqual(try client.delivery(replacementId)?.sets[0].reps, 10)
                 XCTAssertEqual(try client.delivery(replacementId)?.revision, 2)
-            } catch WorkoutTrackerContractError.invalidSnapshot { XCTAssertTrue(occurrenceDeleted) }
+            } catch WorkoutTrackerContractError.invalidSnapshot { XCTAssertNotEqual(failure, "none") }
             XCTAssertEqual(posts, 2, "Neither review nor preparation may apply manual website values")
         }
     }

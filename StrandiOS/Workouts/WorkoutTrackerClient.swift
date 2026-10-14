@@ -70,7 +70,7 @@ final class WorkoutTrackerClient: ObservableObject {
         }
         if let source = result?.sourceWorkoutId, state.locallyKeptSources.contains(source) {
             result?.paused = true
-            result?.message = "Kept locally · automatic tracker delivery is paused. Earlier tracker data stays unchanged."
+            result?.message = "Automatic tracker delivery is paused for this capture. This event's receipt status is shown separately."
         }
         return result
     }
@@ -388,6 +388,7 @@ final class WorkoutTrackerClient: ObservableObject {
         let revision = previousRevision + 1
         let event = UUID()
         var bytes: Data?
+        var writeManifest: WorkoutTrackerManifest?
         var message = "Waiting for verified local persistence"
         do {
             guard binding.connection != nil else { throw WorkoutTrackerContractError.invalidSnapshot }
@@ -397,12 +398,14 @@ final class WorkoutTrackerClient: ObservableObject {
                 throw WorkoutTrackerContractError.unavailableCapture
             }
             let acknowledged = previous.last(where: { $0.status == .accepted })
+            writeManifest = acknowledged?.reviewedManifest
             let receipt = acknowledged?.acknowledgement.flatMap { try? JSONDecoder().decode(WorkoutCaptureAcknowledgement.self, from: $0) }
             let removed = Set(previous.filter { $0.status == .accepted }.flatMap(\.sets).map(\.id)).subtracting(sets.map(\.id))
             let evidence = deleting ? [:] : try await WorkoutCapturePayload.measuredEvidence(record: record, sets: sets, store: store)
             bytes = try WorkoutCapturePayload.make(record: record, sets: sets, binding: binding,
                 installationId: destination.installationId, revision: revision, eventId: event, heartRateEvidence: evidence,
-                baseLifeRevision: receipt?.lifeRevision, deletedSetIds: removed.compactMap(UUID.init(uuidString:)), deleting: deleting).bytes()
+                baseLifeRevision: receipt?.lifeRevision, writeManifestRevision: acknowledged?.reviewedManifest?.manifestRevision,
+                deletedSetIds: removed.compactMap(UUID.init(uuidString:)), deleting: deleting).bytes()
         }
         catch let error as WorkoutObservationError { message = "Tracker payload could not be prepared. " + error.localizedDescription }
         catch { message = "Tracker payload needs review before upload. Local values are retained." }
@@ -410,7 +413,8 @@ final class WorkoutTrackerClient: ObservableObject {
         next.deliveries.append(WorkoutTrackerDelivery(id: event, sourceWorkoutId: binding.sourceWorkoutId,
             installationId: destination.installationId, origin: destination.origin, revision: revision, bytes: bytes,
             record: record, sets: sets, binding: binding, operation: operation, message: message,
-            paused: state.locallyKeptSources.contains(binding.sourceWorkoutId) ? true : previous.last?.paused, createdAt: Date()))
+            paused: state.locallyKeptSources.contains(binding.sourceWorkoutId) ? true : previous.last?.paused, createdAt: Date(),
+            reviewedManifest: bytes == nil ? nil : writeManifest))
         try commit(next)
         return event
     }

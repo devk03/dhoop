@@ -77,9 +77,10 @@ struct WorkoutCapturePayload: Encodable {
     static func make(record: LiftSessionRow, sets: [LiftSetRow], binding: WorkoutTrackerCaptureBinding,
                      installationId: UUID, revision: Int, eventId: UUID = UUID(),
                      heartRateEvidence: [UUID: WorkoutObservedHeartRate] = [:],
-                     baseLifeRevision: Int? = nil, deletedSetIds: [UUID] = [], deleting: Bool = false) throws -> WorkoutCapturePayload {
+                     baseLifeRevision: Int? = nil, writeManifestRevision: String? = nil, deletedSetIds: [UUID] = [], deleting: Bool = false) throws -> WorkoutCapturePayload {
         try binding.validate()
         guard UUID(uuidString: record.id) == binding.sourceWorkoutId, revision > 0,
+              writeManifestRevision.map({ !$0.isEmpty && $0.count <= 100 }) ?? true,
               sets.allSatisfy({ $0.sessionId == record.id && $0.deviceId == record.deviceId }),
               let end = record.endTs, end >= record.startTs else { throw WorkoutTrackerContractError.invalidSnapshot }
         if let rpe = record.sessionRpe, !rpe.isFinite || !(0...10).contains(rpe) { throw WorkoutTrackerContractError.invalidSnapshot }
@@ -136,7 +137,7 @@ struct WorkoutCapturePayload: Encodable {
         }
         return WorkoutCapturePayload(eventId: eventId.uuidString.lowercased(), sourceWorkoutId: binding.sourceWorkoutId.uuidString.lowercased(),
             installationId: installationId.uuidString.lowercased(), sourceRevision: revision, operation: deleting ? "delete" : "upsert",
-            baseLifeRevision: baseLifeRevision ?? binding.manifest.lifeRevision, manifestRevision: binding.manifest.manifestRevision,
+            baseLifeRevision: baseLifeRevision ?? binding.manifest.lifeRevision, manifestRevision: writeManifestRevision ?? binding.manifest.manifestRevision,
             binding: Binding(cycleId: binding.manifest.cycleId, sessionId: binding.manifest.sessionId),
             session: Session(title: record.programName ?? binding.manifest.title, status: deleting ? "cancelled" : "completed",
                 startedAt: date(record.startTs), endedAt: date(end), timeZone: binding.timeZone, notes: record.note, rpe: record.sessionRpe),

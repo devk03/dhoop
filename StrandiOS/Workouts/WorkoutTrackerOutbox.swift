@@ -22,6 +22,11 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var createdAt: Date? = nil
     var rejection: WorkoutSyncRejection? = nil
     var recoveryOf: UUID? = nil
+    var reviewedManifest: WorkoutTrackerManifest? = nil
+    var writeManifestRevision: String? {
+        guard let bytes, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else { return nil }
+        return object["manifestRevision"] as? String
+    }
     var canArchive: Bool {
         if paused == true && localPersistenceConfirmed == true { return true }
         guard status == .accepted, !needsReconciliation, let acknowledgement,
@@ -33,7 +38,7 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     func sameIntent(as other: WorkoutTrackerDelivery) -> Bool {
         id == other.id && sourceWorkoutId == other.sourceWorkoutId && installationId == other.installationId && origin == other.origin &&
             revision == other.revision && bytes == other.bytes && record == other.record && sets == other.sets && binding == other.binding &&
-            (operation ?? .upsert) == (other.operation ?? .upsert) && recoveryOf == other.recoveryOf
+            (operation ?? .upsert) == (other.operation ?? .upsert) && recoveryOf == other.recoveryOf && reviewedManifest == other.reviewedManifest
     }
     var needsReconciliation: Bool {
         status == .accepted && acknowledgement.flatMap {
@@ -43,6 +48,7 @@ struct WorkoutTrackerDelivery: Codable, Equatable, Identifiable {
     var valid: Bool {
         (bytes?.count ?? 0) <= WorkoutSyncTransport.bodyLimit && revision > 0 && revision <= 9_007_199_254_740_991 && record.id.lowercased() == sourceWorkoutId.uuidString.lowercased()
             && recoveryOf != id
+            && (reviewedManifest.map { (try? $0.validate()) != nil && $0.cycleId == binding.manifest.cycleId && $0.sessionId == binding.manifest.sessionId && $0.manifestRevision == writeManifestRevision } ?? true)
             && sets.allSatisfy { $0.sessionId == record.id && $0.deviceId == record.deviceId }
             && (try? WorkoutSyncEndpoint.observations.url(origin: origin)) != nil
             && (try? binding.validate()) != nil && binding.sourceWorkoutId == sourceWorkoutId
@@ -79,19 +85,24 @@ struct WorkoutTrackerRecoveryReview: Identifiable {
     let id: UUID
     let original: WorkoutTrackerDelivery
     let comparison: WorkoutTrackerReviewComparison
-    var prescriptionChanged: Bool { original.binding.manifest.manifestRevision != comparison.manifest.manifestRevision }
+    var priorManifest: WorkoutTrackerManifest { original.reviewedManifest ?? original.binding.manifest }
+    var prescriptionChanged: Bool { original.writeManifestRevision != comparison.manifest.manifestRevision }
 
     static func validate(original: WorkoutTrackerDelivery, comparison: WorkoutTrackerReviewComparison) throws {
         try original.validateBody()
-        guard original.localPersistenceConfirmed == true, original.status == .review,
+        guard original.valid, original.localPersistenceConfirmed == true, original.status == .review,
               [.lifeRevisionConflict, .manifestConflict].contains(original.rejection), original.acknowledgement == nil,
               original.binding.connection?.origin == original.origin,
               original.binding.connection?.installationId == original.installationId,
-              original.operation != .delete else { throw WorkoutTrackerContractError.invalidSnapshot }
+              original.writeManifestRevision != nil, original.operation != .delete else { throw WorkoutTrackerContractError.invalidSnapshot }
+        guard (original.reviewedManifest ?? original.binding.manifest).manifestRevision == original.writeManifestRevision else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
         let frozen = original.binding.manifest, current = comparison.manifest
         try current.validate()
         guard current.cycleId == frozen.cycleId, current.sessionId == frozen.sessionId,
               current.sessionKey == frozen.sessionKey,
+              current.ownership != nil,
               ["planned", "in_progress", "completed"].contains(current.status),
               current.sourceWorkoutId.map({ UUID(uuidString: $0) == original.sourceWorkoutId }) ?? true,
               current.exerciseOccurrences.count == frozen.exerciseOccurrences.count else { throw WorkoutTrackerContractError.invalidSnapshot }
@@ -109,6 +120,7 @@ struct WorkoutTrackerRecoveryReview: Identifiable {
         if let remote = comparison.capture {
             try remote.validate(for: original.binding)
             guard !remote.tombstone, remote.projectionState == "current", remote.projectionPolicy == "apply",
+                  remote.ownership == current.ownership,
                   remote.nextCursor == nil, remote.lifeRevision == current.lifeRevision, remote.sourceRevision < original.revision else {
                 throw WorkoutTrackerContractError.invalidSnapshot
             }
@@ -163,6 +175,7 @@ struct WorkoutTrackerRecoveryReview: Identifiable {
         result.operation = original.operation
         result.status = .ready; result.localPersistenceConfirmed = true
         result.paused = true; result.createdAt = Date(); result.recoveryOf = original.id
+        result.reviewedManifest = comparison.manifest
         result.message = "Reviewed delivery prepared locally. Not sent; open this delivery to send its exact event."
         guard result.valid else { throw WorkoutTrackerContractError.invalidSnapshot }
         try result.validateBody()
