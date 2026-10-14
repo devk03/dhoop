@@ -245,7 +245,7 @@ struct AddDeviceWizard: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: NoopMetrics.space3) {
             // Back is offered on every step except the very first (the type list), AND, on the Oura adopt
             // flow, except the Adopting progress (no meaningful back while a key install is in flight). This
             // re-enables back/cancel everywhere else so the user is never trapped on the Failed state.
@@ -255,7 +255,7 @@ struct AddDeviceWizard: View {
                         .font(StrandFont.headline)
                         .foregroundStyle(StrandPalette.textSecondary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .accessibilityLabel("Back")
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -269,13 +269,13 @@ struct AddDeviceWizard: View {
             Spacer()
             Button(action: { stopAllScans(); onClose() }) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
+                    .font(StrandFont.headline)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .accessibilityLabel("Close")
         }
-        .padding(20)
+        .padding(NoopMetrics.space5)
     }
 
     /// Back is shown on every step except the very first (the type list) and, on the Oura adopt flow, the
@@ -399,7 +399,7 @@ struct AddDeviceWizard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frostedCardSurface(cornerRadius: 14)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .accessibilityLabel("\(title). \(subtitle)")
     }
 
@@ -604,7 +604,7 @@ struct AddDeviceWizard: View {
             .background(StrandPalette.statusCritical.opacity(0.10),
                         in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .accessibilityLabel("I understand this disconnects the ring from Oura and that Dhoop cannot undo it for me.")
         .accessibilityAddTraits(ouraConsented ? [.isSelected] : [])
 
@@ -628,7 +628,7 @@ struct AddDeviceWizard: View {
             onClose()   // routes to the existing Data Sources / file-import lane
         }
         .font(StrandFont.subhead)
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .foregroundStyle(StrandPalette.accent)
         .accessibilityLabel("Keep the Oura app instead, import a file")
 
@@ -637,7 +637,7 @@ struct AddDeviceWizard: View {
             ouraAdvancedKeyMode = true
         }
         .font(StrandFont.footnote)
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .foregroundStyle(StrandPalette.accent)
         .accessibilityLabel("Advanced. I already have my ring's key.")
     }
@@ -766,7 +766,7 @@ struct AddDeviceWizard: View {
             ouraKeyDraft = ""
         }
         .font(StrandFont.footnote)
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .foregroundStyle(StrandPalette.accent)
     }
 
@@ -875,7 +875,7 @@ struct AddDeviceWizard: View {
                         .background(StrandPalette.statusCritical.opacity(0.16),
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .accessibilityLabel("Take over this ring")
             }
         }
@@ -945,7 +945,7 @@ struct AddDeviceWizard: View {
                         .background(StrandPalette.surfaceInset,
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .accessibilityLabel("Use file import")
             }
         }
@@ -1667,7 +1667,7 @@ private struct ScanStatusBar: View {
             Spacer()
             Button("Rescan", action: onRescan)
                 .font(StrandFont.subhead)
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .foregroundStyle(StrandPalette.accent)
         }
     }
@@ -1727,7 +1727,7 @@ private struct DiscoveredRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frostedCardSurface(cornerRadius: 12)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .accessibilityLabel("\(name), signal \(SignalBars.level(for: rssi)) of 4")
     }
 }

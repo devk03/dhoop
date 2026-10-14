@@ -22,6 +22,7 @@ import WhoopStore
 
 struct FullDayChartView: View {
     @EnvironmentObject var repo: Repository
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The day this timeline is showing (its real calendar midnight). Defaults to the logical day so an
     /// after-midnight open still lands on the night the user is living, not an empty new calendar day (#144).
@@ -163,7 +164,7 @@ struct FullDayChartView: View {
             Button { stepDay(-1) } label: {
                 Image(systemName: "chevron.left").font(StrandFont.headline.weight(.semibold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .foregroundStyle(StrandPalette.accent)
             .accessibilityLabel("Previous day")
 
@@ -177,12 +178,17 @@ struct FullDayChartView: View {
             Button { stepDay(1) } label: {
                 Image(systemName: "chevron.right").font(StrandFont.headline.weight(.semibold))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .foregroundStyle(isOnLatestDay ? StrandPalette.textTertiary : StrandPalette.accent)
             .disabled(isOnLatestDay)
             .accessibilityLabel("Next day")
         }
         .padding(.horizontal, NoopMetrics.space1)
+    }
+
+    private func changeWithMotion(_ change: () -> Void) {
+        if reduceMotion { change() }
+        else { withAnimation(StrandMotion.interactive) { change() } }
     }
 
     private var isOnLatestDay: Bool { dayStart >= Repository.logicalDayStart(Date()) }
@@ -192,7 +198,7 @@ struct FullDayChartView: View {
     private func stepDay(_ delta: Int) {
         let next = dayStart.addingTimeInterval(Double(delta) * 86_400)
         if delta > 0 && next > Repository.logicalDayStart(Date()) { return }
-        withAnimation(StrandMotion.interactive) {
+        changeWithMotion {
             dayStart = next
             zoomDomain = nil
         }
@@ -336,10 +342,10 @@ struct FullDayChartView: View {
             #endif
             Spacer()
             if zoomDomain != nil {
-                Button("Reset") { withAnimation(StrandMotion.interactive) { zoomDomain = nil } }
+                Button("Reset") { changeWithMotion { zoomDomain = nil } }
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.accent)
-                    .buttonStyle(.plain)
+                    .buttonStyle(NoopFeedbackButtonStyle())
             }
         }
         .font(StrandFont.footnote)
@@ -366,7 +372,7 @@ struct FullDayChartView: View {
         guard !didLandOnLatest else { return }
         didLandOnLatest = true
         if let latest = await repo.latestDataDayStart(), latest < dayStart {
-            withAnimation(StrandMotion.interactive) { dayStart = latest }
+            changeWithMotion { dayStart = latest }
         }
     }
 
