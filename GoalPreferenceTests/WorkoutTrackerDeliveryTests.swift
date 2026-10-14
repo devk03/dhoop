@@ -46,6 +46,35 @@ final class WorkoutTrackerDeliveryTests: XCTestCase {
             "setTargets": [set.id: ["kind": "capture_set", "sourceWorkoutId": record.id, "sourceSetId": set.id]]]
         XCTAssertThrowsError(try decode().validate(binding: binding, sets: [set]), "A set receipt without its exact added occurrence cannot be accepted")
     }
+    func testReplacementPayloadKeepsLineageAndObservedOrderIndependentOfCardIndicesAndTiming() throws {
+        var binding = try binding()
+        try binding.bindReplacementExercise(planIndex: 1, replacing: 0, exerciseId: UUID(), name: "Machine press", loadMode: .machine)
+        let extra = try XCTUnwrap(binding.additionalOccurrences?.first), original = binding.occurrences[0]
+        let record = LiftSessionRow(id: binding.sourceWorkoutId.uuidString.lowercased(), deviceId: "strap", startTs: 1000, endTs: 1600,
+            sport: "Strength Training", programId: nil, programName: nil, sessionRpe: nil, note: nil)
+        let row = LiftSetRow(id: extra.sets[0].sourceSetId.uuidString.lowercased(), deviceId: "strap", sessionId: record.id, ord: 99,
+            exercise: "Machine press", primaryMuscle: nil, setIndex: 1, weightKg: 40, reps: 8, rpe: nil, isWarmup: false,
+            startTs: nil, endTs: nil, restSec: nil, note: nil)
+        func object(_ binding: WorkoutTrackerCaptureBinding) throws -> [[String: Any]] {
+            let data = try WorkoutCapturePayload.make(record: record, sets: [row], binding: binding, installationId: UUID(), revision: 1).bytes()
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            return try XCTUnwrap(json["exerciseOccurrences"] as? [[String: Any]])
+        }
+        let unknown = try object(binding)
+        XCTAssertTrue(unknown[0]["executionOrder"] is NSNull, "An unperformed prescribed occurrence has no observed order")
+        XCTAssertTrue(unknown[1]["executionOrder"] is NSNull, "An untimed legacy row ordinal cannot stand in for observed order")
+        binding.observedSetOrder = [extra.sets[0].sourceSetId: 3]
+        let known = try object(binding), sets = try XCTUnwrap(known[1]["sets"] as? [[String: Any]])
+        XCTAssertEqual(known[1]["replacesSourceOccurrenceId"] as? String, original.sourceOccurrenceId.uuidString.lowercased())
+        XCTAssertEqual(known[1]["executionOrder"] as? Int, 3)
+        XCTAssertEqual(sets[0]["executionOrder"] as? Int, 3)
+        XCTAssertTrue(sets[0]["startedAt"] is NSNull, "Explicit order does not manufacture timing")
+        XCTAssertNil(known[1]["sessionExerciseId"])
+        XCTAssertTrue(sets[0]["lifeSetId"] is NSNull)
+        // A synthetic production-encoder artifact supports the local receiver's schema gate.
+        let fixture = try WorkoutCapturePayload.make(record: record, sets: [row], binding: binding, installationId: UUID(), revision: 1).bytes()
+        try fixture.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("dhoop-native-replacement-478.json"), options: .atomic)
+    }
     func testPreparedIntentRequiresExactLocalSessionAndSetPersistence() async throws {
         let binding = try binding(), id = binding.sourceWorkoutId.uuidString.lowercased()
         let setID = try XCTUnwrap(binding.occurrences.first?.sets.first?.sourceSetId).uuidString.lowercased()

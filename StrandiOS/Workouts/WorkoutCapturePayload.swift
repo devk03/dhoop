@@ -33,8 +33,19 @@ struct WorkoutCapturePayload: Encodable {
         let exerciseKey: String
         let name: String?
         let loadMode: WorkoutTrackerLoadMode?
-        let executionOrder: Int
+        let executionOrder: Int?
         let sets: [WorkoutSetObservation]
+        var replacesSourceOccurrenceId: String? = nil
+        enum CodingKeys: String, CodingKey { case occurrenceKind, sourceOccurrenceId, sessionExerciseId, programSlotId, slotKey, exerciseKey, name, loadMode, executionOrder, sets, replacesSourceOccurrenceId }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(occurrenceKind, forKey: .occurrenceKind); try c.encode(sourceOccurrenceId, forKey: .sourceOccurrenceId)
+            try c.encodeIfPresent(sessionExerciseId, forKey: .sessionExerciseId); try c.encodeIfPresent(programSlotId, forKey: .programSlotId)
+            try c.encodeIfPresent(slotKey, forKey: .slotKey); try c.encode(exerciseKey, forKey: .exerciseKey)
+            try c.encodeIfPresent(name, forKey: .name); try c.encodeIfPresent(loadMode, forKey: .loadMode)
+            try c.encode(executionOrder, forKey: .executionOrder); try c.encode(sets, forKey: .sets)
+            try c.encodeIfPresent(replacesSourceOccurrenceId, forKey: .replacesSourceOccurrenceId)
+        }
     }
     let schemaVersion = 1
     let kind = "strength_workout"
@@ -68,6 +79,12 @@ struct WorkoutCapturePayload: Encodable {
         guard ids.isSubset(of: known) else { throw WorkoutTrackerContractError.invalidSnapshot }
         let formatter = ISO8601DateFormatter()
         func date(_ seconds: Int) -> String { formatter.string(from: Date(timeIntervalSince1970: Double(seconds))) }
+        func knownOrder(_ row: LiftSetRow, id: UUID) -> Int? {
+            if let explicit = binding.observedSetOrder { return explicit[id] }
+            // Older captures with measured start/end anchors retain their recorded completion order.
+            guard let start = row.startTs, let setEnd = row.endTs, start >= record.startTs, setEnd <= end, setEnd >= start else { return nil }
+            return row.ord
+        }
         func observe(_ identity: WorkoutTrackerCaptureBinding.SetBinding, basis: String) throws -> WorkoutSetObservation? {
             guard let row = sets.first(where: { UUID(uuidString: $0.id) == identity.sourceSetId }) else { return nil }
             var observed = WorkoutSetObservation(sourceSetId: identity.sourceSetId, setType: row.isWarmup ? .warmup : .work, loadBasis: try self.basis(basis))
@@ -81,11 +98,11 @@ struct WorkoutCapturePayload: Encodable {
             observed.startedAt = row.startTs.map { .value(date($0)) } ?? .clear
             observed.endedAt = row.endTs.map { .value(date($0)) } ?? .clear
             observed.heartRateSummary = heartRateEvidence[identity.sourceSetId].map(WorkoutObservationPatch.value) ?? .clear
-            observed.executionOrder = row.ord
+            observed.executionOrder = knownOrder(row, id: identity.sourceSetId).map(WorkoutObservationPatch.value) ?? .clear
             try observed.validate(); return observed
         }
         var occurrences: [Occurrence] = []
-        for (order, identity) in binding.occurrences.enumerated() where !deleting {
+        for identity in binding.occurrences where !deleting {
             guard let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == identity.sessionExerciseId }) else {
                 throw WorkoutTrackerContractError.invalidSnapshot
             }
@@ -93,13 +110,15 @@ struct WorkoutCapturePayload: Encodable {
             occurrences.append(Occurrence(occurrenceKind: "prescribed", sourceOccurrenceId: identity.sourceOccurrenceId.uuidString.lowercased(),
                 sessionExerciseId: identity.sessionExerciseId, programSlotId: prescribed.programSlotId,
                 slotKey: prescribed.slotKey, exerciseKey: prescribed.exerciseKey, name: nil, loadMode: prescribed.loadMode,
-                executionOrder: order, sets: observations))
+                executionOrder: observations.compactMap { if case .value(let order) = $0.executionOrder { return order }; return nil }.min(), sets: observations))
         }
         if !deleting {
             for extra in binding.additionalOccurrences ?? [] {
+                let observations = try extra.sets.compactMap { try observe($0, basis: extra.loadMode.loadBasis) }
                 occurrences.append(Occurrence(occurrenceKind: "actual_only", sourceOccurrenceId: extra.sourceOccurrenceId.uuidString.lowercased(),
                     sessionExerciseId: nil, programSlotId: nil, slotKey: nil, exerciseKey: extra.exerciseKey, name: extra.name, loadMode: extra.loadMode,
-                    executionOrder: extra.planIndex, sets: try extra.sets.compactMap { try observe($0, basis: extra.loadMode.loadBasis) }))
+                    executionOrder: observations.compactMap { if case .value(let order) = $0.executionOrder { return order }; return nil }.min(),
+                    sets: observations, replacesSourceOccurrenceId: extra.replacesSourceOccurrenceId?.uuidString.lowercased()))
             }
         }
         return WorkoutCapturePayload(eventId: eventId.uuidString.lowercased(), sourceWorkoutId: binding.sourceWorkoutId.uuidString.lowercased(),

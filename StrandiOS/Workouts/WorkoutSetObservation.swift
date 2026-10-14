@@ -66,7 +66,7 @@ struct WorkoutSetObservation: Encodable, Equatable {
     var heartRateSummary: WorkoutObservationPatch<WorkoutObservedHeartRate> = .unchanged
     var supersetGroupId: WorkoutObservationPatch<UUID> = .unchanged
     var roundIndex: WorkoutObservationPatch<Int> = .unchanged
-    var executionOrder: Int?
+    var executionOrder: WorkoutObservationPatch<Int> = .unchanged
 
     enum CodingKeys: String, CodingKey {
         case sourceSetId, lifeSetId, setType, completed, loadKg, loadBasis, reps, enteredLoad
@@ -97,7 +97,7 @@ struct WorkoutSetObservation: Encodable, Equatable {
         case .value(let id): try c.encode(id.uuidString.lowercased(), forKey: .supersetGroupId)
         }
         try c.encodePatch(roundIndex, forKey: .roundIndex)
-        try c.encodeIfPresent(executionOrder, forKey: .executionOrder)
+        try c.encodePatch(executionOrder, forKey: .executionOrder)
     }
 
     func validate() throws {
@@ -110,7 +110,7 @@ struct WorkoutSetObservation: Encodable, Equatable {
         if case .value(let notes) = notes, notes.utf16.count > 2000 { throw WorkoutObservationError.invalid("set notes") }
         if case .value(let rating) = rir, !(0...5).contains(rating) { throw WorkoutObservationError.invalid("RIR") }
         if case .value(let round) = roundIndex, !(0...199).contains(round) { throw WorkoutObservationError.invalid("superset round") }
-        if let executionOrder, !(0...1000).contains(executionOrder) { throw WorkoutObservationError.invalid("set execution order") }
+        if case .value(let executionOrder) = executionOrder, !(0...1000).contains(executionOrder) { throw WorkoutObservationError.invalid("set execution order") }
         if case .value(let duration) = measuredActiveSeconds, !duration.isFinite || !(0...86400).contains(duration) {
             throw WorkoutObservationError.invalid("active duration")
         }

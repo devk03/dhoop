@@ -65,12 +65,16 @@ final class WorkoutSetObservationTests: XCTestCase {
         var value = observation()
         value.supersetGroupId = .value(group)
         value.roundIndex = .value(1)
-        value.executionOrder = 3
+        value.executionOrder = .value(3)
         let encoded = try json(value)
         XCTAssertEqual(encoded["supersetGroupId"] as? String, "abcdefab-1234-4234-8234-abcdefabcdef")
         XCTAssertEqual(encoded["roundIndex"] as? Int, 1)
         XCTAssertEqual(encoded["executionOrder"] as? Int, 3)
         XCTAssertNil(encoded["startedAt"])
         XCTAssertNil(encoded["endedAt"])
+        value.executionOrder = .clear
+        XCTAssertTrue(try json(value)["executionOrder"] is NSNull)
+        value.executionOrder = .unchanged
+        XCTAssertNil(try json(value)["executionOrder"])
     }
 }
