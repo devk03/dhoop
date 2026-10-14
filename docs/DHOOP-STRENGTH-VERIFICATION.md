@@ -97,6 +97,24 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
   between same-revision reads prevents preparation. Source doc-comment hygiene passed.
 - History-only correction is not implemented by this path; it never occurs automatically.
 
+## Build 482 shared-action evidence
+
+- Fourteen alarm-manager tests passed, covering explicit save results, corrupt/invalid-state
+  preservation, attributed complete versus partial reads, duplicate read rejection, changed links,
+  and failed owned-slot readback during explicit retry. Commands were mocked; no physical vibration
+  or alarm-storage verification is established by these tests.
+- Fourteen workout-review/store tests passed. Five shared action/contrast tests passed, covering
+  duplicate taps, actual async failure/retry, cancellation and readable button/switch contrast.
+- Activity-review UI now awaits write/readback and distinguishes a saved decision from failed
+  history refresh. Sleep/protein manual checks await their bounded pass, preserve failed credential
+  input, and keep acceptance tied to dated receipts. Manual network delivery is not tested here.
+- Evidence: `/private/tmp/dhoop-alarm-action-completion-tests.log`,
+  `/private/tmp/dhoop-workout-review-action-tests.log`, `/private/tmp/dhoop-shared-action-contract-tests.log`.
+- Both app builds passed (`/private/tmp/dhoop-action-controls-482-ios-build.log`,
+  `/private/tmp/dhoop-action-controls-482-macos-build.log`). Source comment hygiene passed.
+- Build 482 has not been installed or physically tested. This is additional control coverage;
+  it does not establish completion of the remaining app-wide audit or strength hardware checks.
+
 ## Physical checks still required
 
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and

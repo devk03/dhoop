@@ -831,7 +831,32 @@ The [backup design study](design/dhoop-workout-metadata-backup-study.png) and
 Package preparation/merge and archive recovery have local tests; the native Files export/import
 workflow has not yet been verified on the physical iPhone.
 
-The native integration and matching Life receiver are local development work. Production deployment,
+### Shared alarm, summary and activity actions
+
+Alarm editing uses the shared asynchronous Save control. The editor remains open with its current
+draft after permission, validation or storage failure; editing/dismissal is held only while saving.
+Local save completion means the definition was persisted. Strap storage and felt vibration remain
+separate. Explicit slot reading awaits six attributed, decodable records; a partial inventory or
+changed link fails the action. Explicit sync retries await the existing owned-slot reconciler and
+surface its error. These controls grant no new ownership or BLE command capability.
+
+Life sync uses shared switches and action controls. Check & send summaries awaits one bounded pass,
+instead of displaying queueing as completion. A dated accepted receipt is still the evidence of
+website acceptance. Credential fields clear only after configuration succeeds; secure setup failures
+remain visible. A failed enable-setting write no longer starts a forced export.
+
+Activity review awaits the actual decision write and history readback. A committed decision with
+failed readback is labeled separately and kept visible; it is not reported as a fully refreshed
+history. Last readable review rows are retained after a same-device read failure, and rows from a
+different selected strap are hidden. Sleep refresh and Exercises/Alarms navigation use shared press
+feedback without chart gestures. Native confirmation dialogs are retained.
+
+These are Apple interface/coordinator changes, with no analytics, SQL schema or backup-whitelist
+change. The [action-state study](design/dhoop-alarm-sync-review-actions-study.png) and
+[built-in ImageGen prompts](design/dhoop-alarm-sync-review-actions-study.prompt.txt) use demo states.
+Physical UI behavior and manual network delivery of this build remain unverified.
+
+The workout integration and matching Life receiver are local development work. Production deployment,
 dedicated credentials and any Cloudflare path activation require separate authorization. Additional
 history-only correction and activation verification require further work before this integration
 is considered complete. Physical-device verification remains outstanding.
