@@ -117,6 +117,62 @@ features, and rest cues must use the shared buzz system without changing wake al
       persisted sample observations, pause/lock/reconnect/relaunch, edits/deletion and gesture checks.
 - [ ] Separately approved receiver deployment, dedicated credentials and production activation.
 
+## Agreed next storage and timing design
+
+The tracker review agreed that the existing wire fields already retain superset UUIDs, zero-based
+round indices, observed execution order and distinct variation/parent exercise keys as source
+metadata. They may accompany ordinary apply of correctly bound prescribed actuals. They do not
+rewrite reusable plans, pool variation performance with a parent, or independently advance
+progression. Extra/replaced exercises retain distinct actual-only identities and explicit load bases.
+
+True pause/resume needs an interval ledger; start/end envelopes and an active-seconds total cannot
+retain pauses losslessly. One session ledger is the authority for set, rest and pause timing, avoiding
+separately persisted competing per-set and session arrays. The following additive nullable native
+fields are proposed for owner approval, replacing the earlier six-field proposal:
+
+| Table | Proposed field | SQL type | Purpose |
+| --- | --- | --- | --- |
+| `liftExercise` | `parentExerciseId` | TEXT | Explicit local variation relationship; never alias child history. |
+| `liftProgramItem` | `supersetGroupId` | TEXT | Reusable grouping UUID. |
+| `liftSet` | `supersetGroupId` | TEXT | Group actually used for that set. |
+| `liftSet` | `roundIndex` | INTEGER | Observed zero-based round, not inferred card order. |
+| `liftSession` | `activityIntervalsJSON` | TEXT | One authoritative observed phase ledger. |
+
+No native migration has been written or applied. Existing rows would retain NULL, with no timing,
+grouping or ancestry backfill. The versioned Swift/Room migrations, models, schema oracle, backup and
+round-trip tests must agree before applying them. Existing workout IDs, raw HR and preferences remain.
+
+The proposed optional wire field is `session.activityIntervals`, a typed array (not a JSON string):
+`{sourceIntervalId, kind: work|rest|pause, sourceSetId: UUID|null, startedAt, endedAt: timestamp|null}`.
+The receiver currently rejects this field; its local source-retention extension is being implemented
+and tested before any native transmission. Omission preserves the existing snapshot, null explicitly
+clears/marks unknown, and an empty array explicitly retains no intervals. Present arrays replace the
+complete observed snapshot at a new source revision. Limits are 512 intervals and the existing 128 KiB
+request bound; neither side may truncate evidence to fit.
+
+Work requires a known same-capture set ID. Rest may name its preceding set. Pauses may be session-wide.
+Validation uses the complete retained source set registry, including tombstoned sets and sets introduced
+in the same atomic revision. Arbitrary/foreign references fail. Set deletion retains historical interval
+references; deleted work is excluded from current set/exercise aggregates, and retained evidence is
+labeled accurately. Interval correction/removal is explicit, not a side effect of deleting a set.
+
+Closed windows lie within known session bounds; work also lies within its set's known wall envelope.
+Confirmed work/rest/pause windows cannot overlap. A real pause may be longer than the surrounding work
+or rest. Unknown ends remain unresolved, never proof of ongoing work and never automatically closed
+at upload/relaunch. Unobserved gaps stay empty. Set HR uses confirmed half-open work windows and
+boundary deduplication; missing readings and unresolved working duration remain unavailable.
+
+The engine must preserve one set UUID through work → pause → work. Pausing rest freezes the remaining
+rest and cancels its pending cue; resuming creates a new observed phase and deadline. Recovery must
+retain input, phase, remaining rest and interval identities while clearly labeling crash/clock gaps.
+Session wall duration and active working duration remain separate. WHOOP ownership and wake alarms
+continue through the shared systems; software timing is not a guarantee of suspended-app execution.
+
+Acceptance requires pause/resume/relaunch, interleaved superset order and replacements, distinct
+variation histories, half-open HR boundaries, invalid overlap/reference rejection, correction/retry/
+null behavior, tombstone retention and unchanged canonical/manual/program/progression values for
+metadata-only edits. Physical two-exercise/three-set collection tests remain a separate gate.
+
 ## Delivery order
 
 The receiver contract already describes accepted-capture history-only corrections and historical
