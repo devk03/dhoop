@@ -1,5 +1,6 @@
 import Foundation
 import WhoopStore
+import StrandAnalytics
 
 // Crash-safety for an in-flight gym session.
 //
@@ -146,6 +147,13 @@ enum LiftSessionPersistence {
 
     static func load(from d: UserDefaults = .standard) -> Snapshot? {
         decode(d.data(forKey: defaultsKey))
+    }
+
+    /// Exclude a known active capture from suggestions, without attributing legacy data to a strap.
+    static func activeWorkoutSpan(_ snapshot: Snapshot?, deviceID: String, now: Int) -> SavedWorkoutSpan? {
+        guard let snapshot, snapshot.sourceDeviceId == deviceID, snapshot.stage.kind != "finished",
+              snapshot.startSec > 0, now > snapshot.startSec else { return nil }
+        return SavedWorkoutSpan(startSec: snapshot.startSec, endSec: now)
     }
 
     static func clear(_ d: UserDefaults = .standard) {

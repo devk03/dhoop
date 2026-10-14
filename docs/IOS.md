@@ -655,6 +655,11 @@ The small collection readout distinguishes readable receipts from measured readi
 workout start. Its last checked timestamp describes the stored count. The live number uses the common
 freshness gate; connection alone never proves collection or persistence.
 
+Automatic activity suggestions exclude the active Strength window only for its known original strap.
+Unknown-source legacy snapshots do not suppress another device's activity. Foreground review is
+disabled during a manual Strength, HIIT or Zone session. Detection remains a sustained-activity
+suggestion; it does not infer exercises, repetitions or set boundaries.
+
 Session history reads measured positive sensor rows under the session's original device ID.
 Its chart reuses the minute-average, gap-preserving projection and the shared scrubbing component.
 Session and timed-set statistics use full-window queries, with half-open bounds so a boundary second

@@ -55,7 +55,8 @@ private struct RunningContent: View, Equatable {
                 if section == "History" {
                     CardioHistoryView(model: history, range: $historyRange, now: capturedAt, controller: controller)
                 } else if section == "Review" {
-                    CardioDetectionView(localSpans: history.localSpans, sessionActive: controller.hasSession || history.loading)
+                    CardioDetectionView(localSpans: history.localSpans,
+                        sessionActive: controller.hasSession || hiit.hasSession || liftSession.isActive || history.loading)
                 } else {
                     if controller.session == nil && !hiit.hasSession && !meditation.session.isInProgress && !liftSession.isActive {
                         NoopSegmentedControl("Workout type", options: ["Strength", "Zone run", "HIIT", "Intervals", "Meditation"], selection: $workoutMode,

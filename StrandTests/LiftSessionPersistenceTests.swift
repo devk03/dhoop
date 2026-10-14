@@ -11,6 +11,30 @@ import WhoopStore
 /// old build wrote. A schema change is the other half of that question and is answered by the
 /// migration, not here.
 final class LiftSessionPersistenceTests: XCTestCase {
+    private var existingActiveSession: Any?
+    override func setUp() {
+        super.setUp()
+        existingActiveSession = UserDefaults.standard.object(forKey: LiftSessionPersistence.defaultsKey)
+    }
+    override func tearDown() {
+        if let existingActiveSession { UserDefaults.standard.set(existingActiveSession, forKey: LiftSessionPersistence.defaultsKey) }
+        else { UserDefaults.standard.removeObject(forKey: LiftSessionPersistence.defaultsKey) }
+        super.tearDown()
+    }
+
+    func testOnlyKnownActiveStrengthSourceIsExcludedFromWorkoutSuggestions() throws {
+        var snapshot = try XCTUnwrap(LiftSessionPersistence.decode(snapshotJSONWithoutProgramItemId()))
+        XCTAssertNil(LiftSessionPersistence.activeWorkoutSpan(snapshot, deviceID: "strap", now: t0 + 100))
+        snapshot.sourceDeviceId = "strap"
+        let span = try XCTUnwrap(LiftSessionPersistence.activeWorkoutSpan(snapshot, deviceID: "strap", now: t0 + 100))
+        XCTAssertEqual(span.startSec, t0)
+        XCTAssertEqual(span.endSec, t0 + 100)
+        XCTAssertNil(LiftSessionPersistence.activeWorkoutSpan(snapshot, deviceID: "other", now: t0 + 100))
+        XCTAssertNil(LiftSessionPersistence.activeWorkoutSpan(snapshot, deviceID: "strap", now: t0 - 1))
+        snapshot.stage.kind = "finished"
+        XCTAssertNil(LiftSessionPersistence.activeWorkoutSpan(snapshot, deviceID: "strap", now: t0 + 100))
+    }
+
     @MainActor
     func testWorkoutAndSetIdentitiesSurviveRelaunchAndSaveRetries() throws {
         let original = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })

@@ -3346,7 +3346,9 @@ final class Repository: ObservableObject {
                 try WorkoutReviewLocalSessions.spans(directory: directory, now: now)
             }.value
             guard selectedDevice == deviceId, !Task.isCancelled else { return }
-            _ = try await workoutReviews(discover: true, excluding: local)
+            let strength = LiftSessionPersistence.activeWorkoutSpan(LiftSessionPersistence.load(), deviceID: selectedDevice,
+                now: Int(now.timeIntervalSince1970))
+            _ = try await workoutReviews(discover: true, excluding: local + (strength.map { [$0] } ?? []))
         } catch {
             // Preserve existing metadata and local recordings when storage is unavailable/corrupt.
             emitWorkouts("workout review capture unavailable: \(error.localizedDescription)")
