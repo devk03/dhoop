@@ -28,7 +28,7 @@ extension WorkoutTrackerFileStore {
         let bytes = try Data(contentsOf: file)
         guard bytes.count <= 8 * 1024 * 1024 else { throw WorkoutTrackerContractError.invalidSnapshot }
         let delivery = try JSONDecoder().decode(WorkoutTrackerDelivery.self, from: bytes)
-        guard delivery.valid, delivery.id == reference.id, delivery.sourceWorkoutId == reference.sourceWorkoutId, delivery.revision == reference.revision else {
+        guard delivery.valid, WorkoutTrackerArchiveReference(delivery: delivery, fileId: reference.fileId) == reference else {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         if delivery.bytes != nil { try delivery.validateBody() }

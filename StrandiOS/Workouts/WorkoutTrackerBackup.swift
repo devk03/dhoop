@@ -64,7 +64,7 @@ extension WorkoutTrackerFileStore {
         let incomingDirectory = package.appendingPathComponent("archive", isDirectory: true)
         func incoming(_ reference: WorkoutTrackerArchiveReference) throws -> WorkoutTrackerDelivery {
             let value = try snapshot(fileId: reference.fileId, directory: incomingDirectory)
-            guard value.id == reference.id, value.sourceWorkoutId == reference.sourceWorkoutId, value.revision == reference.revision else { throw WorkoutTrackerContractError.invalidSnapshot }
+            guard WorkoutTrackerArchiveReference(delivery: value, fileId: reference.fileId) == reference else { throw WorkoutTrackerContractError.invalidSnapshot }
             return value
         }
         // Validate every included snapshot, including older versions retained as provenance.

@@ -225,6 +225,10 @@ final class WorkoutTrackerClientTests: XCTestCase {
         try f.file.save(compacted)
         let reference = try XCTUnwrap(compacted.archives[oldest.id.uuidString.lowercased()])
         XCTAssertEqual(try f.file.archived(reference), oldest)
+        var changedSummary = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(reference)) as? [String: Any])
+        changedSummary["status"] = "failed"
+        let conflictingSummary = try JSONDecoder().decode(WorkoutTrackerArchiveReference.self, from: JSONSerialization.data(withJSONObject: changedSummary))
+        XCTAssertThrowsError(try f.file.archived(conflictingSummary), "The list summary and full receipt must resolve from the same facts")
         let package = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".dhoopworkouts", isDirectory: true)
         try f.file.prepareBackup(state: compacted, destination: package)
         let restoredFile = WorkoutTrackerFileStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json"))
