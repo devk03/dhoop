@@ -37,6 +37,15 @@ enum LiftSessionPersistence {
         var pendingWarmups: [SlotBox]?
         /// Optional for legacy snapshots; old sessions retain an explicitly unknown capture source.
         var sourceDeviceId: String? = nil
+        var recordingId: String? = nil
+        var trackerBinding: WorkoutTrackerCaptureBinding? = nil
+        var setIdentities: [SetIdentity]? = nil
+
+        struct SetIdentity: Codable, Equatable {
+            var exerciseIndex: Int
+            var setIndex: Int
+            var id: String
+        }
 
         struct PendingValue: Codable, Equatable {
             var exerciseIndex: Int
@@ -113,6 +122,15 @@ enum LiftSessionPersistence {
               raw.startSec < Int(Date().timeIntervalSince1970) + 86_400,
               !raw.plan.isEmpty
         else { return nil }
+        if let id = raw.recordingId, UUID(uuidString: id) == nil { return nil }
+        if let binding = raw.trackerBinding {
+            guard (try? binding.validate()) != nil,
+                  raw.recordingId.flatMap(UUID.init(uuidString:)) == binding.sourceWorkoutId else { return nil }
+        }
+        if let identities = raw.setIdentities {
+            guard identities.count <= 1000, identities.allSatisfy({ $0.exerciseIndex >= 0 && $0.setIndex > 0 && UUID(uuidString: $0.id) != nil }),
+                  Set(identities.map(\.id)).count == identities.count else { return nil }
+        }
         return raw
     }
 
@@ -140,7 +158,9 @@ enum LiftSessionPersistence {
                          programId: String?,
                          programName: String?,
                          pendingValues: [LiftSlot: LiftSessionController.PendingSetValues],
-                         pendingWarmups: Set<LiftSlot>, sourceDeviceId: String? = nil) -> Snapshot {
+                         pendingWarmups: Set<LiftSlot>, sourceDeviceId: String? = nil,
+                         recordingId: String? = nil, trackerBinding: WorkoutTrackerCaptureBinding? = nil,
+                         setIdentities: [Snapshot.SetIdentity]? = nil) -> Snapshot {
         Snapshot(
             startSec: engine.startTs,
             programId: programId,
@@ -179,7 +199,8 @@ enum LiftSessionPersistence {
             pendingWarmups: pendingWarmups
                 .sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) }
                 .map { Snapshot.SlotBox(exerciseIndex: $0.exerciseIndex, setIndex: $0.setIndex) },
-            sourceDeviceId: sourceDeviceId)
+            sourceDeviceId: sourceDeviceId, recordingId: recordingId, trackerBinding: trackerBinding,
+            setIdentities: setIdentities?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) })
     }
 
     /// The numbers typed in advance, back as the controller holds them.

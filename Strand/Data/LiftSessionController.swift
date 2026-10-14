@@ -30,6 +30,9 @@ final class LiftSessionController: ObservableObject {
     @Published private(set) var collectionMessage: String?
     @Published private(set) var sourceDeviceId: String?
     @Published private(set) var isSaving = false
+    @Published private(set) var recordingId: UUID?
+    @Published private(set) var trackerBinding: WorkoutTrackerCaptureBinding?
+    private var setIdentities: [LiftSlot: UUID] = [:]
     /// True while the full sheet is presented; false when minimised to the bottom bar.
     @Published var isPresented = false
 
@@ -140,9 +143,16 @@ final class LiftSessionController: ObservableObject {
     // MARK: - Lifecycle
 
     @discardableResult
-    func start(plan: [LiftPlanItem], programId: String?, programName: String?) -> Bool {
+    func start(plan: [LiftPlanItem], programId: String?, programName: String?, trackerBinding: WorkoutTrackerCaptureBinding? = nil) -> Bool {
         guard engine == nil, !plan.isEmpty else { return false }
+        if let trackerBinding {
+            guard (try? trackerBinding.validate()) != nil, plan.count == trackerBinding.occurrences.count,
+                  programId == nil else { return false }
+        }
         guard claimCollection() else { return false }
+        self.trackerBinding = trackerBinding
+        recordingId = trackerBinding?.sourceWorkoutId ?? UUID()
+        setIdentities = [:]
         sourceDeviceId = currentDeviceId()
         let stamp = Int(Date().timeIntervalSince1970)
         engine = LiftSessionEngine(plan: plan, startTs: stamp)
@@ -177,6 +187,11 @@ final class LiftSessionController: ObservableObject {
         guard engine == nil else { return }
         engine = LiftSessionPersistence.engine(from: snapshot)
         sourceDeviceId = snapshot.sourceDeviceId
+        trackerBinding = snapshot.trackerBinding
+        recordingId = snapshot.recordingId.flatMap(UUID.init(uuidString:)) ?? snapshot.trackerBinding?.sourceWorkoutId ?? UUID()
+        setIdentities = Dictionary((snapshot.setIdentities ?? []).compactMap { value in
+            UUID(uuidString: value.id).map { (LiftSlot(exerciseIndex: value.exerciseIndex, setIndex: value.setIndex), $0) }
+        }, uniquingKeysWith: { first, _ in first })
         programId = snapshot.programId
         programName = snapshot.programName
         // Numbers typed for sets not yet performed, and warm-ups marked in advance, come back too:
@@ -196,6 +211,7 @@ final class LiftSessionController: ObservableObject {
         isPresented = present
         _ = claimCollection()
         claimStrap()
+        persist()
     }
 
     /// Give up the session without saving.
@@ -220,6 +236,7 @@ final class LiftSessionController: ObservableObject {
         programName = nil
         sourceDeviceId = nil
         isSaving = false
+        recordingId = nil; trackerBinding = nil; setIdentities = [:]
         warnedFor = nil
         lastStrapStepAt = nil
         pendingWarmups = []
@@ -426,12 +443,39 @@ final class LiftSessionController: ObservableObject {
     /// The grey numbers a slot shows — the one chain every surface reads, so the sheet, the minimised
     /// bar and the Lock Screen cannot disagree about them.
     func carry(for slot: LiftSlot) -> LiftSetCarry {
-        engine?.carry(for: slot, lastSession: lastSessionSets(for: slot)) ?? .none
+        if let bound = trackerPrescription(for: slot) {
+            return LiftSetCarry(weightKg: try? bound.occurrence.kilograms(for: bound.set), reps: bound.set.plannedReps)
+        }
+        return engine?.carry(for: slot, lastSession: lastSessionSets(for: slot)) ?? .none
     }
 
     /// What a slot counts as: typed numbers, else its grey ones.
     func values(of slot: LiftSlot) -> LiftSetCarry {
-        engine?.values(of: slot, lastSession: lastSessionSets(for: slot)) ?? .none
+        if trackerPrescription(for: slot) != nil {
+            let entered = enteredValues(for: slot), prescribed = carry(for: slot)
+            return LiftSetCarry(weightKg: entered.weightKg ?? prescribed.weightKg, reps: entered.reps ?? prescribed.reps)
+        }
+        return engine?.values(of: slot, lastSession: lastSessionSets(for: slot)) ?? .none
+    }
+
+    private func trackerPrescription(for slot: LiftSlot) -> (occurrence: WorkoutTrackerManifest.Occurrence, set: WorkoutTrackerManifest.PlannedSet)? {
+        guard let binding = trackerBinding, binding.occurrences.indices.contains(slot.exerciseIndex) else { return nil }
+        let occurrence = binding.occurrences[slot.exerciseIndex]
+        guard let identity = occurrence.sets.first(where: { $0.slotIndex == slot.setIndex }),
+              let prescribed = binding.manifest.exerciseOccurrences.first(where: { $0.sessionExerciseId == occurrence.sessionExerciseId }),
+              let set = prescribed.sets.first(where: { $0.lifeSetId == identity.lifeSetId }) else { return nil }
+        return (prescribed, set)
+    }
+
+    /// Identities are assigned once and persisted before a save, so retries/relaunches reuse them.
+    func identity(for slot: LiftSlot) -> UUID {
+        if let existing = setIdentities[slot] { return existing }
+        let prescribed = trackerBinding.flatMap { binding -> UUID? in
+            guard binding.occurrences.indices.contains(slot.exerciseIndex) else { return nil }
+            return binding.occurrences[slot.exerciseIndex].sets.first { $0.slotIndex == slot.setIndex }?.sourceSetId
+        }
+        let id = prescribed ?? UUID(); setIdentities[slot] = id; persist()
+        return id
     }
 
     private func lastSessionSets(for slot: LiftSlot) -> [Int: LiftSetCarry] {
@@ -815,6 +859,8 @@ final class LiftSessionController: ObservableObject {
                                             programName: programName,
                                             pendingValues: pendingValues,
                                             pendingWarmups: pendingWarmups,
-                                            sourceDeviceId: sourceDeviceId))
+                                            sourceDeviceId: sourceDeviceId,
+                                            recordingId: recordingId?.uuidString.lowercased(), trackerBinding: trackerBinding,
+                                            setIdentities: setIdentities.map { .init(exerciseIndex: $0.key.exerciseIndex, setIndex: $0.key.setIndex, id: $0.value.uuidString.lowercased()) }))
     }
 }

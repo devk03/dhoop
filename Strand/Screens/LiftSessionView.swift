@@ -104,7 +104,7 @@ struct LiftSessionView: View {
             draft = draft.filter { $0.key == now }
         }
         .sheet(isPresented: $showingFinish) { finishSheet }
-        .alert("Session was not saved", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+        .alert("Session needs attention", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
             Button("OK", role: .cancel) { saveError = nil }
         } message: { Text(saveError ?? "Your session is still available. Please try again.") }
     }
@@ -854,7 +854,7 @@ struct LiftSessionView: View {
     private func save(to store: WhoopStore) async throws {
         guard let engine = session.engine else { return }
         let endTs = Int(Date().timeIntervalSince1970)
-        let sessionId = UUID().uuidString
+        let sessionId = (session.recordingId ?? UUID()).uuidString.lowercased()
         // After `finish`, which closes out the running rest: that set's measured rest belongs to it.
         let finished = session.setsToSave(completingUnfinished: unfinishedChoice == .complete, finishingAt: endTs)
 
@@ -884,7 +884,7 @@ struct LiftSessionView: View {
         let rows = finished.enumerated().map { ord, s -> LiftSetRow in
             let item = engine.planItem(for: s.slot)
             return LiftSetRow(
-                id: UUID().uuidString, deviceId: row.deviceId, sessionId: sessionId,
+                id: session.identity(for: s.slot).uuidString.lowercased(), deviceId: row.deviceId, sessionId: sessionId,
                 ord: ord, exercise: item?.exercise ?? "",
                 // Snapshot the classification AS IT WAS, so reclassifying later never rewrites what
                 // past weeks were counted as.
@@ -903,9 +903,26 @@ struct LiftSessionView: View {
             energyKcal: nil, avgHr: nil, maxHr: nil, strain: nil,
             distanceM: nil, zonesJSON: nil, notes: session.programName, steps: nil)
         let updatedProgramItems = try await programChanges(store: store, plan: engine.plan, sets: finished)
+        #if os(iOS)
+        let trackerEvent = try session.trackerBinding.map { try WorkoutTrackerClient.shared.prepare(record: row, sets: rows, binding: $0) }
+        #endif
         try await store.saveLiftRecording(session: row, sets: rows, workout: workout, updatedProgramItems: updatedProgramItems)
+        #if os(iOS)
+        if let trackerEvent {
+            do { try await WorkoutTrackerClient.shared.confirmPersistence(trackerEvent, store: store) }
+            catch {
+                saveError = "The workout is saved locally, but delivery state could not be finalized. Your active session is retained for recovery."
+                return
+            }
+        }
+        #endif
 
         await finishAndDismiss()
+        #if os(iOS)
+        if trackerEvent != nil, WorkoutTrackerClient.shared.state.enabled {
+            Task { try? await WorkoutTrackerClient.shared.synchronize(store: store) }
+        }
+        #endif
     }
 
     /// Close the session down and leave the sheet. Shared by the normal save and the nothing-to-file

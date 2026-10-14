@@ -11,6 +11,22 @@ import WhoopStore
 /// old build wrote. A schema change is the other half of that question and is answered by the
 /// migration, not here.
 final class LiftSessionPersistenceTests: XCTestCase {
+    @MainActor
+    func testWorkoutAndSetIdentitiesSurviveRelaunchAndSaveRetries() throws {
+        let original = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
+        original.start(plan: [LiftPlanItem(exercise: "Bench", targetSets: 2)], programId: nil, programName: nil)
+        let slot = LiftSlot(exerciseIndex: 0, setIndex: 1)
+        let recording = original.recordingId
+        let set = original.identity(for: slot)
+        XCTAssertEqual(original.identity(for: slot), set)
+        let snapshot = try XCTUnwrap(LiftSessionPersistence.load())
+        let restored = LiftSessionController(buzz: { _ in }, setStrapHandler: { _ in })
+        restored.resume(from: snapshot)
+        XCTAssertEqual(restored.recordingId, recording)
+        XCTAssertEqual(restored.identity(for: slot), set)
+        XCTAssertNotEqual(restored.identity(for: LiftSlot(exerciseIndex: 0, setIndex: 2)), set)
+        original.discard(); restored.discard()
+    }
 
     private let t0 = 1_700_000_000
 
