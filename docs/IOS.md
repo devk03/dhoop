@@ -711,10 +711,22 @@ notes across relaunch; historical correction and explicit clearing preserve nume
 The exercise menu can move cards earlier/later within the current session. A separate durable
 presentation/suggestion order keeps plan indices, source IDs, completed sets, notes and the current
 set/rest timing unchanged. Undo and relaunch retain this order; the routine prescription is unchanged.
+Replace remaining sets uses the same picker. The original card retains completed sets and editable
+numbers/notes; only unfinished work moves to a new exercise/card and new source IDs. The working set
+must be completed before replacing its own exercise. An ongoing rest keeps its original deadline.
+Replacements do not write back into a saved routine or persistent Life prescription. A replacement
+can itself be replaced; earlier performed observations and lineage remain intact. The active snapshot
+retains replacement indices and explicit load modes. Undo restores the original remaining work.
+Observed set/occurrence order is distinct from card/plan indices. The save binding retains actual
+completion order; unknown order is explicitly nullable, including unperformed original occurrences.
+Known order does not manufacture timestamps. Replacement payloads include the original source
+occurrence reference, matching the locally tested Life contract at `3cb8a0f`.
 This Apple session-editor behavior does not change SQLite rows, backup row shapes or shared analytics;
 Android session UI parity is not implemented by this fork change.
 The [session-order study](design/dhoop-strength-session-order-study.png) and its
 [built-in ImageGen prompt](design/dhoop-strength-session-order-study.prompt.txt) use demo data only.
+The [replacement study](design/dhoop-strength-replacement-study.png) and its
+[built-in ImageGen prompt](design/dhoop-strength-replacement-study.prompt.txt) are also demo references.
 The [picker and delivery study](design/dhoop-tracker-picker-delivery-study.png) and its
 [built-in ImageGen prompt](design/dhoop-tracker-picker-delivery-study.prompt.txt) use demo data only.
 
@@ -762,5 +774,5 @@ workflow has not yet been verified on the physical iPhone.
 
 The native integration and matching Life receiver are local development work. Production deployment,
 dedicated credentials and any Cloudflare path activation require separate authorization. Additional
-tracker occurrence-order semantics, exercise replacement and reviewed conflict rebinding require further work before this
+offline cached-plan starts and reviewed conflict rebinding require further work before this
 integration is considered complete. Physical-device verification remains outstanding.

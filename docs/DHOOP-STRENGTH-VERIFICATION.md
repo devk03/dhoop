@@ -27,6 +27,20 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 
 ## Physical checks still required
 
+### Build 478 replacement evidence
+
+- iOS build and macOS app/test build passed. The 68 selected engine/recovery tests and 32 selected
+  tracker/payload/client tests passed. No build 478 physical installation has been verified.
+- A synthetic body produced by `WorkoutCapturePayload` was accepted by the Life receiver's actual
+  strict schema at local commit `3cb8a0f`. This checks nullable order, explicit observed order and
+  replacement lineage. It does not prove a live POST, canonical projection or phone behavior.
+- Evidence: `/private/tmp/dhoop-strength-478-ios-build.log`,
+  `/private/tmp/dhoop-strength-478-replacement-app-tests.log`,
+  `/private/tmp/dhoop-strength-replacement-contract-tests.log` and
+  `/private/tmp/dhoop-native-replacement-fixture-tests.log`.
+
+### Device procedure
+
 1. Install over the existing app with its stable bundle/signing identity. Preserve SQLite and
    pairing. Confirm older workouts and imperial preferences still appear.
 2. Create a routine with two exercises. Start it with the original WHOOP connected and perform at
@@ -35,6 +49,9 @@ Latest validation evidence: `/private/tmp/dhoop-tracker-validation-reasons-tests
 3. Move an exercise card while resting. Confirm the current rest deadline, completed set labels,
    notes and numeric inputs remain unchanged. Undo, then move it again and relaunch. The reordered
    sheet and original source IDs must recover without duplicate sets.
+   Replace its unfinished sets. Confirm completed original sets/notes remain, the new card gets the
+   remaining count and new IDs, and the original rest deadline remains unchanged. Relaunch and undo
+   separately; no unperformed original sets may be fabricated at finish.
 4. Check native taps, holds, drag-off cancellation, scrolling and chart scrubbing. Check large
    Dynamic Type, VoiceOver labels, Reduce Motion and light/dark contrast on the actual device.
 5. Separately test background/locked collection and disconnection/reconnection, recording real
