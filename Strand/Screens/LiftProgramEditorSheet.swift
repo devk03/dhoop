@@ -26,6 +26,7 @@ struct LiftProgramEditorSheet: View {
     @State private var items: [LiftProgramItemRow] = []
     @State private var loaded = false
     @State private var saving = false
+    @State private var saveError: String?
 
     /// The line being added or edited (nil = that sheet is closed).
     @State private var editingItem: ItemEditTarget?
@@ -156,7 +157,7 @@ struct LiftProgramEditorSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
 
                 VStack(spacing: NoopMetrics.rowSpacing) {
                     Button {
@@ -183,7 +184,7 @@ struct LiftProgramEditorSheet: View {
                     .accessibilityLabel("Remove exercise")
                 }
                 .font(.system(size: 12, weight: .semibold))
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .foregroundStyle(StrandPalette.textSecondary)
             }
         }
@@ -237,16 +238,17 @@ struct LiftProgramEditorSheet: View {
     private var footer: some View {
         HStack {
             Button("Cancel") { dismiss() }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .font(StrandFont.body)
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer()
-            Button("Save") { Task { await save() } }
-                .buttonStyle(.noopPrimary)
+            NoopActionButton("Save", state: saving ? .working : .idle) { Task { await save() } }
                 .frame(maxWidth: 160)
                 .disabled(!canSave)
-                .opacity(canSave ? 1 : NoopButtonMetrics.disabledOpacity)
                 .accessibilityLabel("Save program")
+                .alert("Routine was not saved", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+                    Button("OK", role: .cancel) { saveError = nil }
+                } message: { Text(saveError ?? "Your changes are still available.") }
         }
     }
 
@@ -289,9 +291,13 @@ struct LiftProgramEditorSheet: View {
     }
 
     private func save() async {
-        guard canSave, let store = await repo.storeHandle() else { return }
+        guard canSave else { return }
         saving = true
         defer { saving = false }
+        guard let store = await repo.storeHandle() else {
+            saveError = "Storage is unavailable. Your routine changes are still open."
+            return
+        }
 
         let now = Int(Date().timeIntervalSince1970)
         let id = program?.id ?? UUID().uuidString
@@ -306,7 +312,6 @@ struct LiftProgramEditorSheet: View {
             updatedAt: now,
             archived: program?.archived ?? false
         )
-        _ = try? await store.upsertLiftPrograms([row])
 
         // `ord` is the array index: reordering the list is all it takes to reorder the program.
         let ordered = items.enumerated().map { index, item in
@@ -325,7 +330,8 @@ struct LiftProgramEditorSheet: View {
                 note: item.note
             )
         }
-        _ = try? await store.replaceLiftProgramItems(programId: id, items: ordered)
+        do { try await store.saveLiftProgram(row, items: ordered) }
+        catch { saveError = error.localizedDescription; return }
 
         await onSaved()
         dismiss()

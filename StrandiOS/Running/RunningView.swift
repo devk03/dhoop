@@ -27,6 +27,7 @@ private struct RunningContent: View, Equatable {
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var meditation: MeditationController
+    @EnvironmentObject private var liftSession: LiftSessionController
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
 
@@ -56,11 +57,13 @@ private struct RunningContent: View, Equatable {
                 } else if section == "Review" {
                     CardioDetectionView(localSpans: history.localSpans, sessionActive: controller.hasSession || history.loading)
                 } else {
-                    if controller.session == nil && !hiit.hasSession && !meditation.session.isInProgress {
-                        NoopSegmentedControl("Workout type", options: ["Zone run", "HIIT", "Intervals", "Meditation"], selection: $workoutMode,
+                    if controller.session == nil && !hiit.hasSession && !meditation.session.isInProgress && !liftSession.isActive {
+                        NoopSegmentedControl("Workout type", options: ["Strength", "Zone run", "HIIT", "Intervals", "Meditation"], selection: $workoutMode,
                             labels: ["Zone run": controller.isLoadingBaseline ? "Zone run" : controller.chosenTarget?.name ?? "Zone run"])
                     }
-                    if workoutMode == "Meditation" && controller.session == nil && !hiit.hasSession {
+                    if liftSession.isActive || workoutMode == "Strength" {
+                        LiftLogView(embedded: true)
+                    } else if workoutMode == "Meditation" && controller.session == nil && !hiit.hasSession {
                         MeditationCard()
                     } else if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
                         HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
@@ -77,7 +80,11 @@ private struct RunningContent: View, Equatable {
                 }
             }
         }
-        .onAppear { capturedAt = Date(); if meditation.session.isInProgress { workoutMode = "Meditation" } }
+        .onAppear {
+            capturedAt = Date()
+            if liftSession.isActive { workoutMode = "Strength" }
+            else if meditation.session.isInProgress { workoutMode = "Meditation" }
+        }
         .confirmationDialog("Discard this workout?", isPresented: Binding(get: { discardRunID != nil }, set: { if !$0 { discardRunID = nil } }), titleVisibility: .visible, presenting: discardRunID) { id in
             Button("Discard workout", role: .destructive) { controller.discard(id: id) }
             Button("Keep workout", role: .cancel) { }
@@ -128,7 +135,7 @@ private struct RunningContent: View, Equatable {
                                     .foregroundStyle(controller.targetMinutes == minutes ? NoopVisualStyle.selectedControlInk : StrandPalette.textSecondary)
                                     .background(controller.targetMinutes == minutes ? NoopVisualStyle.selectedControlFill : StrandPalette.surfaceInset,
                                                 in: RoundedRectangle(cornerRadius: NoopVisualStyle.compactRadius))
-                            }.buttonStyle(.plain).accessibilityLabel("\(minutes) minutes in zone")
+                            }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("\(minutes) minutes in zone")
                                 .accessibilityAddTraits(controller.targetMinutes == minutes ? .isSelected : [])
                         }
                     }
@@ -181,7 +188,7 @@ private struct RunningContent: View, Equatable {
                     .frame(minHeight: NoopMetrics.minimumTouchTarget)
             }
             Text(controller.baselineDescription).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            Button("Test WHOOP buzz") { controller.testBuzz() }.buttonStyle(.bordered)
+            Button("Test WHOOP buzz") { controller.testBuzz() }.buttonStyle(NoopButtonStyle(.secondary))
                 .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 .disabled(!controller.strapAlertsReady || !controller.workoutHapticsEnabled)
             if let message = controller.buzzTestMessage { Text(message).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
@@ -234,7 +241,7 @@ private struct RunningContent: View, Equatable {
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     Button("Edit time goal") {
                         editedMinutes = max(1, Int(run.goalSeconds / 60)); editingTimeGoal = true
-                    }.font(StrandFont.subhead).buttonStyle(.bordered)
+                    }.font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.secondary))
                         .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(controller.isSaving)
                 }
                 let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
@@ -291,7 +298,7 @@ private struct RunningContent: View, Equatable {
     @ViewBuilder private func sessionButtons(_ run: RunningZoneSession) -> some View {
         if run.phase == .running {
             Button("Pause") { controller.pause() }
-                .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
         } else if run.phase == .paused {
             Button("Resume") { controller.resume() }
                 .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.metricCyan)
@@ -299,9 +306,9 @@ private struct RunningContent: View, Equatable {
         }
         if run.phase == .completed, controller.completionBuzzActive {
             Button("Stop buzzes") { controller.stopCompletionBuzz() }
-                .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
             Button("I felt it · stop buzzes") { controller.acknowledgeCompletion() }
-                .buttonStyle(.bordered).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                .buttonStyle(NoopButtonStyle(.secondary)).frame(minHeight: NoopMetrics.minimumTouchTarget)
         }
         Button(controller.isSaving ? "Saving…" : run.phase == .completed ? "Stop buzzes & save" : "End early & save") { controller.endAndSave() }
             .buttonStyle(NoopButtonStyle(.primary)).tint(StrandPalette.accent).frame(minHeight: NoopMetrics.minimumTouchTarget)
@@ -316,7 +323,7 @@ private struct RunningContent: View, Equatable {
                     Text(alertReadiness).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     Text("No buzzes outside the range. Goal completion cues repeat every ten seconds for up to three minutes or until stopped. No wake alarms are changed.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    Button("Test WHOOP buzz") { controller.testBuzz() }.buttonStyle(.bordered)
+                    Button("Test WHOOP buzz") { controller.testBuzz() }.buttonStyle(NoopButtonStyle(.secondary))
                         .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!controller.strapAlertsReady || !controller.workoutHapticsEnabled)
                     if let message = controller.buzzTestMessage { Text(message).font(StrandFont.caption) }
                 }.padding(.top, NoopMetrics.space2)

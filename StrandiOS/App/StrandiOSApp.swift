@@ -104,11 +104,23 @@ struct StrandiOSApp: App {
         // about BLE and stays testable.
         let liftSession = LiftSessionController(
             buzz: { [weak model] loops in
-                model?.buzz(loops: loops, gate: HapticPrefs.liftRest)
+                model?.requestBuzz(owner: "strength-workout", loops: loops, gate: HapticPrefs.liftRest)
             },
             setStrapHandler: { [weak model] handler in
                 model?.strapDoubleTapOverride = handler
             },
+            setCollectionActive: { [weak model] active in
+                guard let model else { return false }
+                if active {
+                    guard model.ble.buzzDelivery.claim("strength-workout") else { return false }
+                    model.startRealtimeHR()
+                } else {
+                    model.ble.buzzDelivery.release("strength-workout")
+                    model.stopRealtimeHR()
+                }
+                return true
+            },
+            currentDeviceId: { [weak model] in model?.repo.deviceId },
             log: { [weak model] line in
                 model?.live.append(log: AppModel.stamped(line))
             })

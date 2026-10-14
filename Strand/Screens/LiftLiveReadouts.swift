@@ -41,10 +41,23 @@ struct LiftHeartRate: View {
 
     let style: Style
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var live: LiveState
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var session: LiftSessionController
 
     var body: some View {
-        let tint = model.bpm == nil ? StrandPalette.textTertiary : StrandPalette.metricRose
-        let value = Text(model.bpm.map(String.init) ?? "—").monospacedDigit()
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let status = live.heartRateEvidence.status(connected: live.connected, isWhoop: live.activeIsWhoop,
+                heartRate: model.bpm, at: context.date.timeIntervalSince1970,
+                silenceSeconds: LiveState.heartRateSilenceSeconds, expectedDeviceId: session.sourceDeviceId ?? repo.deviceId,
+                connectionDeviceId: live.connectedWhoopDeviceId)
+            readout(status.bpm)
+        }
+    }
+
+    @ViewBuilder private func readout(_ bpm: Int?) -> some View {
+        let tint = bpm == nil ? StrandPalette.textTertiary : StrandPalette.metricRose
+        let value = Text(bpm.map(String.init) ?? "—").monospacedDigit()
         switch style {
         case .compact:
             HStack(spacing: 3) {
@@ -53,8 +66,8 @@ struct LiftHeartRate: View {
                 value.font(StrandFont.captionNumber)
             }
             .foregroundStyle(tint)
-            .accessibilityLabel(model.bpm.map { String(localized: "Heart rate \($0)") }
-                                ?? String(localized: "Heart rate"))
+            .accessibilityLabel(bpm.map { String(localized: "Heart rate \($0)") }
+                                ?? String(localized: "Heart rate unavailable"))
         case .plain:
             value
                 .font(StrandFont.bodyNumber)

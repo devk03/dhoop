@@ -17,6 +17,7 @@ import WhoopStore
 // imported-lifting path already made (`strain: nil, // never a fabricated cardiovascular strain`).
 
 struct LiftLogView: View {
+    var embedded = false
     @EnvironmentObject var repo: Repository
 
     /// Saved programs, most-recently-touched first. Loaded off the store on appear/refresh.
@@ -39,16 +40,15 @@ struct LiftLogView: View {
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
 
     var body: some View {
-        ScreenScaffold(
-            title: "Lift Log",
-            subtitle: "Build a program once, then tap through it at the gym. Kept on \(Platform.deviceNounPhrase).",
-            onRefresh: { await load() }
-        ) {
-            VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                headerCard
-                programsSection
-                weekSection
-                historySection
+        Group {
+            if embedded {
+                content
+            } else {
+                ScreenScaffold(
+                    title: "Strength",
+                    subtitle: "Routines, sets, and WHOOP heart rate. Kept on \(Platform.deviceNounPhrase).",
+                    onRefresh: { await load() }
+                ) { content }
             }
         }
         // Also on a saved session: the session sheet lives above this screen and cannot tell it
@@ -64,6 +64,19 @@ struct LiftLogView: View {
         }
         .sheet(item: $viewing) { target in
             LiftSessionDetailSheet(session: target.session) { await load() }
+        }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+            if !embedded { headerCard }
+            programsSection
+            if let message = session.collectionMessage {
+                Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            weekSection
+            historySection
         }
     }
 
@@ -171,11 +184,9 @@ struct LiftLogView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
 
-                Button(session.isActive ? "Running" : "Start") { Task { await start(program) } }
-                    .buttonStyle(.noopPrimary)
-                    .frame(maxWidth: 110)
+                NoopAsyncButton(session.isActive ? "Resume" : "Start", systemImage: "play.fill") { try await start(program) }
                     .accessibilityLabel("Start this program")
             }
         }
@@ -185,11 +196,12 @@ struct LiftLogView: View {
 
     /// Flatten a program into the plan the session runs. The plan is SNAPSHOT at start: editing or
     /// deleting the program mid-session cannot change what is being tapped through.
-    private func start(_ program: LiftProgramRow) async {
-        guard let store = await repo.storeHandle() else { return }
-        let items = (try? await store.liftProgramItems(programId: program.id)) ?? []
-        guard !items.isEmpty else { return }
-        let vocabulary = (try? await store.liftExercises(deviceId: repo.deviceId)) ?? []
+    private func start(_ program: LiftProgramRow) async throws {
+        if session.isActive { session.isPresented = true; return }
+        guard let store = await repo.storeHandle() else { throw StrengthStartError.storageUnavailable }
+        let items = try await store.liftProgramItems(programId: program.id)
+        guard !items.isEmpty else { throw StrengthStartError.emptyRoutine }
+        let vocabulary = try await store.liftExercises(deviceId: repo.deviceId)
 
         let plan = items.map { item -> LiftPlanItem in
             // The classification comes from the exercise vocabulary, which is the one place that owns
@@ -215,7 +227,9 @@ struct LiftLogView: View {
             session.isPresented = true
             return
         }
-        session.start(plan: plan, programId: program.id, programName: program.name)
+        guard session.start(plan: plan, programId: program.id, programName: program.name) else {
+            throw StrengthStartError.conflictingSession
+        }
     }
 
     // MARK: - This week, per muscle
@@ -329,7 +343,7 @@ struct LiftLogView: View {
                     } label: {
                         historyRow(session)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NoopFeedbackButtonStyle())
                 }
             }
         }
@@ -372,6 +386,17 @@ struct LiftLogView: View {
                                                       fromTs: now - 7 * 86_400,
                                                       toTs: now).fractional) ?? [:]
         loaded = true
+    }
+}
+
+private enum StrengthStartError: LocalizedError {
+    case storageUnavailable, emptyRoutine, conflictingSession
+    var errorDescription: String? {
+        switch self {
+        case .storageUnavailable: return "Storage is unavailable. Please try again."
+        case .emptyRoutine: return "Add an exercise to this routine before starting."
+        case .conflictingSession: return "Another workout owns WHOOP collection. Finish or pause it before starting Strength."
+        }
     }
 }
 

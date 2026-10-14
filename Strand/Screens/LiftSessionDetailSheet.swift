@@ -32,6 +32,7 @@ struct LiftSessionDetailSheet: View {
     @State private var loaded = false
     @State private var confirmingDelete = false
     @State private var deleting = false
+    @State private var deleteError: String?
     @State private var editing = false
     /// Session RPE as stored now. The edit sheet can correct it, and the session load must follow.
     @State private var sessionRpe: Double?
@@ -75,6 +76,9 @@ struct LiftSessionDetailSheet: View {
                 await onChanged()
             }
         }
+        .alert("Session was not deleted", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) { deleteError = nil }
+        } message: { Text(deleteError ?? "Please try again.") }
     }
 
     /// The session as stored now, with any corrected RPE.
@@ -98,7 +102,7 @@ struct LiftSessionDetailSheet: View {
             Label("Delete session", systemImage: "trash")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .font(StrandFont.body)
         .foregroundStyle(StrandPalette.statusCritical)
         .padding(.top, NoopMetrics.gap)
@@ -117,8 +121,8 @@ struct LiftSessionDetailSheet: View {
         deleting = true
         defer { deleting = false }
 
-        _ = try? await store.deleteLiftSession(id: session.id)   // cascades to its sets
-        if let workout { await repo.deleteWorkout(workout) }
+        do { _ = try await store.deleteLiftRecording(session) }
+        catch { deleteError = error.localizedDescription; return }
 
         await onChanged()
         dismiss()

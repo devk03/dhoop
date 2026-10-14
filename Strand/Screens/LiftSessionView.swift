@@ -32,6 +32,7 @@ struct LiftSessionView: View {
     @State private var confirmingDiscard = false
     @State private var sessionRpeText = ""
     @State private var saving = false
+    @State private var saveError: String?
     /// The two questions finishing can ask. Nil until answered: saving waits for an answer rather than
     /// deciding for the user.
     @State private var unfinishedChoice: UnfinishedChoice?
@@ -87,6 +88,7 @@ struct LiftSessionView: View {
         .frame(width: 560, height: 800)
         #endif
         .background(StrandPalette.surfaceBase)
+        .disabled(session.isSaving)
         .keyboardDoneToolbar($focused)
         .dismissesKeyboardOnTap($focused)
         // Re-read whenever the session's exercises change, so an exercise added mid-session that was
@@ -99,6 +101,9 @@ struct LiftSessionView: View {
             draft = draft.filter { $0.key == now }
         }
         .sheet(isPresented: $showingFinish) { finishSheet }
+        .alert("Session was not saved", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "Your session is still available. Please try again.") }
     }
 
     // MARK: - The scrollable sheet
@@ -108,6 +113,7 @@ struct LiftSessionView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                     header(engine)
+                    LiftCollectionReadout(fromTs: engine.startTs, deviceId: session.sourceDeviceId)
                     ForEach(Array(engine.plan.enumerated()), id: \.offset) { index, item in
                         exerciseCard(engine, index: index, item: item)
                     }
@@ -161,7 +167,7 @@ struct LiftSessionView: View {
                                   style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NoopFeedbackButtonStyle())
         .disabled(!canAdd)
     }
 
@@ -246,7 +252,7 @@ struct LiftSessionView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .disabled(!canAdd)
             .accessibilityLabel(String(localized: "Add a set to \(item.exercise)"))
 
@@ -262,7 +268,7 @@ struct LiftSessionView: View {
                     .frame(width: Self.tickColumnWidth)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .disabled(!canRemove)
             .accessibilityLabel(String(localized: "Remove the last set from \(item.exercise)"))
         }
@@ -322,7 +328,7 @@ struct LiftSessionView: View {
                     .frame(width: Self.setColumnWidth, alignment: .center)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .accessibilityLabel(isWarmup(slot)
                                 ? String(localized: "Warm-up set — tap to make it a working set")
                                 : String(localized: "Set \(slot.setIndex) — tap to mark it a warm-up"))
@@ -348,7 +354,7 @@ struct LiftSessionView: View {
                                      ? StrandPalette.textTertiary
                                      : StrandPalette.statusPositive)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .frame(width: Self.tickColumnWidth)
             .accessibilityLabel(recorded == nil
                                 ? String(localized: "Start this set")
@@ -543,7 +549,7 @@ struct LiftSessionView: View {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.system(size: 15, weight: .semibold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .foregroundStyle(engine.canUndo ? StrandPalette.textSecondary : StrandPalette.textTertiary)
                 .disabled(!engine.canUndo)
                 .accessibilityLabel("Undo")
@@ -662,10 +668,8 @@ struct LiftSessionView: View {
 
                 // One way to save. Session RPE above is optional, so an empty field is simply no rating;
                 // a separate "Skip" saved exactly the same way and read as a second choice.
-                Button("Save session") { Task { await save() } }
-                    .buttonStyle(.noopPrimary)
+                NoopActionButton("Save session", fullWidth: true, state: saving ? .working : .idle) { Task { await save() } }
                     .disabled(saving || !answered)
-                    .opacity(saving || !answered ? NoopButtonMetrics.disabledOpacity : 1)
                 if !answered {
                     Text("Choose an option above to save.")
                         .font(StrandFont.footnote)
@@ -681,7 +685,7 @@ struct LiftSessionView: View {
                     Label("Discard session", systemImage: "trash")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .font(StrandFont.body)
                 .foregroundStyle(StrandPalette.statusCritical)
                 .padding(.top, 4)
@@ -811,16 +815,23 @@ struct LiftSessionView: View {
     }
 
     private func save() async {
-        guard !saving, let store = await repo.storeHandle() else { return }
+        guard !saving, session.beginSaving() else { return }
         saving = true
-        defer { saving = false }
+        defer { saving = false; session.endSaving() }
+        guard let store = await repo.storeHandle() else {
+            saveError = "Storage is unavailable. Your workout and entries are still open."
+            return
+        }
+        do { try await save(to: store) }
+        catch { saveError = error.localizedDescription }
+    }
 
-        session.finish()
+    private func save(to store: WhoopStore) async throws {
         guard let engine = session.engine else { return }
         let endTs = Int(Date().timeIntervalSince1970)
         let sessionId = UUID().uuidString
         // After `finish`, which closes out the running rest: that set's measured rest belongs to it.
-        let finished = session.setsToSave(completingUnfinished: unfinishedChoice == .complete)
+        let finished = session.setsToSave(completingUnfinished: unfinishedChoice == .complete, finishingAt: endTs)
 
         // Nothing to file, so file nothing. With no set done, "Discard them" turns every set into a zero.
         // Filing that anyway wrote a session with nothing in it AND a manual workout, and the engine fills
@@ -828,20 +839,19 @@ struct LiftSessionView: View {
         // still read back as a workout. The finish sheet says so before Save. The program's set counts
         // are a separate thing the user chose explicitly, so those still apply.
         guard LiftSessionController.anyPerformed(finished) else {
-            await writeProgram(store: store, plan: engine.plan, sets: finished)
+            try await writeProgram(store: store, plan: engine.plan, sets: finished)
             await finishAndDismiss()
             return
         }
 
         let row = LiftSessionRow(
-            id: sessionId, deviceId: repo.deviceId,
+            id: sessionId, deviceId: session.sourceDeviceId ?? repo.deviceId,
             startTs: engine.startTs, endTs: endTs, sport: LiftSessionView.sport,
             programId: session.programId,
             // Snapshot the name: renaming or deleting the program never rewrites this session.
             programName: session.programName,
             sessionRpe: LiftFormat.number(sessionRpeText),
             note: session.programName)
-        _ = try? await store.upsertLiftSessions([row])
 
         // `ord` is COMPLETION order, which with out-of-order work is not the plan's order — and it
         // is the order that actually happened, which is what a session should read back as. Sets
@@ -849,7 +859,7 @@ struct LiftSessionView: View {
         let rows = finished.enumerated().map { ord, s -> LiftSetRow in
             let item = engine.planItem(for: s.slot)
             return LiftSetRow(
-                id: UUID().uuidString, deviceId: repo.deviceId, sessionId: sessionId,
+                id: UUID().uuidString, deviceId: row.deviceId, sessionId: sessionId,
                 ord: ord, exercise: item?.exercise ?? "",
                 // Snapshot the classification AS IT WAS, so reclassifying later never rewrites what
                 // past weeks were counted as.
@@ -859,9 +869,6 @@ struct LiftSessionView: View {
                 isWarmup: s.isWarmup, startTs: s.startTs, endTs: s.endTs,
                 restSec: s.restSec, note: nil)
         }
-        _ = try? await store.upsertLiftSets(rows)
-        await writeProgram(store: store, plan: engine.plan, sets: finished)
-
         // Through the SAME path a manual workout takes, so it inherits overlap dedup, the engine's
         // HR-derived strain fill and delete/merge. `strain` stays nil deliberately: the engine fills
         // it from the heart rate the strap MEASURED, never from typed sets and reps.
@@ -870,7 +877,8 @@ struct LiftSessionView: View {
             source: "manual", durationS: Double(max(0, endTs - engine.startTs)),
             energyKcal: nil, avgHr: nil, maxHr: nil, strain: nil,
             distanceM: nil, zonesJSON: nil, notes: session.programName, steps: nil)
-        await repo.saveManualWorkout(workout)
+        let updatedProgramItems = try await programChanges(store: store, plan: engine.plan, sets: finished)
+        try await store.saveLiftRecording(session: row, sets: rows, workout: workout, updatedProgramItems: updatedProgramItems)
 
         await finishAndDismiss()
     }
@@ -901,14 +909,20 @@ struct LiftSessionView: View {
     /// and a line deleted since is not resurrected. The store call replaces the lines wholesale, so
     /// nothing is written when no line differs.
     private func writeProgram(store: WhoopStore, plan: [LiftPlanItem],
-                              sets: [LiftSessionController.FinishedSet]) async {
+                              sets: [LiftSessionController.FinishedSet]) async throws {
         guard let programId = session.programId,
-              let rows = try? await store.liftProgramItems(programId: programId) else { return }
+              let edited = try await programChanges(store: store, plan: plan, sets: sets) else { return }
+        _ = try await store.replaceLiftProgramItems(programId: programId, items: edited)
+    }
+
+    private func programChanges(store: WhoopStore, plan: [LiftPlanItem],
+                                sets: [LiftSessionController.FinishedSet]) async throws -> [LiftProgramItemRow]? {
+        guard let programId = session.programId else { return nil }
+        let rows = try await store.liftProgramItems(programId: programId)
         let edited = LiftSessionController.programAfterSession(
             sets, plan: plan, program: rows, keepingChanges: programChoice == .update,
-            programId: programId, deviceId: repo.deviceId)
-        guard edited != rows else { return }
-        _ = try? await store.replaceLiftProgramItems(programId: programId, items: edited)
+            programId: programId, deviceId: session.sourceDeviceId ?? repo.deviceId)
+        return edited != rows ? edited : nil
     }
 
     /// The sport every logged session is filed under — the same token the Hevy/Liftosaur importer

@@ -32,6 +32,7 @@ struct LiftSessionEditSheet: View {
     @State private var sessionRpeText = ""
     @State private var originalSessionRpe = ""
     @State private var saving = false
+    @State private var saveError: String?
     /// A weight or reps field whose 0 was emptied when it was focused.
     @State private var clearedZero: Field?
 
@@ -89,6 +90,9 @@ struct LiftSessionEditSheet: View {
             if swapText(now, "0", "") { clearedZero = now }
         }
         .onAppear(perform: fill)
+        .alert("Changes were not saved", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "Your edits are still available. Please try again.") }
     }
 
     private var sessionRpeCard: some View {
@@ -138,7 +142,7 @@ struct LiftSessionEditSheet: View {
                     .frame(width: LiftSessionView.setColumnWidth, alignment: .center)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .accessibilityLabel(warmup
                                 ? String(localized: "Warm-up set — tap to make it a working set")
                                 : String(localized: "Set \(position + 1) — tap to mark it a warm-up"))
@@ -166,7 +170,7 @@ struct LiftSessionEditSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .disabled(!canAdd)
             .accessibilityLabel(String(localized: "Add a set to \(group.name)"))
 
@@ -177,7 +181,7 @@ struct LiftSessionEditSheet: View {
                                                : StrandPalette.textTertiary.opacity(0.4))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NoopFeedbackButtonStyle())
             .disabled(!canRemove)
             .accessibilityLabel(String(localized: "Remove the last set from \(group.name)"))
         }
@@ -255,15 +259,12 @@ struct LiftSessionEditSheet: View {
     private var footer: some View {
         HStack {
             Button("Cancel") { dismiss() }
-                .buttonStyle(.plain)
+                .buttonStyle(NoopFeedbackButtonStyle())
                 .font(StrandFont.body)
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer()
-            Button("Save changes") { Task { await save() } }
-                .buttonStyle(.noopPrimary)
-                .frame(maxWidth: 180)
+            NoopActionButton("Save changes", state: saving ? .working : .idle) { Task { await save() } }
                 .disabled(saving || !hasChanges)
-                .opacity(saving || !hasChanges ? NoopButtonMetrics.disabledOpacity : 1)
         }
     }
 
@@ -285,19 +286,22 @@ struct LiftSessionEditSheet: View {
     }
 
     private func save() async {
-        guard !saving, let store = await repo.storeHandle() else { return }
+        guard !saving else { return }
         saving = true
         defer { saving = false }
+        guard let store = await repo.storeHandle() else {
+            saveError = "Storage is unavailable. Your changes are still open."
+            return
+        }
 
         restoreClearedZero()
         let change = Self.changes(from: sets, to: exercises, system: unitSystem)
-        if !change.upserts.isEmpty { _ = try? await store.upsertLiftSets(change.upserts) }
-        if !change.deletedIds.isEmpty { _ = try? await store.deleteLiftSets(ids: change.deletedIds) }
+        var row = session
         if sessionRpeText != originalSessionRpe {
-            var row = session
             row.sessionRpe = LiftFormat.number(sessionRpeText)
-            _ = try? await store.upsertLiftSessions([row])
         }
+        do { try await store.editLiftRecording(session: row, upserts: change.upserts, deletedSetIDs: change.deletedIds) }
+        catch { saveError = error.localizedDescription; return }
         await onSaved()
         dismiss()
     }
