@@ -1,6 +1,7 @@
 import XCTest
 import SwiftUI
 import StrandDesign
+import UIKit
 
 @MainActor
 final class LayoutRenderingTests: XCTestCase {
@@ -37,6 +38,29 @@ final class LayoutRenderingTests: XCTestCase {
         let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways
         add(attachment)
     }
+    func testScrollDeliversPressWithoutDelayAndKeepsNativePanCancellation() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let oldKey = scene.windows.first { $0.isKeyWindow }
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: ScrollView {
+            Button("UI test fixture") { }.buttonStyle(NoopButtonStyle(.primary))
+        })
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; oldKey?.makeKey() }
+        host.view.layoutIfNeeded()
+        await Task.yield()
+        host.view.layoutIfNeeded()
+        func find(_ view: UIView) -> UIScrollView? {
+            if let scroll = view as? UIScrollView { return scroll }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        let scroll = try XCTUnwrap(find(host.view))
+        XCTAssertFalse(scroll.delaysContentTouches)
+        XCTAssertTrue(scroll.canCancelContentTouches)
+        XCTAssertTrue(scroll.panGestureRecognizer.isEnabled)
+    }
+
     func testPendingReservationTimingOnNativeMainActor() async {
         let action = NoopActionController()
         let begin = CACurrentMediaTime()

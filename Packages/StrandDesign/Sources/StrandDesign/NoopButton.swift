@@ -90,6 +90,7 @@ struct NoopPressFeedback: ViewModifier {
     @Environment(\.isEnabled) private var isEnabled
     func body(content: Content) -> some View {
         content
+            .responsiveScrollTouches()
             .contentShape(Rectangle())
             .opacity(isEnabled ? (pressed ? NoopButtonMetrics.pressedOpacity : 1) : NoopButtonMetrics.disabledOpacity)
             .scaleEffect(pressed && isEnabled && !reduceMotion && scalesOnPress ? NoopButtonMetrics.pressedScale : 1)
@@ -193,6 +194,7 @@ struct NoopButtonChrome: ViewModifier {
         let scale: CGFloat = (pressed && !reduceMotion) ? NoopButtonMetrics.pressedScale : 1
         let opacity: Double = pressed ? NoopButtonMetrics.pressedOpacity : 1
         content
+            .responsiveScrollTouches()
             .labelStyle(.titleAndIcon)
             .font(StrandFont.headline.weight(.semibold))
             .tracking(NoopButtonMetrics.tracking)

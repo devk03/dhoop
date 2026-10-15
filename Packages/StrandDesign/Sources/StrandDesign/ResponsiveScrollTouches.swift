@@ -22,22 +22,45 @@ private struct ResponsiveScrollTouchBridge: UIViewRepresentable {
 
     final class Probe: UIView {
         private weak var scroll: UIScrollView?
-        private var previousDelay = true
+        private let token = UUID()
         override func didMoveToWindow() { super.didMoveToWindow(); configure() }
         override func didMoveToSuperview() { super.didMoveToSuperview(); configure() }
         func configure() {
             var ancestor = superview
             while let view = ancestor {
                 if let candidate = view as? UIScrollView {
-                    guard scroll !== candidate else { return }
-                    restore(); scroll = candidate; previousDelay = candidate.delaysContentTouches
-                    candidate.delaysContentTouches = false
+                    guard scroll !== candidate else { candidate.delaysContentTouches = false; return }
+                    restore(); scroll = candidate
+                    ScrollTouchLeases.acquire(candidate, token: token)
                     return
                 }
                 ancestor = view.superview
             }
         }
-        func restore() { scroll?.delaysContentTouches = previousDelay; scroll = nil }
+        func restore() { if let scroll { ScrollTouchLeases.release(scroll, token: token) }; scroll = nil }
+    }
+}
+
+@MainActor
+private enum ScrollTouchLeases {
+    private final class Lease: NSObject {
+        let original: Bool
+        var owners = Set<UUID>()
+        init(original: Bool) { self.original = original }
+    }
+    private static let leases = NSMapTable<UIScrollView, Lease>.weakToStrongObjects()
+    static func acquire(_ scroll: UIScrollView, token: UUID) {
+        let lease = leases.object(forKey: scroll) ?? Lease(original: scroll.delaysContentTouches)
+        lease.owners.insert(token); leases.setObject(lease, forKey: scroll)
+        scroll.delaysContentTouches = false
+    }
+    static func release(_ scroll: UIScrollView, token: UUID) {
+        guard let lease = leases.object(forKey: scroll) else { return }
+        lease.owners.remove(token)
+        if lease.owners.isEmpty {
+            scroll.delaysContentTouches = lease.original
+            leases.removeObject(forKey: scroll)
+        }
     }
 }
 #endif
