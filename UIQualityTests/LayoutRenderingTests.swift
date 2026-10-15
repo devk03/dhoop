@@ -29,6 +29,41 @@ final class LayoutRenderingTests: XCTestCase {
             try render(empty, name: "empty-" + label, size: size, scheme: scheme, width: width)
         }
     }
+    func testInlineSetRowsRemainReadableAtNarrowLargeAndLightDarkSizes() async throws {
+        for (label, size, scheme, width) in [("narrow-dark", DynamicTypeSize.large, ColorScheme.dark, CGFloat(320)),
+                                            ("large-dark", .accessibility3, .dark, 390),
+                                            ("narrow-light", .large, .light, 320)] {
+            let entry = VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Front Squat · Demo layout").font(StrandFont.headline)
+                WorkoutSetEntryRow(number: 1, kind: "work", loadUnit: "lb", loadHint: "190", repsHint: "6", completed: true, dirty: false, showRIR: false,
+                    load: .constant("190"), reps: .constant("6"), rir: .constant(""), save: {})
+                WorkoutSetEntryRow(number: 2, kind: "work", loadUnit: "lb", loadHint: "190", repsHint: "6", completed: false, dirty: false, showRIR: true,
+                    load: .constant(""), reps: .constant(""), rir: .constant(""), save: {})
+                WorkoutSetEntryRow(number: 3, kind: "warmup", loadUnit: nil, loadHint: "", repsHint: "10", completed: false, dirty: false, showRIR: false,
+                    load: .constant(""), reps: .constant(""), rir: .constant(""), save: {})
+            }.padding(NoopMetrics.space4).background(StrandPalette.surfaceRaised).foregroundStyle(StrandPalette.textPrimary)
+            try await renderHosted(entry, name: "inline-sets-" + label, size: size, scheme: scheme, width: width)
+        }
+    }
+
+    private func renderHosted<V: View>(_ content: V, name: String, size: DynamicTypeSize, scheme: ColorScheme, width: CGFloat) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let oldKey = scene.windows.first { $0.isKeyWindow }
+        let host = UIHostingController(rootView: content.frame(width: width).environment(\.dynamicTypeSize, size).environment(\.colorScheme, scheme).ignoresSafeArea())
+        let fitted = host.sizeThatFits(in: CGSize(width: width, height: 10000))
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(origin: .zero, size: fitted)
+        window.rootViewController = host; window.makeKeyAndVisible()
+        defer { window.isHidden = true; oldKey?.makeKey() }
+        await Task.yield(); host.view.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(size: fitted).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: fitted), afterScreenUpdates: true)
+        }
+        XCTAssertEqual(image.size.width, width, accuracy: 1)
+        XCTAssertGreaterThan(image.size.height, 100)
+        let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
+    }
+
     private func render<V: View>(_ view: V, name: String, size: DynamicTypeSize, scheme: ColorScheme, width: CGFloat) throws {
         let renderer = ImageRenderer(content: view.frame(width: width).environment(\.dynamicTypeSize, size).environment(\.colorScheme, scheme))
         renderer.scale = 1
