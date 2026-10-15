@@ -3438,6 +3438,7 @@ final class Repository: ObservableObject {
                         link.sqliteRowID = Int64(receipt)
                         if try await workoutReviewLinkExists(link, store: store) {
                             recovered.linkedWorkout = link
+                            recovered.activityLabel = link.sport
                         } else {
                             recovered.linkedWorkout = nil
                             recovered.recordingRemoved = true
@@ -3478,13 +3479,16 @@ final class Repository: ObservableObject {
         guard var review = try reviews.reviews(deviceID: deviceID).first(where: { $0.id == id })
         else { throw WorkoutReviewError.unavailable }
         guard review.expiredAt == nil else { throw WorkoutReviewError.unavailable }
-        if let activityLabel {
-            guard WorkoutReview.activityLabels.contains(activityLabel) else { throw WorkoutReviewError.unavailable }
-            review.activityLabel = activityLabel
-        }
-        guard decision != review.decision || (decision == .workout && review.recordingRemoved) else { return }
+        let selectedLabel = activityLabel ?? review.activityLabel ?? review.linkedWorkout?.sport ?? "Workout"
+        guard WorkoutReview.activityLabels.contains(selectedLabel) else { throw WorkoutReviewError.unavailable }
+        let relabel = decision == .workout && review.decision == .workout && !review.recordingRemoved &&
+            review.linkedWorkout.map({ $0.sport != selectedLabel }) == true
+        guard decision != review.decision || (decision == .workout && review.recordingRemoved) || relabel else { return }
         var link = review.linkedWorkout
-        if decision == .workout {
+        if relabel, let existing = link {
+            link = WorkoutReview.Link(owner: existing.owner, startSec: existing.startSec, endSec: existing.endSec,
+                sport: selectedLabel, source: existing.source, sqliteRowID: existing.sqliteRowID)
+        } else if decision == .workout {
             let saved = await workoutRows()
             guard deviceId == deviceID else { throw WorkoutReviewError.unavailable }
             guard !saved.contains(where: { review.overlaps(start: $0.startTs, end: $0.endTs) }),
@@ -3492,7 +3496,7 @@ final class Repository: ObservableObject {
             else { throw WorkoutReviewError.alreadySaved }
             let owner = deviceID + "-noop"
             link = WorkoutReview.Link(owner: owner, startSec: review.startSec,
-                endSec: review.endSec, sport: review.activityLabel ?? "Workout", source: owner)
+                endSec: review.endSec, sport: selectedLabel, source: owner)
         }
         if let link {
             guard link.owner == deviceID + "-noop", link.source == link.owner,
@@ -3518,6 +3522,7 @@ final class Repository: ObservableObject {
         if decision == .workout {
             link?.sqliteRowID = receipt
             review.linkedWorkout = link
+            review.activityLabel = link?.sport
         } else { review.linkedWorkout = nil }
         review.decision = decision
         review.recordingRemoved = false
@@ -3533,6 +3538,14 @@ final class Repository: ObservableObject {
         try await store.registryWriter.write { db in
             var receipt: Int64 = 0
             if operation.decision == .workout, let link = operation.link {
+                if let old = operation.before.linkedWorkout {
+                    let rowID = try Int64.fetchOne(db, sql: "SELECT rowid FROM workout WHERE deviceId = ? AND startTs = ? AND endTs = ? AND sport = ? AND source = ?",
+                        arguments: [old.owner, old.startSec, old.endSec, old.sport, old.source])
+                    guard let rowID, old.sqliteRowID == nil || old.sqliteRowID == rowID else { throw WorkoutReviewError.changedRecording }
+                    try db.execute(sql: "UPDATE workout SET sport = ? WHERE rowid = ?", arguments: [link.sport, rowID])
+                    guard db.changesCount == 1 else { throw WorkoutReviewError.changedRecording }
+                    receipt = rowID
+                } else {
                 try db.execute(sql: """
                     INSERT INTO workout (deviceId, startTs, endTs, sport, source, durationS, avgHr, maxHr)
                     SELECT ?, ?, ?, ?, ?, ?, ?, ?
@@ -3543,6 +3556,7 @@ final class Repository: ObservableObject {
                                      link.endSec, link.startSec])
                 guard db.changesCount == 1 else { throw WorkoutReviewError.alreadySaved }
                 receipt = db.lastInsertedRowID
+                }
             } else if let link = operation.link {
                 let existing = try Int64.fetchOne(db, sql: """
                     SELECT rowid FROM workout WHERE deviceId = ? AND startTs = ? AND sport = ?

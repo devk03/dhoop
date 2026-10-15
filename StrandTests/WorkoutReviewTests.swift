@@ -22,6 +22,31 @@ final class WorkoutReviewTests: XCTestCase {
         try await body()
     }
 
+    func testCorrectActivityUpdatesOnlyOwnedRecordingWithoutDuplicatingOrChangingStatistics() async throws {
+        try await withPreferences {
+            let device = "review-relabel-strap"
+            let store = try await WhoopStore.inMemory()
+            let repo = Repository(deviceId: device)
+            repo.setStoreForTesting(store)
+            let review = WorkoutReview(deviceID: device, startSec: 1000, endSec: 1900, avgBpm: 130, peakBpm: 160, durationMin: 15)
+            try WorkoutReviewStore().capture(review)
+            try await repo.setWorkoutReview(review.id, deviceID: device, decision: .workout, activityLabel: "Running")
+            let original = try XCTUnwrap(WorkoutReviewStore().reviews(deviceID: device).first?.linkedWorkout)
+            try await repo.setWorkoutReview(review.id, deviceID: device, decision: .workout, activityLabel: "Cycling")
+            let rows = try await store.workouts(deviceId: device + "-noop", from: 0, to: 4000, limit: -1)
+            XCTAssertEqual(rows.count, 1)
+            XCTAssertEqual(rows.first?.sport, "Cycling")
+            XCTAssertEqual(rows.first?.avgHr, 130)
+            XCTAssertEqual(rows.first?.maxHr, 160)
+            let corrected = try XCTUnwrap(WorkoutReviewStore().reviews(deviceID: device).first)
+            XCTAssertEqual(corrected.activityLabel, "Cycling")
+            XCTAssertEqual(corrected.linkedWorkout?.sqliteRowID, original.sqliteRowID)
+            try await repo.setWorkoutReview(review.id, deviceID: device, decision: .notWorkout)
+            let remaining = try await store.workouts(deviceId: device + "-noop", from: 0, to: 4000, limit: -1)
+            XCTAssertTrue(remaining.isEmpty)
+        }
+    }
+
     func testRejectAcceptRejectAcceptIsDurableAndNeverDuplicatesOrDeletesManualRows() async throws {
         try await withPreferences {
             let device = "review-strap"

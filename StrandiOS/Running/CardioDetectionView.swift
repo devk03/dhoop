@@ -83,12 +83,10 @@ struct CardioDetectionView: View {
                 .background(StrandPalette.surfaceInset, in: Capsule())
             if review.decision == .pending || review.decision == .notWorkout {
                 Text("Suggested · \(review.suggestedActivity)").font(StrandFont.subhead)
-                Picker("Activity type", selection: Binding(get: { activityLabels[review.id] ?? review.activityLabel ?? "Workout" }, set: { activityLabels[review.id] = $0 })) {
+            }
+            Picker("Activity type", selection: Binding(get: { activityLabels[review.id] ?? review.activityLabel ?? "Workout" }, set: { activityLabels[review.id] = $0 })) {
                     ForEach(WorkoutReview.activityLabels, id: \.self) { Text($0).tag($0) }
                 }.pickerStyle(.menu).disabled(saving || sessionActive)
-            } else {
-                Text(review.activityLabel ?? "Workout").font(StrandFont.subhead)
-            }
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: NoopMetrics.space3) { actions(review) }
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) { actions(review) }
@@ -100,6 +98,10 @@ struct CardioDetectionView: View {
     }
 
     @ViewBuilder private func actions(_ review: WorkoutReview) -> some View {
+        if review.decision == .workout, !review.recordingRemoved,
+           let chosen = activityLabels[review.id], chosen != (review.activityLabel ?? review.linkedWorkout?.sport ?? "Workout") {
+            NoopAsyncButton("Save activity type") { try await decide(review, .workout) }
+        }
         if review.decision != .workout || review.recordingRemoved {
             NoopAsyncButton(review.recordingRemoved ? "Save workout again" : (review.decision == .pending ? "Is a workout" : "Change to workout")) {
                 try await decide(review, .workout)
