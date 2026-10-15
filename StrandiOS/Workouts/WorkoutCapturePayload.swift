@@ -148,12 +148,19 @@ struct WorkoutCapturePayload: Encodable {
     /// Stored strap readings only; no extrapolated coverage or statistics for untimed sets.
     static func measuredEvidence(record: LiftSessionRow, sets: [LiftSetRow], store: WhoopStore) async throws -> [UUID: WorkoutObservedHeartRate] {
         guard let workoutEnd = record.endTs else { return [:] }
+        let phases = try record.activityIntervalsJSON.map(LiftActivityLedger.decode)
         var result: [UUID: WorkoutObservedHeartRate] = [:]
         for set in sets {
             guard set.sessionId == record.id, set.deviceId == record.deviceId,
                   let id = UUID(uuidString: set.id), let start = set.startTs, let end = set.endTs,
                   start >= record.startTs, end <= workoutEnd, end > start else { continue }
-            let measured = try await store.measuredHeartRateStats(deviceId: record.deviceId, from: start, toExclusive: end)
+            let measured: HRWindowStats
+            if let phases {
+                measured = try await store.measuredHeartRateStats(deviceId: record.deviceId,
+                    windows: LiftActivityLedger.workWindows(phases, setID: set.id))
+            } else {
+                measured = try await store.measuredHeartRateStats(deviceId: record.deviceId, from: start, toExclusive: end)
+            }
             result[id] = WorkoutObservedHeartRate(sampleCount: measured.n, coverageFraction: nil,
                 averageBpm: measured.avg, maximumBpm: measured.max.map(Double.init))
         }

@@ -37,6 +37,7 @@ final class LiftSessionController: ObservableObject {
     @Published private(set) var recordingId: UUID?
     @Published private(set) var trackerBinding: WorkoutTrackerCaptureBinding?
     @Published private(set) var setNotes: [LiftSlot: String] = [:]
+    private let persistenceDefaults: UserDefaults
     private var setIdentities: [LiftSlot: UUID] = [:]
     /// True while the full sheet is presented; false when minimised to the bottom bar.
     @Published var isPresented = false
@@ -137,7 +138,8 @@ final class LiftSessionController: ObservableObject {
          setStrapHandler: @escaping ((@MainActor () -> Void)?) -> Void,
          setCollectionActive: @escaping (Bool) -> Bool = { _ in true },
          currentDeviceId: @escaping () -> String? = { nil },
-         log: @escaping (String) -> Void = { _ in }) {
+         log: @escaping (String) -> Void = { _ in }, persistenceDefaults: UserDefaults = .standard) {
+        self.persistenceDefaults = persistenceDefaults
         self.buzz = buzz
         self.setStrapHandler = setStrapHandler
         self.log = log
@@ -195,7 +197,9 @@ final class LiftSessionController: ObservableObject {
         guard engine == nil else { return }
         lastSession = [:]; previousPerformanceError = nil
         previousReadGeneration += 1; readingPreviousPerformance = false
-        engine = LiftSessionPersistence.engine(from: snapshot)
+        var recovered = LiftSessionPersistence.engine(from: snapshot)
+        recovered.markRecovered(now: Self.unixNow)
+        engine = recovered
         sourceDeviceId = snapshot.sourceDeviceId
         trackerBinding = snapshot.trackerBinding
         recordingId = snapshot.recordingId.flatMap(UUID.init(uuidString:)) ?? snapshot.trackerBinding?.sourceWorkoutId ?? UUID()
@@ -229,14 +233,14 @@ final class LiftSessionController: ObservableObject {
     func discard() {
         guard !isSaving else { return }
         teardown()
-        LiftSessionPersistence.clear()
+        LiftSessionPersistence.clear(persistenceDefaults)
     }
 
     /// Called once the session has been written to the store.
     func finishedSaving() {
         guard engine != nil else { return }
         teardown()
-        LiftSessionPersistence.clear()
+        LiftSessionPersistence.clear(persistenceDefaults)
         savedSessions += 1
     }
 
@@ -306,7 +310,7 @@ final class LiftSessionController: ObservableObject {
 
     /// The one action. `fromStrap` earns a single confirming buzz, unless the tap reads as a knock.
     func advance(fromStrap: Bool = false) {
-        guard !isSaving, let current = engine else { return }
+        guard !isSaving, let current = engine, !current.isPaused, !current.phaseCapacityReached else { return }
         let stamp = Int(Date().timeIntervalSince1970)
         if fromStrap {
             if let sourceDeviceId, let current = currentDeviceId(), sourceDeviceId != current {
@@ -334,6 +338,25 @@ final class LiftSessionController: ObservableObject {
         applyPendingInput()
         warnedFor = nil
         persist()
+    }
+
+    func togglePause() {
+        guard !isSaving, let current = engine else { return }
+        if current.isPaused { engine?.resume(now: Self.unixNow) }
+        else { engine?.pause(now: Self.unixNow) }
+        warnedFor = nil
+        persist()
+    }
+
+    /// Resolve the single observed phase ledger against the same stable IDs used by saved sets.
+    func activityIntervals(finishingAt end: Int) -> [LiftActivityInterval]? {
+        guard var snapshot = engine else { return nil }
+        snapshot.finish(now: end)
+        return snapshot.activityPhases?.map { phase in
+            LiftActivityInterval(sourceIntervalId: phase.id.uuidString.lowercased(), kind: phase.kind,
+                sourceSetId: phase.slot.map { identity(for: $0).uuidString.lowercased() },
+                startedAt: phase.startedAt, endedAt: phase.endedAt)
+        }
     }
 
     /// Whether a strap double-tap `secondsSinceLastStep` after the last one the session acted on is a
@@ -385,6 +408,12 @@ final class LiftSessionController: ObservableObject {
         let started = Date(timeIntervalSince1970: TimeInterval(engine.stageStartedAt))
         let next = Self.nextLine(engine)
 
+        if engine.isPaused {
+            return Presentation(isResting: false,
+                exercise: engine.currentSlot.flatMap { engine.planItem(for: $0)?.exercise } ?? programName ?? "Session",
+                status: "Paused", detail: "Resume to record new working time", next: next,
+                stageStartedAt: started, restEndsAt: nil)
+        }
         guard let slot = engine.currentSlot, let item = engine.planItem(for: slot) else {
             return Presentation(isResting: false,
                                 exercise: programName ?? String(localized: "Session"),
@@ -581,7 +610,7 @@ final class LiftSessionController: ObservableObject {
 
     /// Begin a specific set — the out-of-order path, for when a machine is occupied.
     func start(_ slot: LiftSlot, fromStrap: Bool = false) {
-        guard !isSaving, engine != nil else { return }
+        guard !isSaving, let current = engine, !current.isPaused, !current.phaseCapacityReached else { return }
         if fromStrap {
             guard sourceDeviceId == currentDeviceId() else { return }
             deliverBuzz(LiftSessionController.advanceConfirmBuzzes)
@@ -939,7 +968,7 @@ final class LiftSessionController: ObservableObject {
 
     /// Re-arm the rest's timers when the rest changed — a new rest, a rest undone or cut short, no rest.
     private func scheduleRestTimers() {
-        let endsAt: Int? = { if case .resting(_, let end) = engine?.stage { return end }; return nil }()
+        let endsAt: Int? = { if engine?.isPaused == false, case .resting(_, let end) = engine?.stage { return end }; return nil }()
         guard endsAt != scheduledRestEnd else { return }
         scheduledRestEnd = endsAt
         restTimers.forEach { $0.cancel() }
@@ -972,6 +1001,7 @@ final class LiftSessionController: ObservableObject {
     }
 
     private func fireRestWarningIfDue() {
+        guard engine?.isPaused == false else { return }
         guard !isSaving, let engine, case .resting(_, let endsAt) = engine.stage else { return }
         guard warnedFor != endsAt else { return }
         guard Self.unixNow <= endsAt,
@@ -999,7 +1029,7 @@ final class LiftSessionController: ObservableObject {
                                             sourceDeviceId: sourceDeviceId,
                                             recordingId: recordingId?.uuidString.lowercased(), trackerBinding: trackerBinding,
                                             setNotes: setNotes.map { .init(exerciseIndex: $0.key.exerciseIndex, setIndex: $0.key.setIndex, text: $0.value) },
-                                            setIdentities: setIdentities.map { .init(exerciseIndex: $0.key.exerciseIndex, setIndex: $0.key.setIndex, id: $0.value.uuidString.lowercased()) }))
+                                            setIdentities: setIdentities.map { .init(exerciseIndex: $0.key.exerciseIndex, setIndex: $0.key.setIndex, id: $0.value.uuidString.lowercased()) }), into: persistenceDefaults)
         if updated { recoveryError = nil }
         else {
             if recoveryError == nil { log("Strength: session recovery snapshot could not be encoded; existing recovery data left untouched") }

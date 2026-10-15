@@ -503,3 +503,20 @@ tombstone-retention and existing recording tests passed in
 `/private/tmp/dhoop-lift-activity-tests.log`. This is software attribution evidence, not physiological
 accuracy or background execution evidence. Android still has schema/helper support rather than a
 strength-session Compose UI; that pre-existing feature gap remains explicit.
+
+### Build 495 — pause, recovery and phase-aware detail
+
+Strength now has Pause/Resume. Pausing freezes remaining rest and cancels its cue; strap gestures
+cannot advance or acknowledge a paused session. Pending input, set/interval IDs, source identity and
+notes survive recovery. Recovery opens paused and retains the former phase's unknown end. Set history
+and prepared measured-HR evidence use confirmed work windows; full-session HR remains the separately
+labeled workout window. The wire ledger is not sent to an unverified receiver.
+
+Seven hostless engine/recovery/controller tests passed in
+`/private/tmp/dhoop-lift-phase-engine-tests.log`, including real timer cancellation with an injected
+mock buzz handler and an isolated defaults suite. No strap cue was sent. iOS signed build and macOS
+build passed in `/private/tmp/dhoop-495-ios-build.log` and `/private/tmp/dhoop-495-macos-build.log`.
+The iOS artifact is build 495 with the stable owner bundle/signing identity and workout metadata type.
+The phone listing reports `0A-Homeboy` disconnected; this build is not installed or hardware-verified.
+The selected ImageGen study and exact prompt are saved under `docs/design/dhoop-strength-phase-study*`.
+The study's demo values, navigation and illustrative receipt freshness are not production data.

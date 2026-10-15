@@ -20,7 +20,7 @@ import WhoopStore
 // when the user says it does.
 
 /// One set of one exercise — a position on the sheet. `setIndex` is 1-based within its exercise.
-struct LiftSlot: Hashable {
+struct LiftSlot: Hashable, Codable {
     var exerciseIndex: Int
     var setIndex: Int
 }
@@ -110,6 +110,20 @@ struct LiftSetCarry: Equatable {
     static let none = LiftSetCarry(weightKg: nil, reps: nil)
 }
 
+/// One observed phase. Slot references are resolved to stable set IDs only at the storage boundary.
+struct LiftObservedPhase: Equatable, Codable {
+    var id: UUID
+    var kind: LiftActivityInterval.Kind
+    var slot: LiftSlot?
+    var startedAt: Int
+    var endedAt: Int?
+}
+
+struct LiftSessionPause: Equatable, Codable {
+    var remainingRest: Int?
+    var recovered: Bool
+}
+
 struct LiftSessionEngine: Equatable {
 
     enum Stage: Equatable {
@@ -141,6 +155,77 @@ struct LiftSessionEngine: Equatable {
     private(set) var sets: [LiftRecordedSet]
     /// When the current stage began, so a set's duration is measurable.
     private(set) var stageStartedAt: Int
+    private(set) var activityPhases: [LiftObservedPhase]? = []
+    private(set) var pauseState: LiftSessionPause?
+    private var openPhaseID: UUID?
+    var isPaused: Bool { pauseState != nil }
+    var phaseCapacityReached: Bool { (activityPhases?.count ?? 0) >= LiftActivityLedger.maximumIntervals }
+
+    /// Stop observed work/rest without pretending that a suspended app continued executing.
+    mutating func pause(now: Int) {
+        guard !isPaused, !isFinished, !phaseCapacityReached, validTime(now) else { return }
+        let remainder = restRemaining(now: now)
+        closePhase(now: now)
+        pauseState = .init(remainingRest: remainder, recovered: false)
+        let pausedSlot: LiftSlot? = { if case .working(let slot) = stage { return slot }; return nil }()
+        beginPhase(.pause, slot: pausedSlot, now: now)
+    }
+
+    mutating func resume(now: Int) {
+        guard let paused = pauseState, !isFinished, !phaseCapacityReached, validTime(now) else { return }
+        closePhase(now: now)
+        pauseState = nil
+        switch stage {
+        case .working(let slot): beginPhase(.work, slot: slot, now: now)
+        case .resting(let slot, _):
+            stage = .resting(slot, endsAt: now + (paused.remainingRest ?? 0))
+            beginPhase(.rest, slot: slot, now: now)
+        case .warmup, .finished: break
+        }
+    }
+
+    /// A crash leaves the prior phase unresolved. No new end is inferred from relaunch time.
+    mutating func markRecovered(now: Int) {
+        guard !isFinished else { return }
+        openPhaseID = nil
+        if pauseState == nil {
+            let remainder: Int? = { if case .resting(_, let end) = stage { return max(0, end - stageStartedAt) }; return nil }()
+            pauseState = .init(remainingRest: remainder, recovered: true)
+        } else { pauseState?.recovered = true }
+    }
+
+    private func validTime(_ now: Int) -> Bool {
+        now >= startTs && now >= (activityPhases?.last?.startedAt ?? stageStartedAt)
+    }
+
+    private mutating func beginPhase(_ kind: LiftActivityInterval.Kind, slot: LiftSlot?, now: Int) {
+        if activityPhases == nil { activityPhases = [] }
+        let id = UUID()
+        activityPhases?.append(.init(id: id, kind: kind, slot: slot, startedAt: now, endedAt: nil))
+        openPhaseID = id
+    }
+
+    private mutating func closePhase(now: Int) {
+        if let id = openPhaseID, let index = activityPhases?.firstIndex(where: { $0.id == id }) {
+            activityPhases?[index].endedAt = now
+        }
+        openPhaseID = nil
+    }
+
+    func observedWorkSeconds(for slot: LiftSlot?, now: Int) -> Int {
+        guard let slot else { return 0 }
+        return (activityPhases ?? []).filter { $0.kind == .work && $0.slot == slot }.reduce(0) { total, phase in
+            let end = phase.endedAt ?? (phase.id == openPhaseID ? now : phase.startedAt)
+            return total + max(0, end - phase.startedAt)
+        }
+    }
+
+    private func observedRest(for slot: LiftSlot, fallback: Int) -> Int? {
+        guard let phases = activityPhases else { return fallback }
+        let rest = phases.filter { $0.kind == .rest && $0.slot == slot }
+        guard !rest.isEmpty, rest.allSatisfy({ $0.endedAt != nil }) else { return nil }
+        return rest.reduce(0) { $0 + max(0, ($1.endedAt ?? $1.startedAt) - $1.startedAt) }
+    }
 
     /// Undo stack: whole-state snapshots rather than inverse operations. A gym is a bad place to be
     /// one tap ahead of yourself, and restoring a snapshot cannot get the arithmetic wrong the way a
@@ -159,6 +244,9 @@ struct LiftSessionEngine: Equatable {
         var stage: Stage
         var sets: [LiftRecordedSet]
         var stageStartedAt: Int
+        var activityPhases: [LiftObservedPhase]?
+        var pauseState: LiftSessionPause?
+        var openPhaseID: UUID?
     }
 
     init(plan: [LiftPlanItem], startTs: Int) {
@@ -176,10 +264,12 @@ struct LiftSessionEngine: Equatable {
     /// The undo history is deliberately NOT restored: it is a within-sitting convenience, and a
     /// stack that survives a relaunch invites reaching back past a save boundary.
     init(restoring plan: [LiftPlanItem], startTs: Int, stage: Stage,
-         sets: [LiftRecordedSet], stageStartedAt: Int, exerciseOrder: [Int]? = nil, exerciseReplacements: [Int: Int] = [:]) {
+         sets: [LiftRecordedSet], stageStartedAt: Int, exerciseOrder: [Int]? = nil, exerciseReplacements: [Int: Int] = [:], activityPhases: [LiftObservedPhase]? = nil, pauseState: LiftSessionPause? = nil) {
         self.plan = plan
         self.exerciseOrder = exerciseOrder.flatMap { $0.count == plan.count && Set($0) == Set(plan.indices) ? $0 : nil } ?? Array(plan.indices)
         self.exerciseReplacements = exerciseReplacements
+        self.activityPhases = activityPhases
+        self.pauseState = pauseState
         self.startTs = startTs
         self.stage = stage
         self.sets = sets
@@ -273,6 +363,7 @@ struct LiftSessionEngine: Equatable {
     /// Floored rather than negative so an overrun rest reads "0:00" and waits, which is what it
     /// actually means: the user has not moved on yet.
     func restRemaining(now: Int) -> Int? {
+        if let paused = pauseState { return paused.remainingRest }
         guard case .resting(_, let endsAt) = stage else { return nil }
         return max(0, endsAt - now)
     }
@@ -336,15 +427,20 @@ struct LiftSessionEngine: Equatable {
     /// because nothing was finished. Starting an already-completed slot re-opens it for a redo,
     /// dropping its previous record so the set is not counted twice.
     mutating func start(_ slot: LiftSlot, now: Int) {
-        guard let item = planItem(for: slot), (1...item.targetSets).contains(slot.setIndex), exerciseReplacements[slot.exerciseIndex] == nil else { return }
+        guard !isPaused, !phaseCapacityReached, validTime(now), let item = planItem(for: slot), (1...item.targetSets).contains(slot.setIndex), exerciseReplacements[slot.exerciseIndex] == nil else { return }
         pushHistory()
+        closePhase(now: now)
+        // Starting a redo explicitly replaces that slot's earlier attempt, like its set row.
+        activityPhases?.removeAll { $0.slot == slot }
         sets.removeAll { $0.slot == slot }
         stage = .working(slot)
         stageStartedAt = now
+        beginPhase(.work, slot: slot, now: now)
     }
 
     /// The big button. Context decides what it means.
     mutating func advance(now: Int) {
+        guard !isPaused, !phaseCapacityReached, validTime(now) else { return }
         switch stage {
         case .warmup:
             guard let next = nextPendingSlot else { return }
@@ -352,6 +448,7 @@ struct LiftSessionEngine: Equatable {
 
         case .working(let slot):
             pushHistory()
+            closePhase(now: now)
             // Timing only: the numbers stay grey until typed (see `carry(for:lastSession:)`).
             sets.append(LiftRecordedSet(
                 exerciseIndex: slot.exerciseIndex, setIndex: slot.setIndex,
@@ -360,22 +457,26 @@ struct LiftSessionEngine: Equatable {
             let rest = planItem(for: slot)?.restSec ?? LiftPlanItem.defaultRestSec
             stage = .resting(slot, endsAt: now + rest)
             stageStartedAt = now
+            beginPhase(.rest, slot: slot, now: now)
 
         case .resting(let slot, _):
             pushHistory()
+            closePhase(now: now)
             // Record what was ACTUALLY rested — the figure each set row shows, and the one thing
             // only the taps can know.
             if let i = sets.firstIndex(where: { $0.slot == slot }) {
-                sets[i].restSec = max(0, now - stageStartedAt)
+                sets[i].restSec = observedRest(for: slot, fallback: max(0, now - stageStartedAt))
             }
             if let next = slotAfter(slot) {
                 stage = .working(next)
                 stageStartedAt = now
+                beginPhase(.work, slot: next, now: now)
             } else {
                 // Sheet complete: stay put rather than inventing a stage. The user finishes when
                 // they are ready, and the time until then is the cool-down.
                 stage = .resting(slot, endsAt: now)
                 stageStartedAt = now
+                beginPhase(.rest, slot: slot, now: now)
             }
 
         case .finished:
@@ -497,28 +598,33 @@ struct LiftSessionEngine: Equatable {
     /// End the session. The rest that was running is closed out first, so its measured duration is
     /// not silently lost.
     mutating func finish(now: Int) {
-        guard stage != .finished else { return }
+        guard stage != .finished, validTime(now) else { return }
         pushHistory()
+        closePhase(now: now)
+        pauseState = nil
         if case .resting(let slot, _) = stage,
            let i = sets.firstIndex(where: { $0.slot == slot }), sets[i].restSec == nil {
-            sets[i].restSec = max(0, now - stageStartedAt)
+            sets[i].restSec = observedRest(for: slot, fallback: max(0, now - stageStartedAt))
         }
         stage = .finished
         stageStartedAt = now
     }
 
     mutating func undo() {
-        guard let previous = history.popLast() else { return }
+        guard !isPaused, let previous = history.popLast() else { return }
         plan = previous.plan
         exerciseOrder = previous.exerciseOrder
         exerciseReplacements = previous.exerciseReplacements
         stage = previous.stage
         sets = previous.sets
         stageStartedAt = previous.stageStartedAt
+        activityPhases = previous.activityPhases
+        pauseState = previous.pauseState
+        openPhaseID = previous.openPhaseID
     }
 
     private mutating func pushHistory() {
         history.append(Snapshot(plan: plan, exerciseOrder: exerciseOrder, exerciseReplacements: exerciseReplacements, stage: stage,
-                                sets: sets, stageStartedAt: stageStartedAt))
+                                sets: sets, stageStartedAt: stageStartedAt, activityPhases: activityPhases, pauseState: pauseState, openPhaseID: openPhaseID))
     }
 }

@@ -44,6 +44,8 @@ enum LiftSessionPersistence {
         var setNotes: [SetNote]? = nil
         var exerciseOrder: [Int]? = nil
         var exerciseReplacements: [Int: Int]? = nil
+        var activityPhases: [LiftObservedPhase]? = nil
+        var pauseState: LiftSessionPause? = nil
 
         struct SetNote: Codable, Equatable {
             let exerciseIndex: Int
@@ -148,6 +150,22 @@ enum LiftSessionPersistence {
                   replacements.allSatisfy({ raw.plan.indices.contains($0.key) && raw.plan.indices.contains($0.value) && $0.value > $0.key }) else { return nil }
             if raw.stage.kind == "working", let index = raw.stage.item, replacements[index] != nil { return nil }
         }
+        if let paused = raw.pauseState, let remaining = paused.remainingRest, remaining < 0 || remaining > Int.max / 2 { return nil }
+        if let phases = raw.activityPhases {
+            let intervals = phases.map { phase in
+                LiftActivityInterval(sourceIntervalId: phase.id.uuidString, kind: phase.kind,
+                    sourceSetId: phase.slot.map { "\($0.exerciseIndex)/\($0.setIndex)" },
+                    startedAt: phase.startedAt, endedAt: phase.endedAt)
+            }
+            let bounds = raw.plan.enumerated().flatMap { index, item -> [LiftActivityLedger.SetBounds] in
+                guard item.targetSets > 0, item.targetSets <= LiftSessionEngine.maxSetsPerExercise else { return [] }
+                return (1...item.targetSets).map { set in
+                    .init(id: "\(index)/\(set)", sessionId: "active", deviceId: "source", startTs: nil, endTs: nil)
+                }
+            }
+            guard (try? LiftActivityLedger.validate(intervals,
+                session: .init(id: "active", deviceId: "source", startTs: raw.startSec, endTs: nil), sets: bounds)) != nil else { return nil }
+        }
         return raw
     }
 
@@ -230,7 +248,7 @@ enum LiftSessionPersistence {
             sourceDeviceId: sourceDeviceId, recordingId: recordingId, trackerBinding: trackerBinding,
             setIdentities: setIdentities?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) },
             setNotes: setNotes?.sorted { ($0.exerciseIndex, $0.setIndex) < ($1.exerciseIndex, $1.setIndex) },
-            exerciseOrder: engine.exerciseOrder, exerciseReplacements: engine.exerciseReplacements)
+            exerciseOrder: engine.exerciseOrder, exerciseReplacements: engine.exerciseReplacements, activityPhases: engine.activityPhases, pauseState: engine.pauseState)
     }
 
     /// The numbers typed in advance, back as the controller holds them.
@@ -274,7 +292,7 @@ enum LiftSessionPersistence {
         }
         return LiftSessionEngine(restoring: plan, startTs: s.startSec,
                                  stage: unbox(s.stage), sets: sets, stageStartedAt: s.stageStartedAt, exerciseOrder: s.exerciseOrder,
-                                 exerciseReplacements: s.exerciseReplacements ?? [:])
+                                 exerciseReplacements: s.exerciseReplacements ?? [:], activityPhases: s.activityPhases, pauseState: s.pauseState)
     }
 
     private static func box(_ stage: LiftSessionEngine.Stage) -> Snapshot.StageBox {

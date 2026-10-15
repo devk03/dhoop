@@ -582,10 +582,16 @@ struct LiftSessionDetailSheet: View {
             let display = HistoricalHeartRateProjection.summarize(samples.map {
                 DashboardTraceSample(time: Double($0.ts), value: Double($0.bpm))
             }, from: Double(record.startTs), through: Double(end))
+            let phases = try record.activityIntervalsJSON.map(LiftActivityLedger.decode)
             var perSet: [String: HRWindowStats] = [:]
             for row in snapshot.sets {
                 guard let start = row.startTs, let stop = row.endTs, start >= record.startTs, stop <= end, stop > start else { continue }
-                perSet[row.id] = try await store.measuredHeartRateStats(deviceId: record.deviceId, from: start, toExclusive: stop)
+                if let phases {
+                    let windows = LiftActivityLedger.workWindows(phases, setID: row.id)
+                    perSet[row.id] = try await store.measuredHeartRateStats(deviceId: record.deviceId, windows: windows)
+                } else {
+                    perSet[row.id] = try await store.measuredHeartRateStats(deviceId: record.deviceId, from: start, toExclusive: stop)
+                }
             }
             guard !Task.isCancelled, detail.readID == ticket, detail.isFresh else { return }
             cachedHeartRateStats = stats; cachedSetHeartRate = perSet; cachedChartLimited = stats.n > samples.count

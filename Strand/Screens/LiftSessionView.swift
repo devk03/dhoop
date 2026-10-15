@@ -124,6 +124,22 @@ struct LiftSessionView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                     header(engine)
+                    if engine.isPaused {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                            Label("Paused", systemImage: "pause.circle.fill").font(StrandFont.title2)
+                            Text(engine.pauseState?.recovered == true
+                                ? "Recovered entries are retained. Unobserved time stays unknown; resume when ready."
+                                : "Paused time is excluded from working-set heart-rate statistics.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            if let remaining = engine.pauseState?.remainingRest {
+                                Text("Rest resumes with \(String(format: "%d:%02d", remaining / 60, remaining % 60))").font(StrandFont.caption)
+                            }
+                        }.padding(NoopMetrics.screenPadding).background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: NoopMetrics.cardRadius))
+                    }
+                    if engine.phaseCapacityReached {
+                        Text("The observed-phase limit has been reached. Finish and save this session before starting another.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+                    }
                     LiftCollectionReadout(fromTs: engine.startTs, deviceId: session.sourceDeviceId)
                     if session.readingPreviousPerformance { ProgressView("Reading previous performance…").font(StrandFont.caption) }
                     if let error = session.previousPerformanceError {
@@ -668,15 +684,22 @@ struct LiftSessionView: View {
                 }
                 .buttonStyle(NoopFeedbackButtonStyle())
                 .foregroundStyle(engine.canUndo ? StrandPalette.textSecondary : StrandPalette.textTertiary)
-                .disabled(!engine.canUndo)
+                .disabled(!engine.canUndo || engine.isPaused)
                 .accessibilityLabel("Undo")
             }
 
             layout {
-                Button { session.advance() } label: {
-                    Text(actionLabel(engine)).frame(maxWidth: .infinity)
+                Button { if engine.isPaused { session.togglePause() } else { session.advance() } } label: {
+                    Text(engine.isPaused ? "Resume workout" : actionLabel(engine)).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.noopPrimary)
+                .disabled(engine.phaseCapacityReached)
+
+                if !engine.isPaused {
+                    Button("Pause") { session.togglePause() }
+                        .buttonStyle(.noopSecondary)
+                        .disabled(engine.phaseCapacityReached)
+                }
 
                 Button {
                     unfinishedChoice = nil
@@ -727,10 +750,12 @@ struct LiftSessionView: View {
 
     @ViewBuilder
     private func stageClock(_ engine: LiftSessionEngine) -> some View {
-        switch engine.stage {
+        if engine.isPaused {
+            Text("Paused").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+        } else { switch engine.stage {
         case .working:
-            clock(String(localized: "This set"), tint: StrandPalette.statusPositive) {
-                $0 - engine.stageStartedAt
+            clock(String(localized: "Observed work"), tint: StrandPalette.statusPositive) {
+                engine.observedWorkSeconds(for: engine.currentSlot, now: $0)
             }
         case .resting:
             // "Rest period", never "Rest": the catalog's "Rest" key is NOOP's SLEEP metric, so this
@@ -743,7 +768,7 @@ struct LiftSessionView: View {
             clock(String(localized: "Warm-up"), tint: StrandPalette.textSecondary) {
                 $0 - engine.stageStartedAt
             }
-        }
+        } }
     }
 
     private func actionLabel(_ engine: LiftSessionEngine) -> LocalizedStringKey {
@@ -953,6 +978,7 @@ struct LiftSessionView: View {
             return
         }
 
+        let intervalsJSON = try session.activityIntervals(finishingAt: endTs).map(LiftActivityLedger.encode)
         let row = LiftSessionRow(
             id: sessionId, deviceId: session.sourceDeviceId ?? repo.deviceId,
             startTs: engine.startTs, endTs: endTs, sport: LiftSessionView.sport,
@@ -960,7 +986,7 @@ struct LiftSessionView: View {
             // Snapshot the name: renaming or deleting the program never rewrites this session.
             programName: session.programName,
             sessionRpe: LiftFormat.number(sessionRpeText),
-            note: session.programName)
+            note: session.programName, activityIntervalsJSON: intervalsJSON)
 
         // `ord` is COMPLETION order, which with out-of-order work is not the plan's order — and it
         // is the order that actually happened, which is what a session should read back as. Sets
