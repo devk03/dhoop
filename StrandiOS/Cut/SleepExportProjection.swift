@@ -42,7 +42,8 @@ enum SleepExportProjection {
             totalMinutes: row?.total, stages: stages, timeline: timeline, metrics: [
                 .init(title: "Average HR", value: nil, unit: "bpm", detail: "No readable sleep-period samples"),
                 .init(title: "HRV", value: nil, unit: "ms", detail: "No readable record for this date"),
-                .init(title: "Resting HR", value: nil, unit: "bpm", detail: "No readable record for this date")])
+                .init(title: "Resting HR", value: nil, unit: "bpm", detail: "No readable record for this date")],
+            readingSourceID: row?.sourceID ?? episode?.sourceID)
     }
     static func asleepSpans(_ timeline: SleepExportReport.Timeline) -> [Range<Double>] {
         let spans = timeline.intervals.isEmpty ? [(timeline.start, timeline.end)]

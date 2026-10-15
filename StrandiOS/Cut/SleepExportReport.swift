@@ -33,6 +33,7 @@ struct SleepExportReport: Identifiable {
         let stages: [Double?] // Deep, REM, Light, Unclassified; absent never means zero.
         let timeline: Timeline?
         var metrics: [Metric]
+        var readingSourceID: String? = nil // Internal attribution only; never rendered or shared as metadata.
         var hasMetrics: Bool { metrics.contains { $0.value != nil } }
     }
     let day: String

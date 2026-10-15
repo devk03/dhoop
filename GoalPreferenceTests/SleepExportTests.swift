@@ -35,6 +35,10 @@ final class SleepExportTests: XCTestCase {
         XCTAssertNil(eight.timeline, "A WHOOP timeline cannot fill an 8sleep source")
         XCTAssertTrue(eight.method.contains("via Apple Health"))
         XCTAssertTrue(eight.metrics.allSatisfy { $0.value == nil })
+        let other = episode(source: "computed-owner")
+        let timelineOnly = SleepExportProjection.source(day: "2026-10-15", id: "whoop", name: "WHOOP", reading: nil,
+            timelines: [episode(), other], selectedEpisodeID: other.id)
+        XCTAssertEqual(timelineOnly.readingSourceID, "computed-owner", "Equal bounds do not imply equal data ownership")
     }
     func testMeansExcludeOtherProvidersAwakeGapsAndBoundaryPoints() {
         let timeline = SleepExportReport.Timeline(start: 0, end: 30, method: "Test", intervals: [
