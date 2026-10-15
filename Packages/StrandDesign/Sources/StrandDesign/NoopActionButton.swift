@@ -76,7 +76,7 @@ public struct NoopAsyncButton: View {
     public var body: some View {
         NoopActionButton(title, systemImage: systemImage, kind: kind, fullWidth: fullWidth,
                          state: operation.state) {
-            Task { await operation.run(action) }
+            operation.submit(action)
         }
         .alert("Action failed", isPresented: Binding(
             get: { if case .failed = operation.state { return true }; return false },

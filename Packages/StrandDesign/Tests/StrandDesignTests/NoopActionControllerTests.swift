@@ -3,6 +3,18 @@ import XCTest
 
 final class NoopActionControllerTests: XCTestCase {
     @MainActor
+    func testSubmitReservesPendingSynchronouslyBeforeTaskScheduling() async {
+        let controller = NoopActionController()
+        let finished = expectation(description: "Finished")
+        var executions = 0
+        controller.submit { executions += 1; finished.fulfill() }
+        XCTAssertEqual(controller.state, .working)
+        controller.submit { executions += 100 }
+        await fulfillment(of: [finished], timeout: 2)
+        XCTAssertEqual(executions, 1)
+    }
+
+    @MainActor
     func testSecondTapCannotSubmitWhileFirstActionIsPending() async {
         let controller = NoopActionController()
         let started = expectation(description: "Operation started")

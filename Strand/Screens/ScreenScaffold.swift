@@ -45,6 +45,7 @@ struct ScreenScaffold<Content: View, Trailing: View>: View {
             // at-root tab re-tap can bring the screen back to the very top. Layout-neutral.
             Color.clear.frame(height: 0).id(screenScaffoldTopAnchorID)
             column
+            .responsiveScrollTouches()
             #if os(iOS)
             // Unified side margins matching the floating navigation bar so every page's cards + header line up
             // to the same edges (2026-07-02); macOS keeps the classic 28 in the #else branch.

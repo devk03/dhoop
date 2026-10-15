@@ -93,7 +93,7 @@ struct NoopPressFeedback: ViewModifier {
             .contentShape(Rectangle())
             .opacity(isEnabled ? (pressed ? NoopButtonMetrics.pressedOpacity : 1) : NoopButtonMetrics.disabledOpacity)
             .scaleEffect(pressed && isEnabled && !reduceMotion && scalesOnPress ? NoopButtonMetrics.pressedScale : 1)
-            .animation(reduceMotion ? nil : StrandMotion.interactive, value: pressed)
+            .animation(pressed || reduceMotion ? nil : StrandMotion.interactive, value: pressed)
     }
 }
 
@@ -208,7 +208,7 @@ struct NoopButtonChrome: ViewModifier {
             .clipShape(RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius, style: .continuous))
             .opacity(isEnabled || isPending ? opacity : NoopButtonMetrics.disabledOpacity)
             .scaleEffect(scale)
-            .animation(reduceMotion ? nil : StrandMotion.interactive, value: pressed)
+            .animation(pressed || reduceMotion ? nil : StrandMotion.interactive, value: pressed)
     }
 }
 

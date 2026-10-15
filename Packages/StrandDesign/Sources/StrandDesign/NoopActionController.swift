@@ -16,6 +16,18 @@ public final class NoopActionController: ObservableObject {
     public func run(_ action: @MainActor () async throws -> Void) async {
         guard !state.isWorking else { return }
         state = .working
+        await finish(action)
+    }
+
+    // Reserve synchronously in the tap callback, before another tap can enqueue a task.
+    public func submit(_ action: @escaping @MainActor () async throws -> Void) {
+        guard !state.isWorking else { return }
+        state = .working
+        Task { await finish(action) }
+    }
+
+    private func finish(_ action: @MainActor () async throws -> Void) async {
+        await Task.yield()
         do {
             try await action()
             try Task.checkCancellation()
