@@ -17,43 +17,46 @@ Test-only follow-up `6154998` pins session-wide rest pauses, set-associated work
 evidence and unresolved ends after completion. The focused receiver suite passed again; invalid
 intervals reject before the atomic batch, preserving queued canonical and source writes.
 
-## One workout, logged once
+## One canonical tracker
 
-Life owns reusable programs, scheduled prescriptions, manual canonical edits and progression.
-Dhoop owns the physical recording, actual sets and rest periods, and measured WHOOP heart-rate
-timeline. A workout can run without network access. Dhoop retains the original prescription and
-the recorded measurements; refreshed targets never become performed values.
+The owner clarified on 2026-10-14 that Dhoop is a frontend for the Life workout tracker.
+The website, MCP and native app use the same canonical programs, sets, workout status,
+configuration and progression service. Dhoop does not need the MCP wire protocol on the phone.
+Local storage holds WHOOP recordings, cached prescriptions and pending operations; it is not an
+independent primary catalog or program editor. Existing local records are retained without
+conversion, upload or deletion.
 
-The primary flow is Exercises → Strength → routine → workout. An explicitly selected cached routine
-remains usable offline with its real fetch age. Local routines remain available independently.
-Life-backed routine edits use Life's program editor; in-session replacements are actual workout
-observations and do not silently rewrite the reusable program.
+The primary iOS Strength screen reads the bounded, revisioned Life dashboard. It exposes the
+website's twelve actions through the shared command contract, including explicit clears and
+separate prescribed/performed values. A dedicated frontend credential is separate from the
+source-observation credential. Editing starts off and requires an authenticated capability read.
+An immutable, atomically saved command precedes any POST. Uncertain requests require GET-only
+receipt recovery; same-ID retries retain exact bytes. A committed receipt remains authoritative
+even when the subsequent dashboard refresh fails. Queue corruption pauses editing without reset.
 
-### Owner experience
+Native controls cover program creation/reset, athlete profile, effective benchmarks, recalculation,
+set editing, workout logs/status, exercise tuning and program/workout-only substitution. Backend
+validation, ownership, schedule, Sheet and progression rules remain shared. There is no local
+implementation of those rules. General custom catalog and routine CRUD absent from the current
+website is not invented as a separate native authority.
 
-1. Open Exercises → Strength and choose a local routine or a Life routine. Keep both origins
-   visible; an exercise name does not establish a shared identity.
-2. For a Life routine, read the current plan or explicitly choose its validated cached copy.
-   Show prescribed targets beside entry fields, without counting them as completed sets.
-3. Start one physical session. Log working sets, warm-ups, effort and notes there while shared
-   WHOOP collection records actual heart-rate samples across work and rest. Changes made during
-   the session remain observations, not edits to the reusable Life program.
-4. Finish by saving on the phone. If delivery is configured, retain the exact same workout and
-   set identities in the pending delivery. Network failure must leave a usable local history.
-5. In history, distinguish recorded values from current Life values. Show whether Life accepted
-   the observations, applied import-owned fields, preserved a manual edit, or saved history only.
-   Receiver acceptance alone is not evidence that progression finished or all fields applied.
-6. Correct or delete the same physical session through explicit review. Do not create a second
-   workout to resolve a conflict. Keep the original event and start prescription as provenance.
+### Physical recording integration remains gated
 
-Local exercises and routines continue to work independently. Creating one does not create or
-rename a Life catalog entry. A future optional standalone export must retain a stable custom UUID
-and explicit load mode; it cannot convert a Life-backed capture into another standalone workout.
+The existing cached-plan recording path is explicitly labeled WHOOP recording evidence. It does
+not claim that a manual canonical start or completion occurred. The coordinated next integration
+is a binding-only seed with the frozen original prescription followed by explicit `capture_only`
+observations under the same physical IDs. That native lifecycle is not implemented or verified
+end-to-end; the Life frontend lifecycle flag must remain off until it is.
 
-On completion, local storage succeeds first. Optional configured delivery uses the same physical
-workout, occurrence and set UUIDs. History distinguishes local storage, receiver acceptance,
-canonical application, preserved manual edits and pending progression. A network failure must not
-require logging the workout again.
+No existing apply capture is silently converted. Existing source outboxes, archived receipts,
+recording plans, local history and metadata backups retain their identities and behavior. The new
+manual command queue has its own credential-free receipt export and is not represented as part
+of the existing `.dhoopworkouts` or `.noopbak` packages.
+
+The authoritative local API contract is
+[`DHOOP_WORKOUT_FRONTEND_API.md`](/Users/devkunjadia/Developer/life/docs/integrations/DHOOP_WORKOUT_FRONTEND_API.md).
+Life implementation through `e0f1ae3` remains undeployed and unactivated. Code publication,
+production Worker deployment and dedicated credential activation are distinct states.
 
 ## Ownership and timing
 
