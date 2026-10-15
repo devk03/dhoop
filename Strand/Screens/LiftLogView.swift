@@ -18,6 +18,7 @@ import WhoopStore
 
 struct LiftLogView: View {
     var embedded = false
+    var recordingsOnly = false
     @EnvironmentObject var repo: Repository
 
     /// Saved programs, most-recently-touched first. Loaded off the store on appear/refresh.
@@ -43,13 +44,22 @@ struct LiftLogView: View {
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
 
     var body: some View {
+        #if os(iOS)
+        if recordingsOnly { localRecordings }
+        else { WorkoutTrackerRoutinesView(embedded: embedded) }
+        #else
+        localRecordings
+        #endif
+    }
+
+    private var localRecordings: some View {
         Group {
             if embedded {
                 content
             } else {
                 ScreenScaffold(
-                    title: "Strength",
-                    subtitle: "Routines, sets, and WHOOP heart rate. Kept on \(Platform.deviceNounPhrase).",
+                    title: recordingsOnly ? "WHOOP recordings" : "Strength",
+                    subtitle: recordingsOnly ? "Recorded sensor data and pending changes. Your workout tracker owns the plan." : "Routines, sets, and WHOOP heart rate. Kept on \(Platform.deviceNounPhrase).",
                     onRefresh: { await load() }
                 ) { content }
             }
@@ -75,10 +85,10 @@ struct LiftLogView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-            if !embedded { headerCard }
-            programsSection
+            if !embedded && !recordingsOnly { headerCard }
+            if !recordingsOnly { programsSection }
             #if os(iOS)
-            NoopButton("Tracker routines", systemImage: "link", kind: .secondary, fullWidth: true) { showingTracker = true }
+            if !recordingsOnly { NoopButton("Tracker routines", systemImage: "link", kind: .secondary, fullWidth: true) { showingTracker = true } }
             #endif
             if let message = session.collectionMessage {
                 Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical)

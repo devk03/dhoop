@@ -83,6 +83,8 @@ struct WorkoutTrackerSettingsView: View {
                     }
                 }
                 backupCard
+                NavigationLink("Website editing & command receipts") { WorkoutFrontendSettingsView() }
+                    .buttonStyle(NoopButtonStyle(.secondary))
             }
         }
         .onAppear { origin = client.state.origin ?? "" }
