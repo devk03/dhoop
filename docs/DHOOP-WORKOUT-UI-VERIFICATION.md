@@ -57,7 +57,9 @@ primary selection/settings. No name-based program classification is used.
   `eb8529ce-1090-4f55-bd54-5c728350b3f9`.
 - Build 500 was independently confirmed installed on 0A-Homeboy after the physical tests.
   A normal relaunch afterward was blocked by the phone locking; opening Dhoop after unlock
-  remains necessary. The pending unlock prompt requires no manual wearer test.
+  remains necessary. A further launch attempt after the unlock reply was also rejected by iOS
+  as locked; a fresh build-500 API proof could not run. The successful build-499 API proof above
+  and build-500 physical UI checks remain the verified evidence. No manual wearer test is needed.
 - Preferences were preserved before installation; imperial units were confirmed. No active zone
   draft existed. No migration, firmware command, wake-alarm change or database reset occurred.
 
