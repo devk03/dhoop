@@ -41,10 +41,13 @@ title, program week, scheduled date and available completion timestamp remain at
   the existing weight/reps fields retain room. Demo values exist only in fixtures/design studies.
 - Signed iOS build 504 passed. Doc-comment lint, diff hygiene and the localization gate against
   `8c79786` passed; four new surface strings include translations without changing any baseline.
-- The physical iPhone `0A-Homeboy` was unavailable during verification. Build installation,
-  authenticated on-phone previous-set receipt and real-device popup interaction remain pending.
-  The existing opt-in `--workout-history-proof` diagnostic now includes one bounded comparison
-  read and records availability/reason separately; an unavailable comparison is a valid result.
+- Build 504 installed on physical iPhone `0A-Homeboy`. Its opt-in `--workout-history-proof`
+  result was recovered after reconnecting: `authenticated_history_reads_verified`, revision 93,
+  `previousSetReadVerified:true`, `previousSetAvailability:available`, `writesAttempted:false`.
+  Existing history and Strength reads also passed. Native validated the current identity and
+  previous-week comparison before accepting the response. No owner workout was modified.
+  Real-device popup hand interaction was not manually tested. An explicit unavailable comparison
+  remains a valid outcome for other sets.
 
 Built-in ImageGen reference and exact prompt: `docs/design/dhoop-previous-week-sets-study.png`
 and `.prompt.txt`. The app renders native StrandDesign controls; no bitmap supplies workout data.
