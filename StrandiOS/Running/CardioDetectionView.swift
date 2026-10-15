@@ -13,6 +13,7 @@ struct CardioDetectionView: View {
     @State private var message: String?
     @State private var showReviewed = false
     @State private var loadedDeviceID: String?
+    @State private var activityLabels: [String: String] = [:]
 
     private var loadKey: String {
         "\(repo.deviceId)|\(repo.refreshSeq)|\(enabled)|\(sessionActive)|\(saving)|\(localSpans.map { "\($0.start):\($0.end)" }.joined(separator: ","))"
@@ -56,9 +57,9 @@ struct CardioDetectionView: View {
                 }
                 DisclosureGroup("How detection works") {
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                        Text("Synced activity from the last 48 hours is checked and kept here once found. Change either label later, even with auto-detection off.")
+                        Text("Unreviewed suggestions expire 48 hours after the activity ends. Confirmed workouts and raw sensor history are kept.")
                         Text("Short intervals may not meet the 12-minute threshold. Start HIIT or Intervals to record those sessions.")
-                        Text("Older dismissals are available only when their original activity can be detected again. Review labels stay on this device and are not included in app backups.")
+                        Text("Expired suggestions stay suppressed. Activity types are suggestions; heart rate alone cannot identify the sport. Review labels stay on this device.")
                     }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }.font(StrandFont.subhead).tint(StrandPalette.accent)
                 if let message {
@@ -80,6 +81,14 @@ struct CardioDetectionView: View {
                 .font(StrandFont.caption).foregroundStyle(review.decision == .workout ? StrandPalette.statusPositive : StrandPalette.textSecondary)
                 .padding(.horizontal, NoopMetrics.space2).padding(.vertical, NoopMetrics.space1)
                 .background(StrandPalette.surfaceInset, in: Capsule())
+            if review.decision == .pending || review.decision == .notWorkout {
+                Text("Suggested · \(review.suggestedActivity)").font(StrandFont.subhead)
+                Picker("Activity type", selection: Binding(get: { activityLabels[review.id] ?? review.activityLabel ?? "Workout" }, set: { activityLabels[review.id] = $0 })) {
+                    ForEach(WorkoutReview.activityLabels, id: \.self) { Text($0).tag($0) }
+                }.pickerStyle(.menu).disabled(saving || sessionActive)
+            } else {
+                Text(review.activityLabel ?? "Workout").font(StrandFont.subhead)
+            }
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: NoopMetrics.space3) { actions(review) }
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) { actions(review) }
@@ -135,7 +144,7 @@ struct CardioDetectionView: View {
         saving = true
         message = nil
         defer { saving = false }
-        try await repo.setWorkoutReview(review.id, deviceID: review.deviceID, decision: decision, excluding: spans)
+        try await repo.setWorkoutReview(review.id, deviceID: review.deviceID, decision: decision, excluding: spans, activityLabel: activityLabels[review.id] ?? review.activityLabel)
         await repo.refresh()
         guard repo.deviceId == review.deviceID else { throw WorkoutReviewError.unavailable }
         do {

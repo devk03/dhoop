@@ -15,6 +15,12 @@ struct WorkoutReview: Codable, Equatable, Identifiable {
     var linkedWorkout: Link?
     var recordingRemoved = false
     var lastOperationID: String?
+    var expiredAt: Int?
+    var activityLabel: String?
+
+    // HR alone supports an exertion suggestion, not a reliable sport classification.
+    var suggestedActivity: String { "Sustained cardio" }
+    static let activityLabels = ["Workout", "Running", "Walking", "Cycling", "Strength", "Other"]
 
     // Workout rows have a natural key, not a UUID. Retain its owner, exact bounds and source so
     // a later label change can never sweep overlapping manual/imported sessions.
@@ -55,6 +61,21 @@ struct WorkoutReviewStore {
         try all().filter { $0.deviceID == deviceID }.sorted { $0.startSec > $1.startSec }
     }
 
+    @discardableResult
+    func expirePending(deviceID: String, now: Int) throws -> Int {
+        var items = try all(), count = 0
+        for index in items.indices where items[index].deviceID == deviceID &&
+            items[index].decision == .pending && items[index].linkedWorkout == nil && items[index].expiredAt == nil {
+            let end = items[index].endSec
+            if now >= end && now - end >= 48 * 60 * 60 {
+                items[index].expiredAt = now
+                count += 1
+            }
+        }
+        if count > 0 { defaults.set(try JSONEncoder().encode(items), forKey: Self.key) }
+        return count
+    }
+
     func save(_ review: WorkoutReview) throws {
         var items = try all()
         if let index = items.firstIndex(where: { $0.id == review.id && $0.deviceID == review.deviceID }) {
@@ -71,7 +92,7 @@ struct WorkoutReviewStore {
         if var existing = try reviews(deviceID: review.deviceID).first(where: {
             $0.overlaps(start: review.startSec, end: review.endSec)
         }) {
-            guard existing.decision == .pending, existing.linkedWorkout == nil else { return }
+            guard existing.decision == .pending, existing.linkedWorkout == nil, existing.expiredAt == nil else { return }
             // A rolling window may truncate old evidence; only extend a pending snapshot.
             guard review.startSec <= existing.startSec, review.endSec >= existing.endSec else { return }
             existing.startSec = review.startSec; existing.endSec = review.endSec

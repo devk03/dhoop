@@ -3336,6 +3336,9 @@ final class Repository: ObservableObject {
     #if os(iOS)
     private func captureWorkoutReviewsIfNeeded(now: Date = Date()) async {
         let selectedDevice = deviceId
+        if !workoutReviewSaving {
+            _ = try? WorkoutReviewStore().expirePending(deviceID: selectedDevice, now: Int(now.timeIntervalSince1970))
+        }
         guard PuffinExperiment.autoDetectWorkoutsEnabled,
               workoutReviewCaptureCadence.begin(deviceID: selectedDevice, now: now) else { return }
         defer { workoutReviewCaptureCadence.finish() }
@@ -3401,7 +3404,12 @@ final class Repository: ObservableObject {
                 }
             }
         }
+        #if os(iOS)
+        if !workoutReviewSaving { try reviews.expirePending(deviceID: selectedDevice, now: Int(Date().timeIntervalSince1970)) }
+        return try reviews.reviews(deviceID: selectedDevice).filter { $0.expiredAt == nil }
+        #else
         return try reviews.reviews(deviceID: selectedDevice)
+        #endif
     }
 
     private func workoutReviewLinkExists(_ link: WorkoutReview.Link, store: WhoopStore) async throws -> Bool {
@@ -3459,7 +3467,7 @@ final class Repository: ObservableObject {
     }
 
     func setWorkoutReview(_ id: String, deviceID: String, decision: WorkoutReview.Decision,
-                          excluding localSessions: [SavedWorkoutSpan] = []) async throws {
+                          excluding localSessions: [SavedWorkoutSpan] = [], activityLabel: String? = nil) async throws {
         guard deviceID == deviceId else { throw WorkoutReviewError.unavailable }
         guard !workoutReviewSaving else { throw WorkoutReviewError.busy }
         workoutReviewSaving = true
@@ -3469,6 +3477,11 @@ final class Repository: ObservableObject {
         try await recoverWorkoutReviewOperations(deviceID: deviceID, store: store, explicitDecision: true)
         guard var review = try reviews.reviews(deviceID: deviceID).first(where: { $0.id == id })
         else { throw WorkoutReviewError.unavailable }
+        guard review.expiredAt == nil else { throw WorkoutReviewError.unavailable }
+        if let activityLabel {
+            guard WorkoutReview.activityLabels.contains(activityLabel) else { throw WorkoutReviewError.unavailable }
+            review.activityLabel = activityLabel
+        }
         guard decision != review.decision || (decision == .workout && review.recordingRemoved) else { return }
         var link = review.linkedWorkout
         if decision == .workout {
@@ -3479,12 +3492,12 @@ final class Repository: ObservableObject {
             else { throw WorkoutReviewError.alreadySaved }
             let owner = deviceID + "-noop"
             link = WorkoutReview.Link(owner: owner, startSec: review.startSec,
-                endSec: review.endSec, sport: "Workout", source: owner)
+                endSec: review.endSec, sport: review.activityLabel ?? "Workout", source: owner)
         }
         if let link {
             guard link.owner == deviceID + "-noop", link.source == link.owner,
                   link.startSec == review.startSec, link.endSec == review.endSec,
-                  link.sport == "Workout" else { throw WorkoutReviewError.changedRecording }
+                  WorkoutReview.activityLabels.contains(link.sport) else { throw WorkoutReviewError.changedRecording }
         }
         var operation = WorkoutReviewOperation(before: review, decision: decision, link: link)
         // An atomic file closes the gap left by buffered UserDefaults writes. The full previous review
