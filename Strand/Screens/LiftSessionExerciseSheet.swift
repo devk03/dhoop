@@ -19,6 +19,7 @@ struct LiftSessionExerciseSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    @State private var parentExerciseId: String?
     @State private var exercise = ""
     @State private var primary: LiftMuscle?
     @State private var secondaries: Set<LiftMuscle> = []
@@ -45,6 +46,8 @@ struct LiftSessionExerciseSheet: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 exerciseSection.disabled(adding)
                 if requiresLoadType { loadTypeSection }
+                LiftVariationPicker(vocabulary: vocabulary, exerciseName: exercise, parentID: $parentExerciseId)
+                    .disabled(adding || !catalog.isReady(for: deviceID))
                 LiftMusclePicker(primary: Binding(get: { primary }, set: { primary = $0; classificationEdited = true }),
                                  secondaries: Binding(get: { secondaries }, set: { secondaries = $0; classificationEdited = true })).disabled(adding)
                 Text(replacingExercise.map { "Replace the remaining sets of \($0). Completed sets keep their original exercise. Your routine stays unchanged." } ?? (requiresLoadType ? "Added to workout history. Your Life routine stays unchanged." : "It joins this session with one set. Type what you lift; finishing asks whether the program keeps it."))
@@ -164,7 +167,7 @@ struct LiftSessionExerciseSheet: View {
         let nativeId: String
         do {
             nativeId = try await LiftExerciseVocabulary.remember(name, primary: chosenPrimary, secondaries: ordered,
-                known: vocabulary, deviceId: source, in: store)
+                known: vocabulary, deviceId: source, in: store, parentExerciseId: parentExerciseId)
         } catch let full as WhoopStore.LiftExerciseVocabularyFull {
             throw LiftExerciseCatalogModel.Failure.full(full.limit)
         }

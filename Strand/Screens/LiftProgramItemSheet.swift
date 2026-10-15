@@ -24,6 +24,7 @@ struct LiftProgramItemSheet: View {
     @EnvironmentObject var repo: Repository
     @Environment(\.dismiss) private var dismiss
 
+    @State private var parentExerciseId: String?
     @State private var exercise: String = ""
     @State private var primary: LiftMuscle?
     @State private var secondaries: Set<LiftMuscle> = []
@@ -91,6 +92,8 @@ struct LiftProgramItemSheet: View {
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 exerciseSection.disabled(saving || forgettingBusy)
+                LiftVariationPicker(vocabulary: vocabulary, exerciseName: exercise, parentID: $parentExerciseId)
+                    .disabled(saving || forgettingBusy || !catalog.isReady(for: deviceID))
                 LiftMusclePicker(primary: Binding(get: { primary }, set: { primary = $0; classificationEdited = true }),
                                  secondaries: Binding(get: { secondaries }, set: { secondaries = $0; classificationEdited = true }))
                     .disabled(saving || forgettingBusy)
@@ -358,7 +361,7 @@ struct LiftProgramItemSheet: View {
             try await LiftExerciseVocabulary.remember(
                     name, primary: primary,
                     secondaries: LiftExerciseVocabulary.ordered(secondaries, excluding: primary),
-                    known: vocabulary, deviceId: source, in: store)
+                    known: vocabulary, deviceId: source, in: store, parentExerciseId: parentExerciseId)
         } catch let full as WhoopStore.LiftExerciseVocabularyFull {
                 // Refused rather than silently dropped: the user typed a name and deserves to know
                 // it was not remembered.

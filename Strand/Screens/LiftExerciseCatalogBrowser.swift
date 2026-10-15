@@ -28,7 +28,7 @@ struct LiftExerciseCatalogBrowser: View {
                                 guard catalog.isReady(for: deviceID), let current = catalog.entries(for: deviceID).first(where: { $0.id == row.id }) else { return }
                                 onPick(current); dismiss()
                             } label: {
-                                NoopCard { LiftExerciseSuggestionLabel(row: row) }
+                                NoopCard { LiftExerciseSuggestionLabel(row: row, parentName: catalog.entries(for: deviceID).first { $0.id == row.parentExerciseId }?.name) }
                             }.buttonStyle(NoopFeedbackButtonStyle())
                         }
                     }

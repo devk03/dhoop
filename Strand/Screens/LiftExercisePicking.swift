@@ -29,9 +29,10 @@ enum LiftExerciseVocabulary {
     @discardableResult
     static func remember(_ name: String, primary: LiftMuscle?, secondaries: [LiftMuscle],
                          known vocabulary: [LiftExerciseRow], deviceId: String,
-                         in store: WhoopStore) async throws -> String {
+                         in store: WhoopStore, parentExerciseId: String? = nil) async throws -> String {
         let now = Int(Date().timeIntervalSince1970)
         let existing = vocabulary.first { $0.name == name }
+        let parent = existing != nil ? existing?.parentExerciseId : parentExerciseId
         _ = try await store.upsertLiftExercises([LiftExerciseRow(
             id: existing?.id ?? UUID().uuidString,
             deviceId: deviceId,
@@ -39,7 +40,7 @@ enum LiftExerciseVocabulary {
             primaryMuscle: primary,
             secondaryMuscles: secondaries,
             createdAt: existing?.createdAt ?? now,
-            lastUsedTs: now)])
+            lastUsedTs: now, parentExerciseId: parent)])
         guard let saved = try await store.liftExercises(deviceId: deviceId).first(where: { $0.name == name }) else {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
@@ -56,6 +57,7 @@ enum LiftExerciseVocabulary {
 /// One remembered exercise as a picker lists it: its name, and the muscles it is known by.
 struct LiftExerciseSuggestionLabel: View {
     let row: LiftExerciseRow
+    var parentName: String? = nil
 
     var body: some View {
         HStack(spacing: NoopMetrics.space2) {
@@ -66,6 +68,10 @@ struct LiftExerciseSuggestionLabel: View {
                 Text(row.name)
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textPrimary)
+                if row.parentExerciseId != nil {
+                    Text(parentName.map { "Variation of \($0)" } ?? "Variation")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.metricCyan)
+                }
                 Text(LiftMuscleSummary.line(primary: row.primaryMuscle, secondaries: row.secondaryMuscles))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
@@ -155,5 +161,32 @@ struct LiftMusclePicker: View {
     private func select(primary muscle: LiftMuscle) {
         primary = muscle
         secondaries.remove(muscle)
+    }
+}
+
+/// A variation is a separate movement and source identity, never an alias for its parent's history.
+struct LiftVariationPicker: View {
+    let vocabulary: [LiftExerciseRow]
+    let exerciseName: String
+    @Binding var parentID: String?
+    private var existing: LiftExerciseRow? { vocabulary.first { $0.name == exerciseName.trimmingCharacters(in: .whitespacesAndNewlines) } }
+    var body: some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                Picker("Variation of", selection: Binding(get: { existing != nil ? existing?.parentExerciseId : parentID }, set: { parentID = $0 })) {
+                    Text("Independent exercise").tag(String?.none)
+                    if let parent = existing?.parentExerciseId, !vocabulary.contains(where: { $0.id == parent }) {
+                        Text("Parent no longer in catalog").tag(Optional(parent))
+                    }
+                    ForEach(vocabulary.filter { $0.id != existing?.id }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }, id: \.id) { row in
+                        Text(row.name).tag(Optional(row.id))
+                    }
+                }.frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(existing != nil)
+                Text(existing != nil ? "Saved exercise identity retained. Use a new name to create a variation."
+                    : "A variation keeps its own history, previous performance and load basis.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
