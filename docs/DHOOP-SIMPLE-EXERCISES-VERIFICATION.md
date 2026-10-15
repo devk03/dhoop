@@ -33,10 +33,11 @@ sleep, buzz and photos-route rejection; and lifecycle start rejection. No accept
 write or Life revision change occurred. Manual commands are permitted, frontend start is
 not. Native binding seed and capture_only physical recording integration remain unverified.
 
-The private one-time envelope was copied to the physical iPhone with mode 0600. iOS
-currently rejects both foreground and non-activating setup launches because the device
-is locked. Keychain import and on-phone authenticated reads are not yet verified; the
-private handoff remains intact for the requested brief unlock. No wearer test is required.
+The private envelope was imported on the physical iPhone after unlock. The app reported
+`connected_reads_verified_lifecycle_off`, with reads/editing enabled and lifecycle disabled.
+The importer verified both Keychain entries and authenticated dashboard/capability reads.
+The device transfer was independently read back as a consumed marker; Mac transfer contents
+were then retired to the same nonsecret marker. No wearer test or accepted workout write occurred.
 
 This is the owner's iOS frontend scope; Android and macOS UI are unchanged. There is no database
 migration, physiological algorithm change, raw strap command addition, or firmware modification.
