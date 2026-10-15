@@ -323,59 +323,19 @@ struct CutSleepView: View {
         }
     }
     private var stagesCard: some View {
-        NoopCard {
-            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                Text("Stage breakdown").font(StrandFont.headline)
-                Text(selectedNight.map(nightLabel) ?? "No sleep date selected")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                stageSource("WHOOP", row: whoop.first { $0.day == selectedNight })
-                Divider()
-                stageSource(comparisonName, row: apple.first { $0.day == selectedNight })
-            }
-        }
+        SleepStageBreakdown(dateLabel: selectedNight.map(nightLabel) ?? "No sleep date selected", sources: [
+            breakdownSource("WHOOP", row: whoop.first { $0.day == selectedNight }),
+            breakdownSource(comparisonName, row: apple.first { $0.day == selectedNight })
+        ])
     }
-    private func stageSource(_ source: String, row: SleepComparisonDay?) -> some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            Text(source).font(StrandFont.subhead)
-            ForEach([SleepComparisonSample.Stage.deep, .rem, .core, .unspecified], id: \.rawValue) { stage in
-                let minutes = row.flatMap { value -> Double? in
-                    switch stage {
-                    case .deep: return value.deep
-                    case .rem: return value.rem
-                    case .core: return value.light
-                    case .unspecified: return value.unspecified
-                    case .awake: return nil
-                    }
-                }
-                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: NoopMetrics.space2) {
-                            Label(stageName(stage), systemImage: "circle.fill").foregroundStyle(stageColor(stage))
-                            Spacer(minLength: NoopMetrics.space2)
-                            stageAmount(minutes, total: row?.total)
-                        }
-                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                            Label(stageName(stage), systemImage: "circle.fill").foregroundStyle(stageColor(stage))
-                            stageAmount(minutes, total: row?.total)
-                        }
-                    }.font(StrandFont.subhead)
-                    if let fraction = SleepComparisonProjection.stageFraction(minutes, total: row?.total) {
-                        ProgressView(value: fraction).tint(stageColor(stage))
-                    }
-                }.accessibilityElement(children: .combine)
-            }
-            Text(row?.method ?? "No record for this source and date")
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+    private func breakdownSource(_ name: String, row: SleepComparisonDay?) -> SleepStageBreakdown.Source {
+        let values: [Double?] = [row?.deep, row?.rem, row?.light, row?.unspecified]
+        let rows = zip(SleepStageBreakdown.Kind.allCases, values).map { kind, raw in
+            let minutes = raw.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+            return SleepStageBreakdown.Row(kind: kind, duration: minutes.map(sleepHM) ?? "Unavailable",
+                fraction: SleepComparisonProjection.stageFraction(minutes, total: row?.total))
         }
-    }
-    private func stageAmount(_ minutes: Double?, total: Double?) -> some View {
-        HStack(spacing: NoopMetrics.space2) {
-            Text(minutes.map(sleepHM) ?? "Unavailable").monospacedDigit()
-            if let fraction = SleepComparisonProjection.stageFraction(minutes, total: total) {
-                Text("\(Int((fraction * 100).rounded()))%")
-                    .monospacedDigit().foregroundStyle(StrandPalette.textSecondary)
-            }
-        }
+        return .init(name: name, detail: row?.method ?? "No record for this source and date", rows: rows)
     }
     private var trendCard: some View {
         NoopCard {
