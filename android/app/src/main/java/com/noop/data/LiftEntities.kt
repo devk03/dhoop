@@ -61,6 +61,7 @@ data class LiftExerciseRow(
     val createdAt: Long,
     /** Unix seconds; recency, so the picker can offer what was used most recently. */
     val lastUsedTs: Long? = null,
+    val parentExerciseId: String? = null,
 )
 
 /** A reusable program, e.g. "Upper A". Archived rather than deleted, so history keeps resolving. */
@@ -115,6 +116,7 @@ data class LiftProgramItemRow(
     val restSec: Int? = null,
     /** The user's own technique cue, stored and shown back verbatim. */
     val note: String? = null,
+    val supersetGroupId: String? = null,
 )
 
 /**
@@ -146,6 +148,7 @@ data class LiftSessionRow(
     val programName: String? = null,
     val sessionRpe: Double? = null,
     val note: String? = null,
+    val activityIntervalsJSON: String? = null,
 )
 
 /**
@@ -191,4 +194,6 @@ data class LiftSetEntity(
     /** Rest ACTUALLY taken after this set, measured from the taps rather than planned. */
     val restSec: Int? = null,
     val note: String? = null,
+    val supersetGroupId: String? = null,
+    val roundIndex: Int? = null,
 )

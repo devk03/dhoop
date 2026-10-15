@@ -9,9 +9,9 @@ Detailed command evidence and its limits are in `docs/DHOOP-STRENGTH-VERIFICATIO
 | Shared controls across Today/details/Sleep/Exercises/Meditation/Alarms/onboarding/Settings | StrandDesign action/button/switch components and current screen call sites; scoped failure tests and app builds | Physical taps, holds, drag-off, scrolling and chart scrubbing; failed-read retention is now implemented; native runtime acceptance remains missing |
 | Actual async completion, duplicate prevention and retained input | Shared action-controller tests; protein, catalog, previous-performance, pairing, alarm and picker boundaries | Native dialogs/pickers and full screen lifecycle remain unverified |
 | Strength inside Exercises | RunningView routes Strength to the existing Lift Log | Physical navigation |
-| Exercise search/create, reusable ordered routines | Catalog browser/model and program editor; read-failure and atomic-store tests | Variation parent relationships are not implemented; native storage approval pending |
+| Exercise search/create, reusable ordered routines | Catalog browser/model and program editor; read-failure and atomic-store tests | Variation parent relationships are not implemented; native storage approval received; implementation pending |
 | Weights/reps/completion/effort/notes and warm-ups | Session engine/controller, pending-input/recovery and edit tests | Real two-exercise/three-timed-set workout, saved entries and unit checks |
-| Supersets | Life source grouping contract exists | Native grouping/round persistence and UI are not implemented; approval pending |
+| Supersets | Life source grouping contract exists | Native grouping/round persistence and UI are not implemented; approval received; implementation pending |
 | Rest, add/reorder/replace, previous performance | Engine, recovery, source-owned previous reads and their scoped tests | Physical ordering/rest/replacement and relaunch checks |
 | History edit/delete/progress and data preservation | Atomic scoped store mutations, retained identities and raw HR; numeric/store tests | Coherent detail snapshot and failed-read retention now have scoped tests; physical edits/deletion with unrelated-record checks |
 | WHOOP collection ownership across work/rest | Controller acquires/releases shared ownership; source and duplicate-claim tests | Two successive real incoming/persisted observations and actual session coverage |
@@ -28,7 +28,7 @@ Detailed command evidence and its limits are in `docs/DHOOP-STRENGTH-VERIFICATIO
 
 The current proposal replaces the earlier six-field plan with **five nullable fields** and one
 authoritative phase ledger. Exact names, semantics, parity and migration requirements are in
-`docs/DHOOP-LIFE-WORKOUT-PLAN.md`. Approval is still pending. No migration has been written or applied.
+`docs/DHOOP-LIFE-WORKOUT-PLAN.md`. The owner approved these exact five fields on October 14, 2026. Local implementation is underway; no physical phone migration has been verified.
 Legacy timing/group/parent values must remain unknown rather than being backfilled from guesses.
 
 ## Tracker coordination

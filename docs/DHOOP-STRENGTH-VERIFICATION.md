@@ -468,3 +468,21 @@ later replay. Wake-alarm configuration is unchanged.
 
 Tracker production activation, dedicated credentials and live-data writes remain separately
 unapproved. These checks establish collection/persistence behavior, not physiological accuracy.
+
+### Approved phase/group/variation storage — October 14, 2026
+
+The owner explicitly approved the reviewed five nullable columns before implementation. GRDB v47
+and Room 40→41 append the same fields in matching table order. The shared schema oracle advances
+with them. Legacy values remain NULL, without inference or backfill. SQLite backups include these
+columns as part of the database; optional Codable row fields retain compatibility with older metadata.
+The Apple backup manifest's previously stale schema marker now identifies v47. No owner database or
+physical phone has been opened or migrated by these isolated test runs.
+
+Storage verification: 53 existing lifting/detail/schema tests passed before the new fixtures;
+15 metadata/schema/provenance tests then passed in
+`/private/tmp/dhoop-lift-phase-metadata-tests.log`. Android schema oracle, migration-chain and
+legacy-entity tests passed with full-module compilation in
+`/private/tmp/dhoop-lift-phase-android-schema-tests.log`. The Swift upgrade fixture starts at v46,
+seeds existing exercises, targets, sessions, sets and raw HR, applies v47 twice and checks preservation
+and NULL metadata. Round trips cover all five new values and independent parent/variation history.
+These are software checks, not phone migration, collection or wearer evidence.

@@ -133,7 +133,7 @@ progression. Extra/replaced exercises retain distinct actual-only identities and
 True pause/resume needs an interval ledger; start/end envelopes and an active-seconds total cannot
 retain pauses losslessly. One session ledger is the authority for set, rest and pause timing, avoiding
 separately persisted competing per-set and session arrays. The following additive nullable native
-fields are proposed for owner approval, replacing the earlier six-field proposal:
+fields were approved by the owner on October 14, 2026, replacing the earlier six-field proposal:
 
 | Table | Proposed field | SQL type | Purpose |
 | --- | --- | --- | --- |
@@ -143,7 +143,7 @@ fields are proposed for owner approval, replacing the earlier six-field proposal
 | `liftSet` | `roundIndex` | INTEGER | Observed zero-based round, not inferred card order. |
 | `liftSession` | `activityIntervalsJSON` | TEXT | One authoritative observed phase ledger. |
 
-No native migration has been written or applied. Existing rows would retain NULL, with no timing,
+The approved versioned migrations are being implemented locally. Existing rows retain NULL, with no timing,
 grouping or ancestry backfill. The versioned Swift/Room migrations, models, schema oracle, backup and
 round-trip tests must agree before applying them. Existing workout IDs, raw HR and preferences remain.
 

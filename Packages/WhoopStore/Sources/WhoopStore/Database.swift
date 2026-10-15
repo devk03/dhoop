@@ -1091,6 +1091,14 @@ extension WhoopStore {
             try db.create(index: "idx_liftSet_session_ord", on: "liftSet",
                           columns: ["sessionId", "ord"], options: [.ifNotExists])
         }
+        // Owner-approved additive metadata. Legacy rows remain unknown; no timing is inferred.
+        migrator.registerMigration("v47-lift-phase-metadata") { db in
+            try db.execute(sql: "ALTER TABLE liftExercise ADD COLUMN parentExerciseId TEXT")
+            try db.execute(sql: "ALTER TABLE liftProgramItem ADD COLUMN supersetGroupId TEXT")
+            try db.execute(sql: "ALTER TABLE liftSet ADD COLUMN supersetGroupId TEXT")
+            try db.execute(sql: "ALTER TABLE liftSet ADD COLUMN roundIndex INTEGER")
+            try db.execute(sql: "ALTER TABLE liftSession ADD COLUMN activityIntervalsJSON TEXT")
+        }
         return migrator
     }
 }

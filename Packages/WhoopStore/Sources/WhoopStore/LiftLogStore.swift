@@ -37,6 +37,8 @@ public struct LiftExerciseRow: Equatable, Codable, Sendable {
     /// Unix seconds; most-recently-used floats to the top of the picker. Nil until first used.
     public var lastUsedTs: Int?
 
+    public var parentExerciseId: String?
+
     public init(
         id: String,
         deviceId: String,
@@ -44,7 +46,8 @@ public struct LiftExerciseRow: Equatable, Codable, Sendable {
         primaryMuscle: LiftMuscle?,
         secondaryMuscles: [LiftMuscle] = [],
         createdAt: Int,
-        lastUsedTs: Int?
+        lastUsedTs: Int?,
+        parentExerciseId: String? = nil
     ) {
         self.id = id
         self.deviceId = deviceId
@@ -54,6 +57,7 @@ public struct LiftExerciseRow: Equatable, Codable, Sendable {
             LiftMuscle.encodeList(secondaryMuscles, excluding: primaryMuscle))
         self.createdAt = createdAt
         self.lastUsedTs = lastUsedTs
+        self.parentExerciseId = parentExerciseId
     }
 
     static func decode(_ row: Row) -> LiftExerciseRow {
@@ -64,7 +68,8 @@ public struct LiftExerciseRow: Equatable, Codable, Sendable {
             primaryMuscle: LiftMuscle(rawValue: row["primaryMuscle"] ?? ""),
             secondaryMuscles: LiftMuscle.decodeList(row["secondaryMuscles"]),
             createdAt: row["createdAt"],
-            lastUsedTs: row["lastUsedTs"]
+            lastUsedTs: row["lastUsedTs"],
+            parentExerciseId: row["parentExerciseId"]
         )
     }
 }
@@ -137,6 +142,8 @@ public struct LiftProgramItemRow: Equatable, Codable, Sendable {
     /// The user's own technique cue, stored and shown back verbatim.
     public var note: String?
 
+    public var supersetGroupId: String?
+
     public init(
         id: String,
         deviceId: String,
@@ -149,7 +156,8 @@ public struct LiftProgramItemRow: Equatable, Codable, Sendable {
         targetRpe: Double?,
         targetWeightKg: Double?,
         restSec: Int?,
-        note: String?
+        note: String?,
+        supersetGroupId: String? = nil
     ) {
         self.id = id
         self.deviceId = deviceId
@@ -163,6 +171,7 @@ public struct LiftProgramItemRow: Equatable, Codable, Sendable {
         self.targetWeightKg = targetWeightKg
         self.restSec = restSec
         self.note = note
+        self.supersetGroupId = supersetGroupId
     }
 
     static func decode(_ row: Row) -> LiftProgramItemRow {
@@ -178,7 +187,8 @@ public struct LiftProgramItemRow: Equatable, Codable, Sendable {
             targetRpe: row["targetRpe"],
             targetWeightKg: row["targetWeightKg"],
             restSec: row["restSec"],
-            note: row["note"]
+            note: row["note"],
+            supersetGroupId: row["supersetGroupId"]
         )
     }
 }
@@ -202,6 +212,8 @@ public struct LiftSessionRow: Equatable, Codable, Sendable {
     public var sessionRpe: Double?
     public var note: String?
 
+    public var activityIntervalsJSON: String?
+
     public init(
         id: String,
         deviceId: String,
@@ -211,7 +223,8 @@ public struct LiftSessionRow: Equatable, Codable, Sendable {
         programId: String?,
         programName: String?,
         sessionRpe: Double?,
-        note: String?
+        note: String?,
+        activityIntervalsJSON: String? = nil
     ) {
         self.id = id
         self.deviceId = deviceId
@@ -222,6 +235,7 @@ public struct LiftSessionRow: Equatable, Codable, Sendable {
         self.programName = programName
         self.sessionRpe = sessionRpe
         self.note = note
+        self.activityIntervalsJSON = activityIntervalsJSON
     }
 
     static func decode(_ row: Row) -> LiftSessionRow {
@@ -234,7 +248,8 @@ public struct LiftSessionRow: Equatable, Codable, Sendable {
             programId: row["programId"],
             programName: row["programName"],
             sessionRpe: row["sessionRpe"],
-            note: row["note"]
+            note: row["note"],
+            activityIntervalsJSON: row["activityIntervalsJSON"]
         )
     }
 }
@@ -267,6 +282,9 @@ public struct LiftSetRow: Equatable, Codable, Sendable {
     public var restSec: Int?
     public var note: String?
 
+    public var supersetGroupId: String?
+    public var roundIndex: Int?
+
     public init(
         id: String,
         deviceId: String,
@@ -283,7 +301,9 @@ public struct LiftSetRow: Equatable, Codable, Sendable {
         startTs: Int?,
         endTs: Int?,
         restSec: Int?,
-        note: String?
+        note: String?,
+        supersetGroupId: String? = nil,
+        roundIndex: Int? = nil
     ) {
         self.id = id
         self.deviceId = deviceId
@@ -302,6 +322,8 @@ public struct LiftSetRow: Equatable, Codable, Sendable {
         self.endTs = endTs
         self.restSec = restSec
         self.note = note
+        self.supersetGroupId = supersetGroupId
+        self.roundIndex = roundIndex
     }
 
     /// Volume for this set: weight x reps, in kilograms. Nil unless BOTH are present, and zero for a
@@ -328,7 +350,9 @@ public struct LiftSetRow: Equatable, Codable, Sendable {
             startTs: row["startTs"],
             endTs: row["endTs"],
             restSec: row["restSec"],
-            note: row["note"]
+            note: row["note"],
+            supersetGroupId: row["supersetGroupId"],
+            roundIndex: row["roundIndex"]
         )
     }
 }
@@ -399,17 +423,19 @@ extension WhoopStore {
                 }
                 try db.execute(sql: """
                     INSERT INTO liftExercise
-                        (id, deviceId, name, primaryMuscle, secondaryMuscles, createdAt, lastUsedTs)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (id, deviceId, name, primaryMuscle, secondaryMuscles, createdAt, lastUsedTs, parentExerciseId)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(deviceId, name) DO UPDATE SET
                         primaryMuscle = COALESCE(excluded.primaryMuscle, primaryMuscle),
                         secondaryMuscles = COALESCE(excluded.secondaryMuscles, secondaryMuscles),
-                        lastUsedTs = MAX(COALESCE(excluded.lastUsedTs, 0), COALESCE(lastUsedTs, 0))
+                        lastUsedTs = MAX(COALESCE(excluded.lastUsedTs, 0), COALESCE(lastUsedTs, 0)),
+                        parentExerciseId = COALESCE(excluded.parentExerciseId, parentExerciseId)
                     """, arguments: [
                         r.id, r.deviceId, r.name,
                         r.primaryMuscle?.rawValue,
                         LiftMuscle.encodeList(r.secondaryMuscles, excluding: r.primaryMuscle),
                         r.createdAt, r.lastUsedTs,
+                        r.parentExerciseId,
                     ])
                 n += db.changesCount
             }
@@ -665,17 +691,19 @@ extension WhoopStore {
                 try db.execute(sql: """
                     INSERT INTO liftSession
                         (id, deviceId, startTs, endTs, sport, programId, programName,
-                         sessionRpe, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         sessionRpe, note, activityIntervalsJSON)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(deviceId, startTs, sport) DO UPDATE SET
                         endTs = excluded.endTs,
                         programId = excluded.programId,
                         programName = excluded.programName,
                         sessionRpe = excluded.sessionRpe,
-                        note = excluded.note
+                        note = excluded.note,
+                        activityIntervalsJSON = excluded.activityIntervalsJSON
                     """, arguments: [
                         r.id, r.deviceId, r.startTs, r.endTs, r.sport,
                         r.programId, r.programName, r.sessionRpe, r.note,
+                        r.activityIntervalsJSON,
                     ])
                 n += db.changesCount
             }
@@ -688,8 +716,8 @@ extension WhoopStore {
                 try db.execute(sql: """
                     INSERT INTO liftSet
                         (id, deviceId, sessionId, ord, exercise, primaryMuscle, secondaryMuscles,
-                         setIndex, weightKg, reps, rpe, isWarmup, startTs, endTs, restSec, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         setIndex, weightKg, reps, rpe, isWarmup, startTs, endTs, restSec, note, supersetGroupId, roundIndex)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         ord = excluded.ord,
                         exercise = excluded.exercise,
@@ -703,13 +731,17 @@ extension WhoopStore {
                         startTs = excluded.startTs,
                         endTs = excluded.endTs,
                         restSec = excluded.restSec,
-                        note = excluded.note
+                        note = excluded.note,
+                        supersetGroupId = excluded.supersetGroupId,
+                        roundIndex = excluded.roundIndex
                     """, arguments: [
                         r.id, r.deviceId, r.sessionId, r.ord, r.exercise,
                         r.primaryMuscle?.rawValue,
                         LiftMuscle.encodeList(r.secondaryMuscles, excluding: r.primaryMuscle),
                         r.setIndex, r.weightKg, r.reps, r.rpe, r.isWarmup,
                         r.startTs, r.endTs, r.restSec, r.note,
+                        r.supersetGroupId,
+                        r.roundIndex,
                     ])
                 n += db.changesCount
             }
@@ -743,12 +775,13 @@ extension WhoopStore {
                 try db.execute(sql: """
                     INSERT INTO liftProgramItem
                         (id, deviceId, programId, ord, exercise, targetSets,
-                         targetRepsLow, targetRepsHigh, targetRpe, targetWeightKg, restSec, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         targetRepsLow, targetRepsHigh, targetRpe, targetWeightKg, restSec, note, supersetGroupId)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         r.id, r.deviceId, r.programId, r.ord, r.exercise, r.targetSets,
                         r.targetRepsLow, r.targetRepsHigh, r.targetRpe, r.targetWeightKg,
                         r.restSec, r.note,
+                        r.supersetGroupId,
                     ])
                 n += db.changesCount
             }
