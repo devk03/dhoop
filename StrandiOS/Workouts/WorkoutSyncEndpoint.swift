@@ -2,6 +2,7 @@ import Foundation
 
 enum WorkoutSyncEndpoint: Equatable {
     case catalog
+    case dashboard(mesocycleId: Int?, sessionId: Int?, cursor: Int, limit: Int)
     case manifest(Int)
     case sessionIndex(cursor: Int, limit: Int)
     case changes(cursor: Int, limit: Int)
@@ -9,9 +10,12 @@ enum WorkoutSyncEndpoint: Equatable {
     case observations
     case receiptLookup
     case reconcile
+    case frontendCapabilities
+    case frontendCommand
+    case frontendReceipt(UUID)
 
     var method: String {
-        switch self { case .observations, .reconcile, .receiptLookup: return "POST"; default: return "GET" }
+        switch self { case .observations, .reconcile, .receiptLookup, .frontendCommand: return "POST"; default: return "GET" }
     }
 
     /// This integration has one reviewed owner origin. No default configuration is implied.
@@ -24,6 +28,13 @@ enum WorkoutSyncEndpoint: Equatable {
         var items: [URLQueryItem] = []
         switch self {
         case .catalog: parts.path = prefix + "catalog"
+        case .dashboard(let cycle, let session, let cursor, let limit):
+            guard cursor >= 0, (1...25).contains(limit), cycle.map({ $0 > 0 }) ?? true,
+                  session.map({ $0 > 0 }) ?? true else { throw WorkoutSyncTransportError.configuration }
+            parts.path = prefix + "dashboard"
+            items = pagination(cursor, limit)
+            if let cycle { items.append(URLQueryItem(name: "mesocycleId", value: String(cycle))) }
+            if let session { items.append(URLQueryItem(name: "sessionId", value: String(session))) }
         case .manifest(let id):
             guard id > 0 else { throw WorkoutSyncTransportError.configuration }
             parts.path = prefix + "manifest"; items = [URLQueryItem(name: "sessionId", value: String(id))]
@@ -40,6 +51,11 @@ enum WorkoutSyncEndpoint: Equatable {
         case .observations: parts.path = "/api/webhooks/workouts"
         case .receiptLookup: parts.path = prefix + "receipts/lookup"
         case .reconcile: parts.path = prefix + "reconcile"
+        case .frontendCapabilities:
+            parts.path = prefix + "commands"; items = [URLQueryItem(name: "view", value: "capabilities")]
+        case .frontendCommand: parts.path = prefix + "commands"
+        case .frontendReceipt(let id):
+            parts.path = prefix + "commands"; items = [URLQueryItem(name: "operationId", value: id.uuidString.lowercased())]
         }
         parts.queryItems = items.isEmpty ? nil : items
         guard let url = parts.url else { throw WorkoutSyncTransportError.configuration }

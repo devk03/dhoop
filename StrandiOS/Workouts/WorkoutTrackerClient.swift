@@ -119,7 +119,7 @@ final class WorkoutTrackerClient: ObservableObject {
         guard value.valid else { throw WorkoutSyncTransportError.configuration }
         var next = state
         next.enabled = false; next.origin = origin; next.installationId = installationId
-        next.index = nil; next.manifests = [:]; next.manifestReadAt = [:]; next.cachedPlanBlocks = [:]; next.capturedAt = nil
+        next.index = nil; next.manifests = [:]; next.manifestReadAt = [:]; next.cachedPlanBlocks = [:]; next.capturedAt = nil; next.frontendPage = nil; next.frontendReadAt = nil
         next.message = "Connection saved. Tracker remains off until you enable it."
         try commit(next)
         try saveCredential(value)
@@ -153,6 +153,27 @@ final class WorkoutTrackerClient: ObservableObject {
         let fileStore = store
         return try await Task.detached(priority: .utility) { try fileStore.backupManifest(at: package) }.value
     }
+    /// Read the same canonical dashboard as web/MCP. Failed or superseded reads retain the last cache.
+    func refreshDashboard(mesocycleId: Int? = nil, sessionId: Int? = nil, cursor: Int = 0) async throws {
+        guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
+        let config = try credentials()
+        guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        let ticket = generation
+        busy = true; defer { busy = false }
+        let bytes = try await send(.dashboard(mesocycleId: mesocycleId, sessionId: sessionId, cursor: cursor, limit: 10), nil, config)
+        let page = try JSONDecoder().decode(WorkoutTrackerDashboard.self, from: bytes)
+        try page.validate()
+        guard !Task.isCancelled, ticket == generation, state.enabled,
+              page.pagination.cursor == cursor,
+              mesocycleId.map({ page.dashboard.activeMesocycle?.id == $0 }) ?? true,
+              sessionId.map({ id in page.dashboard.sessions.count == 1 && page.dashboard.sessions.first?.id == id }) ?? true
+        else { throw WorkoutTrackerContractError.invalidSnapshot }
+        var next = state
+        next.frontendPage = page; next.frontendReadAt = Date()
+        next.message = "Website workout snapshot refreshed. Pending WHOOP recordings are tracked separately."
+        try commit(next)
+    }
+
     func refreshIndex() async throws {
         guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
         let config = try credentials()

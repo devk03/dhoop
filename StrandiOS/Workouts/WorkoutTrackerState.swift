@@ -24,10 +24,12 @@ struct WorkoutTrackerState: Codable, Equatable {
     var archives: [String: WorkoutTrackerArchiveReference] = [:]
     var locallyKeptSources: Set<UUID> = []
     var capturedAt: Date?
+    var frontendPage: WorkoutTrackerDashboard?
+    var frontendReadAt: Date?
     var message = "Workout tracker is off. Local strength tracking works without it."
 
     init() {}
-    enum CodingKeys: String, CodingKey { case version, enabled, origin, installationId, index, manifests, manifestReadAt, cachedPlanBlocks, deliveries, legacyExerciseIdentities, archives, locallyKeptSources, capturedAt, message }
+    enum CodingKeys: String, CodingKey { case version, enabled, origin, installationId, index, manifests, manifestReadAt, cachedPlanBlocks, deliveries, legacyExerciseIdentities, archives, locallyKeptSources, capturedAt, frontendPage, frontendReadAt, message }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         version = try c.decode(Int.self, forKey: .version)
@@ -43,6 +45,8 @@ struct WorkoutTrackerState: Codable, Equatable {
         archives = try c.decodeIfPresent([String: WorkoutTrackerArchiveReference].self, forKey: .archives) ?? [:]
         locallyKeptSources = try c.decodeIfPresent(Set<UUID>.self, forKey: .locallyKeptSources) ?? []
         capturedAt = try c.decodeIfPresent(Date.self, forKey: .capturedAt)
+        frontendPage = try c.decodeIfPresent(WorkoutTrackerDashboard.self, forKey: .frontendPage)
+        frontendReadAt = try c.decodeIfPresent(Date.self, forKey: .frontendReadAt)
         message = try c.decodeIfPresent(String.self, forKey: .message) ?? "Tracker state loaded"
     }
 
@@ -60,6 +64,8 @@ struct WorkoutTrackerState: Codable, Equatable {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         if let origin { _ = try WorkoutSyncEndpoint.catalog.url(origin: origin) }
+        try frontendPage?.validate()
+        if let readAt = frontendReadAt, !readAt.timeIntervalSince1970.isFinite { throw WorkoutTrackerContractError.invalidSnapshot }
         try index?.validate()
         for (key, manifest) in manifests {
             try manifest.validate()

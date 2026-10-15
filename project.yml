@@ -106,6 +106,9 @@ targets:
       - StrandiOS/Workouts/WorkoutSyncEndpoint.swift
       - StrandiOS/Workouts/WorkoutSyncTransport.swift
       - StrandiOS/Workouts/WorkoutTrackerState.swift
+      - StrandiOS/Workouts/WorkoutTrackerDashboard.swift
+      - StrandiOS/Workouts/WorkoutFrontendCommand.swift
+      - StrandiOS/Workouts/WorkoutFrontendClient.swift
       - StrandiOS/Workouts/WorkoutTrackerArchive.swift
       - StrandiOS/Workouts/WorkoutTrackerBackup.swift
       - StrandiOS/Workouts/WorkoutTrackerCaptureSnapshot.swift
