@@ -58,6 +58,7 @@ struct CutSleepView: View {
                 selectedDayCard(comparisonName, rows: apple, tint: StrandPalette.metricSteps)
             }
             timelineCard
+            stagesCard
             NoopCard {
                 DisclosureGroup("Range averages & comparison") {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -67,7 +68,6 @@ struct CutSleepView: View {
                         }
                         comparisonSummary
                         if window.days != 1 && Set((whoop + apple).map(\.day)).count > 1 { trendCard }
-                        stagesCard
                     }.padding(.top, NoopMetrics.space3)
                 }.font(StrandFont.subhead)
             }
@@ -325,48 +325,57 @@ struct CutSleepView: View {
     private var stagesCard: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                Text("Sleep stages").font(StrandFont.headline)
-                Text(pairs.isEmpty ? "Available records · sources shown separately" : "Stage averages use dates with both stage values")
+                Text("Stage breakdown").font(StrandFont.headline)
+                Text(selectedNight.map(nightLabel) ?? "No sleep date selected")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                stageRow("Deep", key: \.deep)
+                stageSource("WHOOP", row: whoop.first { $0.day == selectedNight })
                 Divider()
-                stageRow("REM", key: \.rem)
-                Divider()
-                stageRow("Light / Core", key: \.light)
-                Divider()
-                stageRow("Unclassified", key: \.unspecified)
+                stageSource(comparisonName, row: apple.first { $0.day == selectedNight })
             }
         }
     }
-    private func stageRow(_ title: String, key: KeyPath<SleepComparisonDay, Double?>) -> some View {
-        let comparable = pairs.filter { $0.whoop[keyPath: key] != nil && $0.apple[keyPath: key] != nil }
-        let left = pairs.isEmpty ? whoop.compactMap { $0[keyPath: key] } : comparable.compactMap { $0.whoop[keyPath: key] }
-        let right = pairs.isEmpty ? apple.compactMap { $0[keyPath: key] } : comparable.compactMap { $0.apple[keyPath: key] }
-        let maximum = max(1, max(SleepComparisonProjection.mean(whoop.map(\.total)) ?? 0, SleepComparisonProjection.mean(apple.map(\.total)) ?? 0))
-        return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-            HStack {
-                Text(title).font(StrandFont.subhead)
-                Spacer(minLength: NoopMetrics.space1)
-                if !pairs.isEmpty { Text("\(comparable.count) matched").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary) }
+    private func stageSource(_ source: String, row: SleepComparisonDay?) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+            Text(source).font(StrandFont.subhead)
+            ForEach([SleepComparisonSample.Stage.deep, .rem, .core, .unspecified], id: \.rawValue) { stage in
+                let minutes = row.flatMap { value -> Double? in
+                    switch stage {
+                    case .deep: return value.deep
+                    case .rem: return value.rem
+                    case .core: return value.light
+                    case .unspecified: return value.unspecified
+                    case .awake: return nil
+                    }
+                }
+                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: NoopMetrics.space2) {
+                            Label(stageName(stage), systemImage: "circle.fill").foregroundStyle(stageColor(stage))
+                            Spacer(minLength: NoopMetrics.space2)
+                            stageAmount(minutes, total: row?.total)
+                        }
+                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                            Label(stageName(stage), systemImage: "circle.fill").foregroundStyle(stageColor(stage))
+                            stageAmount(minutes, total: row?.total)
+                        }
+                    }.font(StrandFont.subhead)
+                    if let fraction = SleepComparisonProjection.stageFraction(minutes, total: row?.total) {
+                        ProgressView(value: fraction).tint(stageColor(stage))
+                    }
+                }.accessibilityElement(children: .combine)
             }
-            DashboardGridLayout(columns: typeSize >= .xxxLarge ? 1 : 2, squareMinimum: false) {
-                stageValue("WHOOP", values: left, maximum: maximum, tint: StrandPalette.metricHRV)
-                stageValue(comparisonName, values: right, maximum: maximum, tint: StrandPalette.metricSteps)
-            }
+            Text(row?.method ?? "No record for this source and date")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
     }
-    private func stageValue(_ title: String, values: [Double], maximum: Double, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-            HStack {
-                Text(title).foregroundStyle(tint)
-                Spacer(minLength: NoopMetrics.space1)
-                Text(SleepComparisonProjection.mean(values).map(sleepHM) ?? "—").monospacedDigit()
-            }.font(StrandFont.caption)
-            if let mean = SleepComparisonProjection.mean(values) { ProgressView(value: min(mean, maximum), total: maximum).tint(tint) }
-            if window.days != 1 {
-                Text("\(values.count) \(values.count == 1 ? "record" : "records")").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+    private func stageAmount(_ minutes: Double?, total: Double?) -> some View {
+        HStack(spacing: NoopMetrics.space2) {
+            Text(minutes.map(sleepHM) ?? "Unavailable").monospacedDigit()
+            if let fraction = SleepComparisonProjection.stageFraction(minutes, total: total) {
+                Text("\(Int((fraction * 100).rounded()))%")
+                    .monospacedDigit().foregroundStyle(StrandPalette.textSecondary)
             }
-        }.accessibilityElement(children: .combine)
+        }
     }
     private var trendCard: some View {
         NoopCard {

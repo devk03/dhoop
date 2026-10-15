@@ -66,6 +66,11 @@ enum SleepComparisonProjection {
         let whoop: SleepComparisonDay
         let apple: SleepComparisonDay
     }
+    static func stageFraction(_ minutes: Double?, total: Double?) -> Double? {
+        guard let minutes, let total, minutes.isFinite, total.isFinite,
+              minutes >= 0, total > 0, minutes <= total else { return nil }
+        return minutes / total
+    }
     static func matched(_ whoop: [SleepComparisonDay], _ apple: [SleepComparisonDay]) -> [Pair] {
         let right = Dictionary(apple.map { ($0.day, $0) }, uniquingKeysWith: { first, _ in first })
         return whoop.compactMap { lhs in right[lhs.day].map { Pair(whoop: lhs, apple: $0) } }
