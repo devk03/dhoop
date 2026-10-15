@@ -24,7 +24,6 @@ private struct RunningContent: View, Equatable {
     @State private var editingTimeGoal = false
     @State private var editedMinutes = 30
     @StateObject private var history = CardioHistoryModel()
-    @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var meditation: MeditationController
     @EnvironmentObject private var liftSession: LiftSessionController
@@ -36,7 +35,10 @@ private struct RunningContent: View, Equatable {
     var body: some View {
         ScreenScaffold(title: nil, onRefresh: { capturedAt = Date(); await repo.refresh() }) {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                HStack(spacing: NoopMetrics.space3) {
+                let headerLayout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
+                    : AnyLayout(HStackLayout(spacing: NoopMetrics.space3))
+                headerLayout {
                     if section != "Train" {
                         Button { section = "Train" } label: {
                             Image(systemName: "arrow.left").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
@@ -45,12 +47,21 @@ private struct RunningContent: View, Equatable {
                     Text(section == "Train" ? "Exercises" : section).font(StrandFont.title1)
                     Spacer(minLength: 0)
                     if section == "Train" {
-                        Button("History") { section = "History" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(NoopFeedbackButtonStyle())
-                        Button("Review") { section = "Review" }.font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(NoopFeedbackButtonStyle())
+                        HStack(spacing: NoopMetrics.space2) {
+                        Button { controller.testBuzz() } label: { Label("Test buzz", systemImage: "wave.3.right") }
+                            .font(StrandFont.caption).buttonStyle(NoopButtonStyle(.secondary))
+                            .disabled(!controller.strapAlertsReady || !controller.workoutHapticsEnabled)
+                        Menu {
+                            Button("History", systemImage: "clock") { section = "History" }
+                            Button("Detected activity", systemImage: "figure.run") { section = "Review" }
+                            NavigationLink("WHOOP alerts", destination: RemoteBuzzSettingsView())
+                        } label: { Image(systemName: "ellipsis").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
+                            .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Exercise options")
+                        }
                     }
                 }
-                if section == "Train" {
-                    BuzzDeliveryStatusView(ble: app.ble)
+                if section == "Train", let message = controller.buzzTestMessage {
+                    Text(message).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
                 if section == "History" {
                     CardioHistoryView(model: history, range: $historyRange, now: capturedAt, controller: controller)
@@ -59,8 +70,7 @@ private struct RunningContent: View, Equatable {
                         sessionActive: controller.hasSession || hiit.hasSession || liftSession.isActive || history.loading)
                 } else {
                     if controller.session == nil && !hiit.hasSession && !meditation.session.isInProgress && !liftSession.isActive {
-                        NoopSegmentedControl("Workout type", options: ["Strength", "Zone run", "HIIT", "Intervals", "Meditation"], selection: $workoutMode,
-                            labels: ["Zone run": controller.isLoadingBaseline ? "Zone run" : controller.chosenTarget?.name ?? "Zone run"])
+                        WorkoutModePicker(selection: $workoutMode)
                     }
                     if liftSession.isActive || workoutMode == "Strength" {
                         LiftLogView(embedded: true)
@@ -68,8 +78,7 @@ private struct RunningContent: View, Equatable {
                         MeditationCard()
                     } else if hiit.hasSession || (controller.session == nil && workoutMode != "Zone run") {
                         HIITWorkoutView(controller: hiit, zones: controller.zones, canStart: controller.isConnected && controller.session == nil,
-                            testBuzz: { controller.testBuzz() }, canTestBuzz: controller.strapAlertsReady && controller.workoutHapticsEnabled,
-                            buzzFeedback: controller.buzzTestMessage)
+                            canTestBuzz: controller.strapAlertsReady && controller.workoutHapticsEnabled)
                     } else {
                         if let run = controller.session { sessionCard(run) } else { setupCard }
                         if controller.session != nil { alertsCard }
@@ -115,9 +124,7 @@ private struct RunningContent: View, Equatable {
                     Text("Target heart rate").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     Text(controller.chosenTarget?.rangeLabel ?? "Choose BPM below")
                         .font(StrandFont.title1).monospacedDigit().foregroundStyle(StrandPalette.textPrimary)
-                    Text("Only time in this range counts toward your goal.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
-                Toggle("Use my BPM range", isOn: $controller.useManualTarget).font(StrandFont.subhead).tint(StrandPalette.accent)
                 if controller.useManualTarget || controller.zones.isEmpty { bpmControls }
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                     HStack {
@@ -145,8 +152,7 @@ private struct RunningContent: View, Equatable {
                             .font(StrandFont.subhead).frame(minHeight: NoopMetrics.minimumTouchTarget)
                     }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
-                Toggle("Buzz when goal reached", isOn: $controller.completionAlertsEnabled).font(StrandFont.subhead).tint(StrandPalette.accent)
-                Text(alertReadiness).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Toggle("Buzz when goal reached", isOn: $controller.completionAlertsEnabled).font(StrandFont.subhead).toggleStyle(NoopSwitchStyle())
                 Button { controller.start() } label: {
                     Label("Start \(controller.chosenTarget?.name ?? "run")", systemImage: "play.fill")
                         .font(StrandFont.headline).frame(maxWidth: .infinity)
@@ -155,27 +161,17 @@ private struct RunningContent: View, Equatable {
                 if let reason = controller.startBlockedReason {
                     Text(reason).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
-                DisclosureGroup("Target settings & strap test", isExpanded: $showTargetSettings) {
+                DisclosureGroup("Target options", isExpanded: $showTargetSettings) {
                     targetSettings
                 }.font(StrandFont.subhead)
             }
         }
-        .onChange(of: controller.isLoadingBaseline) { _, loading in
-            if !loading && controller.zones.isEmpty { showTargetSettings = true }
-        }
-        .onAppear { if !controller.isLoadingBaseline && controller.zones.isEmpty { showTargetSettings = true } }
     }
 
     @State private var showTargetSettings = false
-    private var alertReadiness: String {
-        if !controller.completionAlertsEnabled { return "Completion buzzes are off. Outside-range buzzes are off." }
-        if !controller.workoutHapticsEnabled { return "Workout haptics are off in Settings." }
-        if !controller.strapAlertsReady { return "Strap buzz is not ready yet. Check fit and pairing." }
-        return "At the goal: repeat every ten seconds until stopped, up to three minutes. Outside-range buzzes are off. Locked-phone delivery is best effort."
-    }
-
     private var targetSettings: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+            Toggle("Use my BPM range", isOn: $controller.useManualTarget).toggleStyle(NoopSwitchStyle())
             if !controller.useManualTarget, !controller.zones.isEmpty {
                 Picker("Estimated range", selection: $controller.selectedZone) {
                     ForEach(Array(controller.zones.enumerated()), id: \.offset) { index, zone in
@@ -189,10 +185,6 @@ private struct RunningContent: View, Equatable {
                     .frame(minHeight: NoopMetrics.minimumTouchTarget)
             }
             Text(controller.baselineDescription).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            Button("Test WHOOP buzz") { controller.testBuzz() }.buttonStyle(NoopButtonStyle(.secondary))
-                .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                .disabled(!controller.strapAlertsReady || !controller.workoutHapticsEnabled)
-            if let message = controller.buzzTestMessage { Text(message).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
         }.font(StrandFont.subhead).padding(.top, NoopMetrics.space2)
     }
 
@@ -204,8 +196,6 @@ private struct RunningContent: View, Equatable {
             Stepper("Maximum · \(controller.manualUpperBPM) bpm", value: $controller.manualUpperBPM,
                 in: controller.manualLowerBPM...220)
                 .frame(minHeight: NoopMetrics.minimumTouchTarget)
-            Text("Both BPM boundaries are included. Set your range before starting.")
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }.font(StrandFont.subhead).monospacedDigit()
     }
 
@@ -319,17 +309,8 @@ private struct RunningContent: View, Equatable {
 
     private var alertsCard: some View {
         NoopCard(padding: NoopMetrics.space3) {
-            DisclosureGroup("WHOOP alerts") {
-                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    Toggle("Buzz when goal reached", isOn: $controller.completionAlertsEnabled).tint(StrandPalette.accent)
-                    Text(alertReadiness).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    Text("No buzzes outside the range. Goal completion cues repeat every ten seconds for up to three minutes or until stopped. No wake alarms are changed.")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    Button("Test WHOOP buzz") { controller.testBuzz() }.buttonStyle(NoopButtonStyle(.secondary))
-                        .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!controller.strapAlertsReady || !controller.workoutHapticsEnabled)
-                    if let message = controller.buzzTestMessage { Text(message).font(StrandFont.caption) }
-                }.padding(.top, NoopMetrics.space2)
-            }.font(StrandFont.subhead)
+            Toggle("Buzz when goal reached", isOn: $controller.completionAlertsEnabled)
+                .font(StrandFont.subhead).toggleStyle(NoopSwitchStyle())
         }
     }
 

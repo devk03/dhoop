@@ -9,6 +9,7 @@ struct WorkoutTrackerRoutinesView: View {
     @State private var selectedCycle: Int?
     @State private var showingCanonical: WorkoutTrackerDashboard.Session?
     @ObservedObject private var client = WorkoutTrackerClient.shared
+    @ObservedObject private var frontend = WorkoutFrontendClient.shared
     @EnvironmentObject private var session: LiftSessionController
     @Environment(\.dismiss) private var dismiss
     private struct RoutineSummary: Identifiable {
@@ -32,9 +33,15 @@ struct WorkoutTrackerRoutinesView: View {
             else { ScreenScaffold(title: "Strength", subtitle: "Your Life workout tracker.") { content } }
         }
         .task {
-            selectedCycle = client.state.frontendPage?.dashboard.activeMesocycle?.id
             if client.state.enabled && client.state.frontendPage == nil && !client.busy {
                 do { try await client.refreshDashboard() }
+                catch { readError = error.localizedDescription }
+            }
+        }
+        .onChange(of: selectedCycle) { _, cycle in
+            guard client.state.enabled, !client.busy else { return }
+            Task {
+                do { try await client.refreshDashboard(mesocycleId: cycle); readError = nil }
                 catch { readError = error.localizedDescription }
             }
         }
@@ -48,36 +55,33 @@ struct WorkoutTrackerRoutinesView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-            NoopCard {
-                VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                    Label("Life workout tracker", systemImage: "link").font(StrandFont.headline)
-                    Text("Programs, workouts and history use the same tracker as the website and its MCP.")
-                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                    if let page = client.state.frontendPage, let at = client.state.frontendReadAt {
-                        Text("Website snapshot · \(at.formatted(date: .abbreviated, time: .shortened)) · revision \(page.lifeRevision)")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    }
-                    if let error = readError {
-                        Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
-                    }
-                    if let page = client.state.frontendPage, !page.dashboard.mesocycles.isEmpty {
-                        Picker("Program to read", selection: $selectedCycle) {
-                            Text("Current program").tag(Int?.none)
-                            ForEach(page.dashboard.mesocycles) { cycle in Text(cycle.name).tag(Optional(cycle.id)) }
-                        }.disabled(client.busy)
-                    }
-                    NoopAsyncButton("Refresh website workouts", systemImage: "arrow.clockwise", kind: .secondary) {
-                        do { try await client.refreshDashboard(mesocycleId: selectedCycle); readError = nil }
-                        catch { readError = error.localizedDescription; throw error }
-                    }.disabled(!client.state.enabled || client.busy)
-                    NavigationLink("Connection & pending changes") { WorkoutTrackerSettingsView() }
-                        .buttonStyle(NoopButtonStyle(.secondary))
-                }
+            HStack(spacing: NoopMetrics.space2) {
+                Label("Life", systemImage: "link").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Spacer(minLength: NoopMetrics.space2)
+                NoopAsyncButton("Refresh", systemImage: "arrow.clockwise", kind: .secondary) {
+                    do { try await client.refreshDashboard(mesocycleId: selectedCycle); readError = nil }
+                    catch { readError = error.localizedDescription; throw error }
+                }.disabled(!client.state.enabled || client.busy)
+                NavigationLink { WorkoutTrackerSettingsView() } label: { Image(systemName: "gearshape") }
+                    .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Workout settings")
+            }
+            if let error = readError {
+                Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical)
+            }
+            if frontend.unresolved != nil {
+                NavigationLink("A workout change needs attention") { WorkoutFrontendSettingsView() }
+                    .buttonStyle(NoopButtonStyle(.secondary))
             }
             if let page = client.state.frontendPage {
-                if let cycle = page.dashboard.activeMesocycle { Text(cycle.name).font(StrandFont.title2) }
-                NavigationLink("Program settings & benchmarks") { WorkoutTrackerProgramEditor(page: page) }
-                    .buttonStyle(NoopButtonStyle(.secondary))
+                HStack(spacing: NoopMetrics.space2) {
+                    Picker("Program", selection: $selectedCycle) {
+                        Text("Current program").tag(Int?.none)
+                        ForEach(page.dashboard.mesocycles) { cycle in Text(cycle.name).tag(Optional(cycle.id)) }
+                    }.disabled(client.busy)
+                    Spacer(minLength: NoopMetrics.space1)
+                    NavigationLink { WorkoutTrackerProgramEditor(page: page) } label: { Image(systemName: "slider.horizontal.3") }
+                        .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Program settings and benchmarks")
+                }
                 if page.dashboard.sessions.isEmpty {
                     Text("No website workouts in this snapshot.").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                 }
@@ -113,7 +117,7 @@ struct WorkoutTrackerRoutinesView: View {
                 Text("\(page.dashboard.sessions.count) of \(page.pagination.totalSessions) website workouts")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             } else {
-                Text("No website snapshot has been read. Connect the workout tracker, then refresh. Cached WHOOP recordings remain available.")
+                Text("Workout connection is being prepared. Your saved recordings are available below.")
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
             }
             if !rows.isEmpty {

@@ -79,6 +79,7 @@ struct RemoteBuzzSettingsView: View {
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         Text("Missed requests are checked on opening, reconnecting and real Bluetooth wakes, with a ten-minute adaptive foreground window. No background keepalive is used. Expired requests never buzz late.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        MeditationDeliveryDetails()
                         BuzzDeliveryStatusView(ble: app.ble)
                         RemoteBuzzTestView()
                     }

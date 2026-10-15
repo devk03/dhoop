@@ -39,15 +39,7 @@ struct MeditationCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                     action("Retry storage", icon: "arrow.clockwise", perform: meditation.retryStorage)
                 }
-                DisclosureGroup {
-                    Text(alertDetails)
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } label: {
-                    Text("WHOOP completion cue: best-effort when locked. iPhone notification is a separate fallback.")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
-                .tint(StrandPalette.metricHRV)
+
             }
         }
     }
@@ -103,16 +95,6 @@ struct MeditationCard: View {
         }
     }
 
-    private var alertDetails: String {
-        let fallback: String
-        switch meditation.notificationStatus {
-        case .scheduled: fallback = String(localized: "The iPhone notification is scheduled.")
-        case .unavailable: fallback = String(localized: "iPhone notifications are off. Enable them in Settings for a fallback.")
-        case .failed: fallback = String(localized: "The iPhone notification could not be scheduled.")
-        case .checking: fallback = String(localized: "Checking iPhone notification availability.")
-        case .none: fallback = String(localized: "The iPhone notification requires permission. Pausing or cancelling clears it.")
-        }
-        return String(localized: "The screen stays awake while Dhoop is foregrounded. The completion cue is scheduled in Dhoop, not on the strap. Background Bluetooth events may allow delivery while locked; suspension, disconnection, or force-quit can prevent it. No late cue is replayed. Wake alarms remain unchanged.") + " " + fallback
-    }
+
 }
 #endif

@@ -74,21 +74,23 @@ struct WorkoutFrontendSettingsView: View {
                         }
                     }
                 }
-                NoopCard {
-                    VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Text("Dedicated editing credential").font(StrandFont.headline)
-                        Text("Uses the workout connection's origin and installation ID. This is a separate permission from reading plans or sending WHOOP observations.")
-                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                        SecureField("Workout frontend credential", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        NoopAsyncButton("Save editing connection", systemImage: "key", kind: .secondary) {
-                            guard let origin = tracker.state.origin, let id = tracker.state.installationId else { throw WorkoutSyncTransportError.configuration }
-                            try client.configure(origin: origin, installationId: id, token: token); token = ""
-                        }.disabled(client.busy || client.unresolved != nil || token.isEmpty || tracker.state.origin == nil || tracker.state.installationId == nil)
-                        Text("Saving leaves editing off. The credential stays in Keychain. Existing source deliveries and receipts are preserved.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                DisclosureGroup("Advanced connection") {
+                    NoopCard {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                            Text("Dedicated editing credential").font(StrandFont.headline)
+                            Text("Uses the workout connection's origin and installation ID. This is a separate permission from reading plans or sending WHOOP observations.")
+                                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                            SecureField("Workout frontend credential", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                            NoopAsyncButton("Save editing connection", systemImage: "key", kind: .secondary) {
+                                guard let origin = tracker.state.origin, let id = tracker.state.installationId else { throw WorkoutSyncTransportError.configuration }
+                                try client.configure(origin: origin, installationId: id, token: token); token = ""
+                            }.disabled(client.busy || client.unresolved != nil || token.isEmpty || tracker.state.origin == nil || tracker.state.installationId == nil)
+                            Text("Saving leaves editing off. The credential stays in Keychain. Existing source deliveries and receipts are preserved.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
                     }
-                }
+                }.font(StrandFont.subhead)
                 NoopAsyncButton("Export command receipts", systemImage: "square.and.arrow.up", kind: .secondary) {
                     document = try WorkoutFrontendQueueDocument(state: client.state); exporting = true
                 }.disabled(client.busy || client.storageUnavailable)

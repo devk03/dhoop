@@ -56,32 +56,34 @@ struct WorkoutTrackerSettingsView: View {
                         }
                     }
                 }
-                NoopCard {
-                    VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Text("Dedicated connection").font(StrandFont.headline)
-                        Text("Use a credential limited to the workout integration. Sleep, protein, buzz, and MCP credentials do not belong here.")
-                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                        if let installation = client.state.installationId {
-                            Text("Installation ID").font(StrandFont.caption)
-                            Text(installation.uuidString.lowercased()).font(StrandFont.caption).textSelection(.enabled)
-                            ShareLink(item: installation.uuidString.lowercased()) { Label("Share connection ID", systemImage: "square.and.arrow.up") }
-                                .buttonStyle(NoopButtonStyle(.secondary))
-                        } else {
-                            NoopAsyncButton("Create connection ID", systemImage: "link", kind: .secondary) { try client.createInstallationId() }
+                DisclosureGroup("Advanced connection") {
+                    NoopCard {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                            Text("Dedicated connection").font(StrandFont.headline)
+                            Text("Use a credential limited to the workout integration. Sleep, protein, buzz, and MCP credentials do not belong here.")
+                                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                            if let installation = client.state.installationId {
+                                Text("Installation ID").font(StrandFont.caption)
+                                Text(installation.uuidString.lowercased()).font(StrandFont.caption).textSelection(.enabled)
+                                ShareLink(item: installation.uuidString.lowercased()) { Label("Share connection ID", systemImage: "square.and.arrow.up") }
+                                    .buttonStyle(NoopButtonStyle(.secondary))
+                            } else {
+                                NoopAsyncButton("Create connection ID", systemImage: "link", kind: .secondary) { try client.createInstallationId() }
+                            }
+                            TextField("HTTPS origin", text: $origin).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                            SecureField("Dedicated workout credential", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                            NoopAsyncButton("Save connection", systemImage: "checkmark") {
+                                guard let id = client.state.installationId else { throw WorkoutSyncTransportError.configuration }
+                                try client.configure(origin: origin, token: token, installationId: id)
+                                token = ""
+                            }.disabled(client.busy || client.state.installationId == nil || client.storageUnavailable)
+                            Text("Saving keeps the connection off. Credentials stay in Keychain. Local workout data is retained if sync fails.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
-                        TextField("HTTPS origin", text: $origin).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        SecureField("Dedicated workout credential", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        NoopAsyncButton("Save connection", systemImage: "checkmark") {
-                            guard let id = client.state.installationId else { throw WorkoutSyncTransportError.configuration }
-                            try client.configure(origin: origin, token: token, installationId: id)
-                            token = ""
-                        }.disabled(client.busy || client.state.installationId == nil || client.storageUnavailable)
-                        Text("Saving keeps the connection off. Credentials stay in Keychain. Local workout data is retained if sync fails.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
-                }
+                }.font(StrandFont.subhead)
                 backupCard
                 NavigationLink("Website editing & command receipts") { WorkoutFrontendSettingsView() }
                     .buttonStyle(NoopButtonStyle(.secondary))

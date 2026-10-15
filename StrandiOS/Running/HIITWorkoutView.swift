@@ -6,9 +6,7 @@ struct HIITWorkoutView: View {
     @ObservedObject var controller: HIITController
     let zones: [RunningZoneTarget]
     let canStart: Bool
-    let testBuzz: () -> Void
     let canTestBuzz: Bool
-    let buzzFeedback: String?
     @State private var discardID: UUID?
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .largeTitle) private var timerSize = NoopMetrics.dashboardHeroNumber
@@ -23,12 +21,10 @@ struct HIITWorkoutView: View {
             Button("Discard workout", role: .destructive) { controller.discard(id: id) }
             Button("Keep workout", role: .cancel) { }
         } message: { _ in Text("The unfinished session will not be saved. Heart-rate history is kept.") }
-        if let message = controller.message {
+        if let message = controller.message, controller.session?.state != .running {
             Label(message, systemImage: "wave.3.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        Text("Keep your phone nearby. Locked-screen cues are best-effort through Bluetooth; no workout alarm is armed on WHOOP. Missed transitions or disconnection pause the workout. Reopen Dhoop after force-quitting.")
-            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
     }
     private var setup: some View {
         Group {
@@ -57,14 +53,8 @@ struct HIITWorkoutView: View {
             }
             NoopCard {
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                    Toggle("Vibration cues", isOn: $controller.cuesEnabled).font(StrandFont.headline).tint(StrandPalette.metricCyan)
-                    Text("Short: work · Longer: recovery · Longest: finished").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    Text("Warm-up and cool-down use the recovery cue. Workout haptics must be on in Settings.")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    Button("Test WHOOP buzz", action: testBuzz).font(StrandFont.subhead).buttonStyle(NoopButtonStyle(.secondary))
-                        .frame(minHeight: NoopMetrics.minimumTouchTarget).disabled(!canTestBuzz)
-                    if let buzzFeedback { Text(buzzFeedback).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
-                    if !canTestBuzz { Text("Connect and wear WHOOP with workout haptics enabled to test.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+                    Toggle("Vibration cues", isOn: $controller.cuesEnabled).font(StrandFont.headline).toggleStyle(NoopSwitchStyle())
+                    if controller.cuesEnabled && !canTestBuzz { Text("Connect and wear WHOOP with workout haptics enabled to test.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                 }
             }
             Button { controller.start(zones: zones, otherSessionActive: !canStart) } label: {
