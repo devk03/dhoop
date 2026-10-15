@@ -56,6 +56,33 @@ final class WorkoutFrontendClientTests: XCTestCase {
         }
     }
 
+    func testManualCompletionRequiresExplicitCapabilityWithoutEnablingPhysicalStart() async throws {
+        for capability in [false, true] {
+            let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in
+                XCTAssertEqual(endpoint, .frontendCapabilities); XCTAssertNil(body)
+                return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true,
+                    "frontendStart": false, "sessionCompletion": capability, "lifeRevision": 4,
+                    "actions": ["update_session", "start_session"]])
+            }, readCredential: { self.config }, saveCredential: { _ in })
+            try await enable(client)
+            for status in ["in_progress", "skipped", "anything"] {
+                XCTAssertThrowsError(try client.prepare(command: ["action": .string("update_session"), "sessionId": .number(10), "status": .string(status)], revision: 4))
+            }
+            XCTAssertThrowsError(try client.prepare(command: ["action": .string("start_session"), "sessionId": .number(10)], revision: 4))
+            XCTAssertThrowsError(try client.prepare(command: ["action": .string("update_session"), "sessionId": .number(10),
+                "status": .string("completed"), "date": .string("2026-10-20")], revision: 4))
+            for status in ["completed", "planned"] {
+                let command: [String: WorkoutTrackerValue] = ["action": .string("update_session"), "sessionId": .number(10), "status": .string(status)]
+                if capability {
+                    let id = try client.prepare(command: command, revision: 4)
+                    XCTAssertEqual(client.unresolved?.intent.command, command)
+                    XCTAssertNil(client.unresolved?.attemptedAt)
+                    try client.cancelUnsent(id)
+                } else { XCTAssertThrowsError(try client.prepare(command: command, revision: 4)) }
+            }
+        }
+    }
+
     func testDefaultOffAndCapabilitiesAreReadOnly() async throws {
         var writes = 0, requests = 0
         let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in

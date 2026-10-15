@@ -72,7 +72,12 @@ final class WorkoutFrontendClient: ObservableObject {
     @discardableResult
     func prepare(command:[String:WorkoutTrackerValue],revision:Int) throws -> UUID {
         guard !storageUnavailable,!busy,unresolved==nil else { throw Failure.unresolved }
-        guard case .string(let action)=command["action"],supports(action,lifecycle:action=="start_session" || (action=="update_session" && command["status"] != nil)),revision>=0 else { throw Failure.disabled }
+        guard case .string(let action)=command["action"], revision >= 0 else { throw Failure.disabled }
+        let manualCompletion = action == "update_session" && state.capabilities?.sessionCompletion == true &&
+            [WorkoutTrackerValue.string("completed"), .string("planned")].contains(command["status"] ?? .null)
+        if manualCompletion && command["date"] != nil { throw Failure.disabled }
+        let lifecycle = action == "start_session" || (action == "update_session" && command["status"] != nil && !manualCompletion)
+        guard supports(action, lifecycle: lifecycle) else { throw Failure.disabled }
         if action == "update_session", command["date"] != nil, state.capabilities?.sessionDateScheduling != true { throw Failure.disabled }
         let config=try credentials()
         // Match the service's documented name normalization before freezing receipt identity.
