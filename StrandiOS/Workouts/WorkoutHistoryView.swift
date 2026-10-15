@@ -38,6 +38,9 @@ struct WorkoutHistoryView: View {
                 NoopAsyncButton("Refresh", systemImage: "arrow.clockwise", kind: .secondary) { try await load(reset: true) }.disabled(busy || !client.state.enabled)
             }
             if let error { Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
+            if chain.requiresRefresh {
+                Text("Workout changes are shown. Refresh before loading more history.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
             if busy { ProgressView("Reading workouts…") }
             if let loaded = chain.filters, loaded != requested, !chain.sessions.isEmpty {
                 Text("Previous results retained. Refresh to apply the selected filters.").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
@@ -65,12 +68,16 @@ struct WorkoutHistoryView: View {
             }
             if chain.nextCursor != nil {
                 NoopAsyncButton("Load 20 older workouts", systemImage: "arrow.down", kind: .secondary, fullWidth: true) { try await load(reset: false) }
-                    .disabled(busy || requested != chain.filters || !client.state.enabled)
+                    .disabled(busy || chain.requiresRefresh || requested != chain.filters || !client.state.enabled)
             }
             Text("\(chain.sessions.count) loaded · newest first").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
         }
         .task(id: requested) { if !busy { try? await load(reset: true) } }
-        .sheet(item: $selected) { row in WorkoutHistorySessionSheet(row: row) }
+        .sheet(item: $selected, onDismiss: {
+            if let page = client.state.frontendPage {
+                for session in page.dashboard.sessions { chain.reconcile(session, readRevision: page.lifeRevision) }
+            }
+        }) { row in WorkoutHistorySessionSheet(row: row) }
     }
     private func load(reset: Bool) async throws {
         guard !busy else { return }

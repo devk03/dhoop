@@ -30,6 +30,21 @@ final class WorkoutHistoryPageTests: XCTestCase {
         XCTAssertEqual(chain.sessions.map(\.id), [100])
         XCTAssertEqual(chain.revision, 10)
     }
+    func testFreshReopenedDetailLeavesCompletedHistoryWithoutErasingOtherPages() throws {
+        var chain = WorkoutHistoryPageChain()
+        try chain.accept(page(Array((21...40).reversed()), next: "next"), requestedFilters: .init(), cursor: nil)
+        try chain.accept(page(Array((1...20).reversed()), next: "third"), requestedFilters: .init(), cursor: "next")
+        let reopened = WorkoutTrackerDashboard.Session(id: 25, mesocycleId: 1, weekNumber: 1, sessionKey: "x", kind: "strength", title: "Workout", scheduledDate: "2026-10-01", orderIndex: 1, status: "planned", readiness: "", rating: "", notes: "", metrics: [:], sheetItemId: "task-25", linkedSessionId: nil, completedAt: "", exercises: [], finisher: nil)
+        chain.reconcile(reopened, readRevision: 8)
+        XCTAssertEqual(chain.sessions.count, 40)
+        chain.reconcile(reopened, readRevision: 10)
+        XCTAssertEqual(chain.sessions.map(\.id), Array((1...40).reversed()).filter { $0 != 25 })
+        XCTAssertTrue(chain.requiresRefresh)
+        XCTAssertThrowsError(try chain.accept(page([100]), requestedFilters: .init(), cursor: "third"))
+        try chain.accept(page([40], revision: 10), requestedFilters: .init(), cursor: nil)
+        XCTAssertFalse(chain.requiresRefresh)
+    }
+
     func testEndpointUsesOpaqueKeysetCursorAndTwentyLimitNotOffset() throws {
         let url = try WorkoutSyncEndpoint.history(.init(), cursor: "opaque+/=").url(origin: "https://track.kunjadia.dev")
         let items = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
