@@ -1,5 +1,7 @@
 import XCTest
+#if !DHOOP_HOSTLESS_TESTS
 @testable import Strand
+#endif
 import WhoopStore
 
 /// An exercise added while the session runs (Utku, 21 Sep 2026): it joins at the end as one set planned at

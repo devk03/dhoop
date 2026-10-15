@@ -1,6 +1,8 @@
 import XCTest
 import Combine
+#if !DHOOP_HOSTLESS_TESTS
 @testable import Strand
+#endif
 import WhoopStore
 
 /// A knock is not a double-tap.

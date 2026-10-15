@@ -1,5 +1,7 @@
 import XCTest
+#if !DHOOP_HOSTLESS_TESTS
 @testable import Strand
+#endif
 import WhoopStore
 
 /// Finishing a session: what saves, and what reaches the program.

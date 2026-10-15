@@ -1,5 +1,7 @@
 import XCTest
+#if !DHOOP_HOSTLESS_TESTS
 @testable import Strand
+#endif
 
 @MainActor
 final class LiftCollectionOwnershipTests: XCTestCase {

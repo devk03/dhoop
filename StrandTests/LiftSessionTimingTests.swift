@@ -1,6 +1,8 @@
 import XCTest
 import Combine
+#if !DHOOP_HOSTLESS_TESTS
 @testable import Strand
+#endif
 import WhoopStore
 
 /// A running session does no work between taps: no once-a-second tick, only a rest's two moments.

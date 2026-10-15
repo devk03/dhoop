@@ -1,5 +1,7 @@
 import XCTest
+#if !DHOOP_HOSTLESS_TESTS
 @testable import Strand
+#endif
 import WhoopStore
 
 /// Typing numbers into a set you are NOT currently doing.

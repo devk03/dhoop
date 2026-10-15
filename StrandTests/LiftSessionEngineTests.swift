@@ -1,5 +1,7 @@
 import XCTest
+#if !DHOOP_HOSTLESS_TESTS
 @testable import Strand
+#endif
 import WhoopStore
 
 /// The Lift Log session state machine. Pure, so a whole gym session can be driven through a known

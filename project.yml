@@ -117,6 +117,15 @@ targets:
       - Strand/Data/WorkoutTrackerManifest.swift
       - Strand/Data/LiftSessionDetailModel.swift
       - Strand/Data/LiftSessionEngine.swift
+      - StrandTests/LiftSessionEngineTests.swift
+      - StrandTests/LiftSessionAddExerciseTests.swift
+      - StrandTests/LiftSessionFinishTests.swift
+      - StrandTests/LiftSessionPendingInputTests.swift
+      - StrandTests/LiftSessionPersistenceTests.swift
+      - StrandTests/LiftSessionTimingTests.swift
+      - StrandTests/LiftCollectionOwnershipTests.swift
+      - StrandTests/LiftSessionStrapTapTests.swift
+      - StrandTests/LiftPreviousPerformanceTests.swift
       - Strand/Data/LiftSessionController.swift
       - Strand/Data/LiftSessionPersistence.swift
       - Strand/Data/LiftFormat.swift
@@ -155,6 +164,7 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).goal-tests
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DHOOP_HOSTLESS_TESTS"
         TEST_HOST: ""
   DhoopPreferencesTests:
     type: bundle.unit-test
