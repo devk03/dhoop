@@ -20,12 +20,23 @@
 - ImageGen layout reference and exact prompt are retained under docs/design/dhoop-simple-exercises-study.*.
   Illustration settings and dates are not app data.
 
-The Life backend is published, but automatic phone connection is NOT activated yet. The exact
-workout-only Cloudflare Access app and one-year service credential are staged for the browser
-security policy's required action-time approval. Existing sleep, buzz, owner-login and MCP policies
-remain unchanged. The corresponding source/frontend Worker secrets are not configured yet.
-The private handoff stays outside Git. Frontend lifecycle stays off: native binding seed and
-capture_only physical recording integration has not been implemented/verified end to end.
+The owner approved the workout-only connection. Cloudflare Access app
+`a9ca68b3-bd68-4fd0-8b9f-5e4a263b419e` now grants only the dedicated one-year
+Dhoop Workout iPhone service token through Service Auth, on the two workout paths on
+track.kunjadia.dev and tracker.kunjadia.dev. Existing sleep, buzz, owner-login and MCP
+policies remain unchanged. Life configured the five dedicated workout bindings; active
+Worker version is `a06635a7-330b-4d59-b06c-eb0b2c9b0760` (runtime `e0f1ae3`).
+
+Life's 19 live checks passed: authenticated dashboard/catalog/manifest and capabilities;
+separate source/frontend bearer enforcement; missing Access rejection; unrelated row,
+sleep, buzz and photos-route rejection; and lifecycle start rejection. No accepted workout
+write or Life revision change occurred. Manual commands are permitted, frontend start is
+not. Native binding seed and capture_only physical recording integration remain unverified.
+
+The private one-time envelope was copied to the physical iPhone with mode 0600. iOS
+currently rejects both foreground and non-activating setup launches because the device
+is locked. Keychain import and on-phone authenticated reads are not yet verified; the
+private handoff remains intact for the requested brief unlock. No wearer test is required.
 
 This is the owner's iOS frontend scope; Android and macOS UI are unchanged. There is no database
 migration, physiological algorithm change, raw strap command addition, or firmware modification.
