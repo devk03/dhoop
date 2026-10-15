@@ -386,7 +386,7 @@ struct LiftProgramItemSheet: View {
                 LiftFormat.kilograms(fromDisplay: $0, system: unitSystem)
             },
             restSec: Int(restText.trimmingCharacters(in: .whitespaces)),
-            note: trimmedNote.isEmpty ? nil : trimmedNote
+            note: trimmedNote.isEmpty ? nil : trimmedNote, supersetGroupId: item?.supersetGroupId
         ))
         dismiss()
     }

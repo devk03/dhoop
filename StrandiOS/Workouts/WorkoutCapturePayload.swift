@@ -112,6 +112,11 @@ struct WorkoutCapturePayload: Encodable {
             observed.startedAt = row.startTs.map { .value(date($0)) } ?? .clear
             observed.endedAt = row.endTs.map { .value(date($0)) } ?? .clear
             observed.heartRateSummary = heartRateEvidence[identity.sourceSetId].map(WorkoutObservationPatch.value) ?? .clear
+            if let group = row.supersetGroupId {
+                guard let id = UUID(uuidString: group) else { throw WorkoutTrackerContractError.invalidSnapshot }
+                observed.supersetGroupId = .value(id)
+            } else { observed.supersetGroupId = .clear }
+            observed.roundIndex = row.roundIndex.map(WorkoutObservationPatch.value) ?? .clear
             observed.executionOrder = knownOrder(row, id: identity.sourceSetId).map(WorkoutObservationPatch.value) ?? .clear
             try observed.validate(); return observed
         }

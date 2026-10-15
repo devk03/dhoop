@@ -156,6 +156,10 @@ struct LiftProgramEditorSheet: View {
                         Text(targetSummary(item))
                             .font(StrandFont.caption)
                             .foregroundStyle(StrandPalette.textSecondary)
+                        if let group = item.supersetGroupId {
+                            let number = LiftSessionEngine.groupNumber(group, in: items.map(\.supersetGroupId)) ?? 1
+                            Label("Superset \(number)", systemImage: "link").font(StrandFont.caption).foregroundStyle(StrandPalette.metricCyan)
+                        }
                         if let note = item.note, !note.isEmpty {
                             Text(note)
                                 .font(StrandFont.caption)
@@ -169,6 +173,21 @@ struct LiftProgramEditorSheet: View {
                 .buttonStyle(NoopFeedbackButtonStyle())
 
                 VStack(spacing: NoopMetrics.rowSpacing) {
+                    Menu {
+                        if item.supersetGroupId != nil {
+                            Button("Remove from superset") { items[index].supersetGroupId = nil }
+                        }
+                        if index > 0 {
+                            Button("Superset with previous exercise") {
+                                let group = items[index - 1].supersetGroupId ?? UUID().uuidString.lowercased()
+                                items[index - 1].supersetGroupId = group
+                                items[index].supersetGroupId = group
+                            }
+                        }
+                    } label: { Image(systemName: "link").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
+                    .accessibilityLabel("Superset options for \(item.exercise)")
+                    .disabled(index == 0 && item.supersetGroupId == nil)
+
                     Button {
                         move(from: index, by: -1)
                     } label: {
@@ -350,7 +369,7 @@ struct LiftProgramEditorSheet: View {
                 targetRpe: item.targetRpe,
                 targetWeightKg: item.targetWeightKg,
                 restSec: item.restSec,
-                note: item.note
+                note: item.note, supersetGroupId: item.supersetGroupId
             )
         }
         do { try await store.saveLiftProgram(row, items: ordered) }

@@ -252,6 +252,14 @@ struct LiftSessionView: View {
                     }.frame(maxWidth: .infinity, alignment: .leading)
                     exerciseMenu(engine, index: index, item: item)
                 }
+                if let group = item.supersetGroupId {
+                    let members = engine.exerciseOrder.filter { engine.exerciseReplacements[$0] == nil }
+                    let count = members.filter { engine.plan[$0].supersetGroupId == group }.count
+                    let number = LiftSessionEngine.groupNumber(group, in: members.map { engine.plan[$0].supersetGroupId }) ?? 1
+                    Label("Superset \(number) · \(count) movements · rest after the round", systemImage: "link")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.metricCyan)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let replacement = engine.exerciseReplacements[index] {
                     Label("Replaced by \(engine.plan[replacement].exercise) · \(engine.sets.filter { $0.exerciseIndex == index }.count) logged sets retained", systemImage: "arrow.triangle.2.circlepath")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.metricAmber)
@@ -291,6 +299,12 @@ struct LiftSessionView: View {
     private func exerciseMenu(_ engine: LiftSessionEngine, index: Int, item: LiftPlanItem) -> some View {
         let position = engine.exerciseOrder.firstIndex(of: index) ?? 0
         return Menu {
+            if item.supersetGroupId != nil {
+                Button("Remove from superset") { session.ungroupExercise(index) }
+            }
+            if position > 0 {
+                Button("Superset with previous exercise") { _ = session.groupWithPreviousExercise(index) }
+            }
             Button {
                 focused = nil
                 if session.moveExercise(index, by: -1) { scrollTarget = index }
@@ -1002,7 +1016,7 @@ struct LiftSessionView: View {
                 secondaryMuscles: item?.secondaryMuscles ?? [],
                 setIndex: s.slot.setIndex, weightKg: s.weightKg, reps: s.reps, rpe: s.rpe,
                 isWarmup: s.isWarmup, startTs: s.startTs, endTs: s.endTs,
-                restSec: s.restSec, note: session.note(for: s.slot))
+                restSec: s.restSec, note: session.note(for: s.slot), supersetGroupId: s.supersetGroupId, roundIndex: s.roundIndex)
         }
         // Through the SAME path a manual workout takes, so it inherits overlap dedup, the engine's
         // HR-derived strain fill and delete/merge. `strain` stays nil deliberately: the engine fills

@@ -44,6 +44,23 @@ final class WorkoutTrackerClientTests: XCTestCase {
         try await client.confirmPersistence(event, store: fixture.db)
     }
 
+    func testSupersetSourceMetadataDoesNotRewriteTheFrozenPrescription() async throws {
+        let f = try await fixture()
+        let original = f.binding
+        var row = f.sets[0]
+        let group = UUID()
+        row.supersetGroupId = group.uuidString.lowercased(); row.roundIndex = 0
+        let payload = try WorkoutCapturePayload.make(record:f.record,sets:[row],binding:f.binding,
+            installationId:f.config.installationId,revision:1)
+        let data = try JSONEncoder().encode(payload)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with:data) as? [String:Any])
+        let occurrences = try XCTUnwrap(json["exerciseOccurrences"] as? [[String:Any]])
+        let sets = try XCTUnwrap(occurrences.first?["sets"] as? [[String:Any]])
+        XCTAssertEqual(sets.first?["supersetGroupId"] as? String,group.uuidString.lowercased())
+        XCTAssertEqual(sets.first?["roundIndex"] as? Int,0)
+        XCTAssertEqual(f.binding,original)
+    }
+
     func testCachedStartNeedsNoCredentialOrNetworkAndDoesNotInventLegacyFetchAge() async throws {
         let f = try await fixture()
         var state = try f.file.load(); state.enabled = false

@@ -330,13 +330,27 @@ final class LiftSessionController: ObservableObject {
             deliverBuzz(LiftSessionController.advanceConfirmBuzzes)
         }
 
-        engine?.advance(now: stamp)
+        engine?.advance(now: stamp, isWarmup: current.currentSlot.map { pendingWarmups.contains($0) } ?? false)
         // Straight after the stage moves, so the screen lights with no wait behind the bookkeeping below.
         // What follows cannot change what the banner shows: numbers typed into a set are already shown
         // before they are applied (`setNumbers`).
         if fromStrap { strapStepTaken.send() }
         applyPendingInput()
         warnedFor = nil
+        persist()
+    }
+
+    @discardableResult
+    func groupWithPreviousExercise(_ index: Int) -> Bool {
+        guard !isSaving else { return false }
+        let changed = engine?.groupWithPreviousExercise(index, newGroupID: UUID().uuidString.lowercased()) == true
+        persist()
+        return changed
+    }
+
+    func ungroupExercise(_ index: Int) {
+        guard !isSaving else { return }
+        _ = engine?.setSupersetGroup(nil, forExercise: index)
         persist()
     }
 
@@ -814,6 +828,8 @@ final class LiftSessionController: ObservableObject {
         var startTs: Int?
         var endTs: Int?
         var restSec: Int?
+        var supersetGroupId: String? = nil
+        var roundIndex: Int? = nil
     }
 
     /// The sets the session saves — every slot on the sheet.
@@ -838,7 +854,7 @@ final class LiftSessionController: ObservableObject {
             let shown = values(of: set.slot)
             return FinishedSet(slot: set.slot, weightKg: shown.weightKg, reps: shown.reps,
                                rpe: set.rpe ?? planned(set.slot), isWarmup: set.isWarmup,
-                               startTs: set.startTs, endTs: set.endTs, restSec: set.restSec)
+                               startTs: set.startTs, endTs: set.endTs, restSec: set.restSec, supersetGroupId: set.supersetGroupId, roundIndex: set.roundIndex)
         }
         for slot in engine.allSlots where !engine.isCompleted(slot) {
             let typed = pendingValues[slot]

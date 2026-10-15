@@ -91,6 +91,7 @@ enum LiftSessionPersistence {
             /// could be added, which decodes to nil: a line from the program.
             var addedInSession: Bool?
             var sourceLoadMode: WorkoutTrackerLoadMode? = nil
+            var supersetGroupId: String? = nil
         }
 
         /// The stage as a flat, forward-compatible record rather than an encoded enum: a persisted
@@ -113,6 +114,8 @@ enum LiftSessionPersistence {
             var startTs: Int
             var endTs: Int
             var restSec: Int?
+            var supersetGroupId: String? = nil
+            var roundIndex: Int? = nil
         }
     }
 
@@ -224,14 +227,14 @@ enum LiftSessionPersistence {
                                   note: $0.note,
                                   programItemId: $0.programItemId,
                                   // Written only when true, so a session nobody added to encodes as before.
-                                  addedInSession: $0.addedInSession ? true : nil, sourceLoadMode: $0.sourceLoadMode)
+                                  addedInSession: $0.addedInSession ? true : nil, sourceLoadMode: $0.sourceLoadMode, supersetGroupId: $0.supersetGroupId)
             },
             stage: box(engine.stage),
             sets: engine.sets.map {
                 Snapshot.RecordedSet(exerciseIndex: $0.exerciseIndex, setIndex: $0.setIndex,
                                      weightKg: $0.weightKg, reps: $0.reps, rpe: $0.rpe,
                                      isWarmup: $0.isWarmup, startTs: $0.startTs, endTs: $0.endTs,
-                                     restSec: $0.restSec)
+                                     restSec: $0.restSec, supersetGroupId: $0.supersetGroupId, roundIndex: $0.roundIndex)
             },
             stageStartedAt: engine.stageStartedAt,
             // Sorted so the encoded snapshot is stable: a dictionary and a set have no order, and an
@@ -282,13 +285,13 @@ enum LiftSessionPersistence {
                          targetWeightKg: $0.targetWeightKg,
                          note: $0.note,
                          programItemId: $0.programItemId,
-                         addedInSession: $0.addedInSession ?? false, sourceLoadMode: $0.sourceLoadMode)
+                         addedInSession: $0.addedInSession ?? false, sourceLoadMode: $0.sourceLoadMode, supersetGroupId: $0.supersetGroupId)
         }
         let sets = s.sets.map {
             LiftRecordedSet(exerciseIndex: $0.exerciseIndex, setIndex: $0.setIndex,
                             weightKg: $0.weightKg, reps: $0.reps, rpe: $0.rpe,
                             isWarmup: $0.isWarmup, startTs: $0.startTs, endTs: $0.endTs,
-                            restSec: $0.restSec)
+                            restSec: $0.restSec, supersetGroupId: $0.supersetGroupId, roundIndex: $0.roundIndex)
         }
         return LiftSessionEngine(restoring: plan, startTs: s.startSec,
                                  stage: unbox(s.stage), sets: sets, stageStartedAt: s.stageStartedAt, exerciseOrder: s.exerciseOrder,

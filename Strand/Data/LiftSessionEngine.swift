@@ -49,6 +49,7 @@ struct LiftPlanItem: Equatable {
     /// yet; finishing offers to add one.
     var addedInSession: Bool
     var sourceLoadMode: WorkoutTrackerLoadMode?
+    var supersetGroupId: String?
 
     /// Rest used when a program line does not specify one. Two minutes sits in the middle of the
     /// range the hypertrophy literature uses for compound work, and is only a starting value: what
@@ -66,7 +67,7 @@ struct LiftPlanItem: Equatable {
          targetWeightKg: Double? = nil,
          note: String? = nil,
          programItemId: String? = nil,
-         addedInSession: Bool = false, sourceLoadMode: WorkoutTrackerLoadMode? = nil) {
+         addedInSession: Bool = false, sourceLoadMode: WorkoutTrackerLoadMode? = nil, supersetGroupId: String? = nil) {
         self.exercise = exercise
         self.primaryMuscle = primaryMuscle
         self.secondaryMuscles = secondaryMuscles
@@ -80,6 +81,7 @@ struct LiftPlanItem: Equatable {
         self.programItemId = programItemId
         self.addedInSession = addedInSession
         self.sourceLoadMode = sourceLoadMode
+        self.supersetGroupId = supersetGroupId
     }
 }
 
@@ -96,6 +98,9 @@ struct LiftRecordedSet: Equatable {
     /// Rest actually taken after this set. Nil while the rest is still running, or when the user
     /// moved on without resting.
     var restSec: Int?
+
+    var supersetGroupId: String? = nil
+    var roundIndex: Int? = nil
 
     var slot: LiftSlot { LiftSlot(exerciseIndex: exerciseIndex, setIndex: setIndex) }
 }
@@ -327,7 +332,47 @@ struct LiftSessionEngine: Equatable {
     /// your sets on the machine you are standing at. The skipped exercise is not forgotten — it is
     /// still pending, and it is what you get once the current one is done.
     func slotAfter(_ slot: LiftSlot) -> LiftSlot? {
-        (exerciseReplacements[slot.exerciseIndex] == nil ? slots(forExercise: slot.exerciseIndex).first { !isCompleted($0) } : nil) ?? nextPendingSlot
+        if let group = planItem(for: slot)?.supersetGroupId,
+           let next = pendingInGroup(group, excluding: nil) { return next }
+        return (exerciseReplacements[slot.exerciseIndex] == nil ? slots(forExercise: slot.exerciseIndex).first { !isCompleted($0) } : nil) ?? nextPendingSlot
+    }
+
+    /// Presentation labels follow first appearance; the UUID remains the stored identity.
+    static func groupNumber(_ group: String, in groups: [String?]) -> Int? {
+        var seen = Set<String>()
+        let ordered = groups.compactMap { $0 }.filter { seen.insert($0).inserted }
+        return ordered.firstIndex(of: group).map { $0 + 1 }
+    }
+
+    private func pendingInGroup(_ group: String, excluding excluded: LiftSlot?) -> LiftSlot? {
+        let members = exerciseOrder.filter { plan[$0].supersetGroupId == group && exerciseReplacements[$0] == nil }
+        return members.flatMap { slots(forExercise: $0) }.filter { !isCompleted($0) && $0 != excluded }.sorted {
+            if $0.setIndex != $1.setIndex { return $0.setIndex < $1.setIndex }
+            return (members.firstIndex(of: $0.exerciseIndex) ?? 0) < (members.firstIndex(of: $1.exerciseIndex) ?? 0)
+        }.first
+    }
+
+    @discardableResult
+    mutating func groupWithPreviousExercise(_ index: Int, newGroupID: String) -> Bool {
+        guard !isFinished, plan.indices.contains(index), exerciseReplacements[index] == nil,
+              let position = exerciseOrder.firstIndex(of: index),
+              let previous = exerciseOrder.prefix(position).last(where: { exerciseReplacements[$0] == nil }) else { return false }
+        let group = plan[previous].supersetGroupId ?? newGroupID
+        guard plan[index].supersetGroupId != group || plan[previous].supersetGroupId != group else { return false }
+        pushHistory()
+        plan[previous].supersetGroupId = group
+        plan[index].supersetGroupId = group
+        return true
+    }
+
+    /// Grouping is explicit. Historical sets retain the group actually used at completion.
+    @discardableResult
+    mutating func setSupersetGroup(_ group: String?, forExercise index: Int) -> Bool {
+        guard !isFinished, plan.indices.contains(index), exerciseReplacements[index] == nil else { return false }
+        guard plan[index].supersetGroupId != group else { return false }
+        pushHistory()
+        plan[index].supersetGroupId = group
+        return true
     }
 
     /// The set the session is heading to after the current one — what the minimised bar and the Lock
@@ -340,6 +385,7 @@ struct LiftSessionEngine: Equatable {
         case .warmup:
             return nextPendingSlot
         case .working(let slot), .resting(let slot, _):
+            if let group = planItem(for: slot)?.supersetGroupId, let next = pendingInGroup(group, excluding: slot) { return next }
             return (exerciseReplacements[slot.exerciseIndex] == nil ? slots(forExercise: slot.exerciseIndex).first { !isCompleted($0) && $0 != slot } : nil)
                 ?? allSlots.first { !isCompleted($0) && $0 != slot }
         case .finished:
@@ -439,7 +485,7 @@ struct LiftSessionEngine: Equatable {
     }
 
     /// The big button. Context decides what it means.
-    mutating func advance(now: Int) {
+    mutating func advance(now: Int, isWarmup: Bool = false) {
         guard !isPaused, !phaseCapacityReached, validTime(now) else { return }
         switch stage {
         case .warmup:
@@ -450,10 +496,19 @@ struct LiftSessionEngine: Equatable {
             pushHistory()
             closePhase(now: now)
             // Timing only: the numbers stay grey until typed (see `carry(for:lastSession:)`).
+            let group = isWarmup ? nil : planItem(for: slot)?.supersetGroupId
+            let round = group.map { id in sets.filter { $0.exerciseIndex == slot.exerciseIndex && $0.supersetGroupId == id && !$0.isWarmup }.count }
             sets.append(LiftRecordedSet(
                 exerciseIndex: slot.exerciseIndex, setIndex: slot.setIndex,
-                weightKg: nil, reps: nil, rpe: nil, isWarmup: false,
-                startTs: stageStartedAt, endTs: now, restSec: nil))
+                weightKg: nil, reps: nil, rpe: nil, isWarmup: isWarmup,
+                startTs: stageStartedAt, endTs: now, restSec: nil, supersetGroupId: group, roundIndex: round))
+            if let group, let next = slotAfter(slot), next.exerciseIndex != slot.exerciseIndex,
+               planItem(for: next)?.supersetGroupId == group, next.setIndex == slot.setIndex {
+                stage = .working(next)
+                stageStartedAt = now
+                beginPhase(.work, slot: next, now: now)
+                return
+            }
             let rest = planItem(for: slot)?.restSec ?? LiftPlanItem.defaultRestSec
             stage = .resting(slot, endsAt: now + rest)
             stageStartedAt = now
@@ -573,6 +628,7 @@ struct LiftSessionEngine: Equatable {
         var replacement = item
         replacement.targetSets = max(1, slots(forExercise: index).filter { !isCompleted($0) }.count)
         replacement.programItemId = nil; replacement.addedInSession = false
+        replacement.supersetGroupId = plan[index].supersetGroupId
         let replacementIndex = plan.count
         plan.append(replacement)
         exerciseReplacements[index] = replacementIndex
