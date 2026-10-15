@@ -77,13 +77,13 @@ struct LiftSessionBar: View {
 
                     // The same action the sheet's button performs, so a set can be closed out
                     // without opening anything.
-                    Button { session.advance() } label: {
-                        Image(systemName: "checkmark.circle.fill")
+                    Button { if engine.isPaused { session.togglePause() } else { session.advance() } } label: {
+                        Image(systemName: engine.isPaused ? "play.circle.fill" : "checkmark.circle.fill")
                             .font(.system(size: 26, weight: .semibold))
                             .foregroundStyle(tint(engine))
                     }
                     .buttonStyle(NoopFeedbackButtonStyle())
-                    .accessibilityLabel("Next")
+                    .accessibilityLabel(engine.isPaused ? "Resume workout" : "Next")
                 }
                 .padding(.leading, 12)
                 .padding(.trailing, 8)
@@ -98,6 +98,7 @@ struct LiftSessionBar: View {
     }
 
     private func tint(_ engine: LiftSessionEngine) -> Color {
+        if engine.isPaused { return StrandPalette.textSecondary }
         switch engine.stage {
         case .working:  return StrandPalette.statusPositive
         case .resting:  return StrandPalette.metricAmber
@@ -107,7 +108,8 @@ struct LiftSessionBar: View {
 
     /// Rest counts DOWN (that is the number you act on); everything else counts up. Written as the Lock
     /// Screen writes the same clock — "0:45", "0:00", "1:05:00" — through NOOP's one running-clock format.
-    private func bigClock(_ engine: LiftSessionEngine) -> LiftRunningClock {
-        LiftRunningClock { now in engine.restRemaining(now: now) ?? now - engine.stageStartedAt }
+    @ViewBuilder private func bigClock(_ engine: LiftSessionEngine) -> some View {
+        if engine.isPaused { Text(verbatim: "—") }
+        else { LiftRunningClock { now in engine.restRemaining(now: now) ?? engine.observedWorkSeconds(for: engine.currentSlot, now: now) } }
     }
 }

@@ -401,18 +401,21 @@ final class LiftSessionController: ObservableObject {
         var stageStartedAt: Date
         /// When the running rest is due to end. Nil while working.
         var restEndsAt: Date?
+        var isPaused = false
     }
 
     func presentation(system: UnitSystem) -> Presentation? {
         guard let engine, !engine.isFinished else { return nil }
-        let started = Date(timeIntervalSince1970: TimeInterval(engine.stageStartedAt))
+        let stamp = Self.unixNow
+        let anchor: Int = { if case .working = engine.stage { return stamp - engine.observedWorkSeconds(for: engine.currentSlot, now: stamp) }; return engine.stageStartedAt }()
+        let started = Date(timeIntervalSince1970: TimeInterval(anchor))
         let next = Self.nextLine(engine)
 
         if engine.isPaused {
             return Presentation(isResting: false,
                 exercise: engine.currentSlot.flatMap { engine.planItem(for: $0)?.exercise } ?? programName ?? "Session",
                 status: "Paused", detail: "Resume to record new working time", next: next,
-                stageStartedAt: started, restEndsAt: nil)
+                stageStartedAt: started, restEndsAt: nil, isPaused: true)
         }
         guard let slot = engine.currentSlot, let item = engine.planItem(for: slot) else {
             return Presentation(isResting: false,
@@ -424,7 +427,7 @@ final class LiftSessionController: ObservableObject {
         let detail = setNumbers(for: slot, system: system)
         switch engine.stage {
         case .resting(_, let endsAt):
-            let ready = endsAt <= Self.unixNow
+            let ready = endsAt <= stamp
             return Presentation(
                 isResting: true, exercise: item.exercise,
                 status: ready ? String(localized: "Ready for the next set")

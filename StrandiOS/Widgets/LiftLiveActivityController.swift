@@ -108,6 +108,7 @@ final class LiftLiveActivityController {
             state.detail ?? "", state.next,
             "\(state.stageStartedAt.timeIntervalSince1970)",
             "\(state.restEndsAt?.timeIntervalSince1970 ?? 0)",
+            "\(state.isPaused == true)",
         ].joined(separator: "|")
 
         let contentChanged = signature != lastSignature

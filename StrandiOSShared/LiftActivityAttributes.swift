@@ -35,10 +35,11 @@ public struct LiftActivityAttributes: ActivityAttributes {
         public var stageStartedAt: Date
         /// When the running rest is due to end; the widget counts DOWN to it. Nil while working.
         public var restEndsAt: Date?
+        public var isPaused: Bool?
 
         public init(isResting: Bool, exercise: String, status: String, detail: String?,
                     bpm: Int?, next: String,
-                    stageStartedAt: Date, restEndsAt: Date?) {
+                    stageStartedAt: Date, restEndsAt: Date?, isPaused: Bool? = nil) {
             self.isResting = isResting
             self.exercise = exercise
             self.status = status
@@ -47,6 +48,7 @@ public struct LiftActivityAttributes: ActivityAttributes {
             self.next = next
             self.stageStartedAt = stageStartedAt
             self.restEndsAt = restEndsAt
+            self.isPaused = isPaused
         }
     }
 

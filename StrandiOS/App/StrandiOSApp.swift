@@ -465,7 +465,7 @@ struct StrandiOSApp: App {
                 bpm: model.live.connected ? (model.bpm ?? model.live.heartRate) : nil,
                 next: p.next,
                 stageStartedAt: p.stageStartedAt,
-                restEndsAt: p.restEndsAt),
+                restEndsAt: p.restEndsAt, isPaused: p.isPaused),
             alert: alert)
         // One line per strap step into NOOP's strap log: whether the Lock Screen was asked to light.
         if let lightUp { model.live.append(log: AppModel.stamped(lightUp.logLine)) }

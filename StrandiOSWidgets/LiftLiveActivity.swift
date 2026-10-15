@@ -172,7 +172,9 @@ struct LiftLiveActivity: Widget {
     /// nothing, so that end is pushed a day out — well beyond any session.
     private func clock(_ state: LiftActivityAttributes.ContentState, tint: Color) -> some View {
         Group {
-            if let ends = state.restEndsAt {
+            if state.isPaused == true {
+                Text(verbatim: "—")
+            } else if let ends = state.restEndsAt {
                 if ends > state.stageStartedAt {
                     Text(timerInterval: state.stageStartedAt...ends, countsDown: true)
                 } else {
