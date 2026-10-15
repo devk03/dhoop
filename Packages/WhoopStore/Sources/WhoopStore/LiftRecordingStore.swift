@@ -21,7 +21,7 @@ extension WhoopStore {
             else { throw LiftRecordingError.inconsistentRecording }
         }
         try syncWrite { db in
-            let existing = try Row.fetchOne(db, sql: "SELECT id FROM liftSession WHERE deviceId = ? AND startTs = ? AND sport = ?",
+            let existing = try Row.fetchOne(db, sql: "SELECT * FROM liftSession WHERE deviceId = ? AND startTs = ? AND sport = ?",
                 arguments: [session.deviceId, session.startTs, session.sport])
             let canonicalID: String = existing?["id"] ?? session.id
             let previous = try Row.fetchAll(db, sql: "SELECT * FROM liftSet WHERE sessionId = ?", arguments: [canonicalID])
@@ -39,7 +39,21 @@ extension WhoopStore {
                     throw LiftRecordingError.inconsistentRecording
                 }
             }
-            _ = try Self.writeLiftSessions([session], db: db)
+            var canonicalSession = session
+            canonicalSession.id = canonicalID
+            if let json = session.activityIntervalsJSON {
+                var phases = try LiftActivityLedger.decode(json)
+                let mapping = Dictionary(uniqueKeysWithValues: zip(sets, canonicalSets).map { ($0.id, $1.id) })
+                for index in phases.indices {
+                    if let id = phases[index].sourceSetId { phases[index].sourceSetId = mapping[id] ?? id }
+                }
+                let priorJSON: String? = existing?["activityIntervalsJSON"]
+                let retained = try priorJSON.map(LiftActivityLedger.decode)?.compactMap(\.sourceSetId) ?? []
+                try LiftActivityLedger.validate(phases, session: canonicalSession, sets: canonicalSets + previous,
+                    retainedSetIDs: Set(retained))
+                canonicalSession.activityIntervalsJSON = try LiftActivityLedger.encode(phases)
+            }
+            _ = try Self.writeLiftSessions([canonicalSession], db: db)
             try db.execute(sql: "DELETE FROM liftSet WHERE sessionId = ?", arguments: [canonicalID])
             _ = try Self.writeLiftSets(canonicalSets, db: db)
             _ = try Self.writeWorkouts([workout], deviceId: session.deviceId, db: db)
@@ -75,6 +89,15 @@ extension WhoopStore {
                     throw LiftRecordingError.inconsistentRecording
                 }
             }
+            if let json = session.activityIntervalsJSON {
+                let previous = try Row.fetchAll(db, sql: "SELECT * FROM liftSet WHERE sessionId = ?", arguments: [session.id]).map(LiftSetRow.decode)
+                let retainedJSON = try String.fetchOne(db, sql: "SELECT activityIntervalsJSON FROM liftSession WHERE id = ?", arguments: [session.id])
+                let retained = try retainedJSON.map(LiftActivityLedger.decode)?.compactMap(\.sourceSetId) ?? []
+                // New corrections own current bounds; deleted rows retain their historical lineage.
+                let merged = upserts + previous.filter { old in !upserts.contains { $0.id == old.id } }
+                try LiftActivityLedger.validate(LiftActivityLedger.decode(json), session: session, sets: merged,
+                    retainedSetIDs: Set(retained))
+            }
             _ = try Self.writeLiftSessions([session], db: db)
             _ = try Self.writeLiftSets(upserts, db: db)
             for id in deletedSetIDs {
@@ -95,5 +118,16 @@ extension WhoopStore {
                 arguments: [session.deviceId, session.startTs, session.sport])
             return true
         }
+    }
+}
+
+// Typed storage adapters keep the validation helper independent of GRDB and app frameworks.
+extension LiftActivityLedger {
+    static func validate(_ intervals: [LiftActivityInterval], session: LiftSessionRow,
+                         sets: [LiftSetRow], retainedSetIDs: Set<String> = []) throws {
+        try validate(intervals,
+            session: .init(id: session.id, deviceId: session.deviceId, startTs: session.startTs, endTs: session.endTs),
+            sets: sets.map { .init(id: $0.id, sessionId: $0.sessionId, deviceId: $0.deviceId, startTs: $0.startTs, endTs: $0.endTs) },
+            retainedSetIDs: retainedSetIDs)
     }
 }

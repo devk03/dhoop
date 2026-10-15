@@ -64,6 +64,20 @@ extension WhoopStore {
         }
     }
 
+    /// A union query counts a sample once, excluding pauses and unresolved work windows.
+    public func measuredHeartRateStats(deviceId: String, windows: [Range<Int>]) async throws -> HRWindowStats {
+        guard windows.count <= LiftActivityLedger.maximumIntervals else { throw LiftActivityLedger.Invalid.malformed }
+        let windows = windows.filter { !$0.isEmpty }
+        guard !windows.isEmpty else { return HRWindowStats(n: 0, avg: nil, max: nil) }
+        return try syncRead { db in
+            let predicate = windows.map { _ in "(ts >= ? AND ts < ?)" }.joined(separator: " OR ")
+            var arguments = StatementArguments([deviceId])
+            for window in windows { arguments += StatementArguments([window.lowerBound, window.upperBound]) }
+            let row = try Row.fetchOne(db, sql: "SELECT COUNT(*) AS n, AVG(bpm) AS avg, MAX(bpm) AS peak FROM hrSample WHERE deviceId = ? AND bpm > 0 AND (\(predicate))", arguments: arguments)
+            return HRWindowStats(n: row?["n"] ?? 0, avg: row?["avg"], max: row?["peak"])
+        }
+    }
+
     /// Shared decoder, JSONDecoder is stateless across decodes and was previously allocated once
     /// per event row. Battery events are dense (~every 8 min), so a multi-year read decodes
     /// thousands of rows; reusing one decoder removes that per-row allocation.

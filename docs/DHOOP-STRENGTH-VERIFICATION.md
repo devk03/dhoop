@@ -486,3 +486,20 @@ legacy-entity tests passed with full-module compilation in
 seeds existing exercises, targets, sessions, sets and raw HR, applies v47 twice and checks preservation
 and NULL metadata. Round trips cover all five new values and independent parent/variation history.
 These are software checks, not phone migration, collection or wearer evidence.
+
+### Observed phase ledger and HR attribution
+
+The pure Swift/Kotlin ledger validates identities, session/set/source bounds, non-overlap, unknown
+ends and retained deleted-set references. A standalone optimized Swift oracle produced 414 boundary
+cases; its stdout is pinned verbatim in both platform tests. Android parity passed after forcing a
+fresh KSP schema generation (the incremental schema snapshot directory was absent on the first run).
+Logs: `/private/tmp/dhoop-lift-phase-android-ledger-tests.log` and
+`/private/tmp/dhoop-lift-phase-oracle.txt`.
+
+The measured-HR union query excludes pauses and unresolved work, without double-counting shared or
+overlapping boundaries. Store transactions validate the complete merged set registry, remap canonical
+set IDs on retries, and retain timing references when a set is deleted. Ledger, atomic-rejection,
+tombstone-retention and existing recording tests passed in
+`/private/tmp/dhoop-lift-activity-tests.log`. This is software attribution evidence, not physiological
+accuracy or background execution evidence. Android still has schema/helper support rather than a
+strength-session Compose UI; that pre-existing feature gap remains explicit.
