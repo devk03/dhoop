@@ -527,3 +527,31 @@ when its parent was explicitly forgotten. Parent and child remain separate names
 performance histories. These guards serve Apple's existing writer; Android retains matching nullable
 schema/models but has no corresponding strength creation UI/writer. The 53 selected store tests passed
 in `/private/tmp/dhoop-lift-496-store-tests.log`.
+
+### Build 496 — supersets, variation selection and paused surfaces
+
+Routine and active-session link menus form explicit supersets. Exercises alternate within a round,
+then rest. Stored sets retain the group and observed zero-based per-exercise working round used at
+completion; warm-ups do not claim a working round. Unequal set counts, replacement lineage, pause,
+recovery and a single undo of linking have scoped tests. Routine edits preserve grouping. Existing
+wire set-group fields retain source metadata without rewriting the frozen prescription. The newer
+session activity-interval wire field remains omitted for unverified destinations.
+
+A shared Variation of picker creates a separately named/identified movement. Existing exercises keep
+their identities; histories and previous-performance values are not pooled. Catalog reads and async
+writes disable the picker appropriately, while errors retain the draft. Components use named palette,
+font, spacing and touch-target tokens. Native Button/Menu tracking remains responsible for drag-off
+cancellation. The minimized bar and Lock Screen show paused state without a running clock, and the
+bar action becomes Resume. Paused/recovered phases do not automatically execute elapsed cues.
+
+184 selected hostless strength/recovery/ownership/tracker tests passed in
+`/private/tmp/dhoop-lift-496-core-tests.log`; 53 selected store tests passed in
+`/private/tmp/dhoop-lift-496-store-tests.log`. Existing strength suites are reused rather than copied;
+only the import is conditional for the hostless test target. Final iOS and macOS build evidence is
+`/private/tmp/dhoop-496-ios-build.log` and `/private/tmp/dhoop-496-macos-build.log`.
+
+Remaining acceptance is physical: current installation, two exercises/three timed sets, two real
+successive incoming/persisted HR observations, pause/lock/reconnect/relaunch, units, history edit/delete,
+scroll/scrub/drag-off, contrast/clipping/Dynamic Type/VoiceOver, and wearer-confirmed cues. ImageGen,
+software test results and signed builds do not prove these. No push, merge, receiver deployment,
+credential activation, owner-data deletion or destructive strap command occurred in this pass.

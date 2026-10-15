@@ -143,9 +143,9 @@ fields were approved by the owner on October 14, 2026, replacing the earlier six
 | `liftSet` | `roundIndex` | INTEGER | Observed zero-based round, not inferred card order. |
 | `liftSession` | `activityIntervalsJSON` | TEXT | One authoritative observed phase ledger. |
 
-The approved versioned migrations are being implemented locally. Existing rows retain NULL, with no timing,
-grouping or ancestry backfill. The versioned Swift/Room migrations, models, schema oracle, backup and
-round-trip tests must agree before applying them. Existing workout IDs, raw HR and preferences remain.
+The approved versioned migrations are implemented locally: GRDB v47 and Room 40→41. Existing rows retain NULL, with no timing,
+grouping or ancestry backfill. The versioned Swift/Room migrations, models and schema oracle agree in local tests; SQLite backups
+retain the nullable columns and legacy Codable rows decode without inventing metadata. Existing workout IDs, raw HR and preferences remain.
 
 The proposed optional wire field is `session.activityIntervals`, a typed array (not a JSON string):
 `{sourceIntervalId, kind: work|rest|pause, sourceSetId: UUID|null, startedAt, endedAt: timestamp|null}`.
