@@ -174,6 +174,36 @@ final class WorkoutTrackerClient: ObservableObject {
         try commit(next)
     }
 
+    func readStrength() async throws -> WorkoutStrengthPage {
+        let ticket = generation, config = try credentials()
+        guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        let data = try await send(.strength, nil, config)
+        let page = try JSONDecoder().decode(WorkoutStrengthPage.self, from: data)
+        try page.validate()
+        guard generation == ticket, state.enabled else { throw WorkoutTrackerContractError.invalidSnapshot }
+        return page
+    }
+
+    func readHistory(filters: WorkoutHistoryFilters, cursor: String?) async throws -> WorkoutHistoryPage {
+        let ticket = generation, config = try credentials()
+        guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        let data = try await send(.history(filters, cursor: cursor), nil, config)
+        let page = try JSONDecoder().decode(WorkoutHistoryPage.self, from: data)
+        try page.validate()
+        guard generation == ticket, state.enabled, page.filters == filters else { throw WorkoutTrackerContractError.invalidSnapshot }
+        return page
+    }
+    func readHistorySession(_ row: WorkoutHistoryPage.Session) async throws -> WorkoutTrackerDashboard {
+        let ticket = generation, config = try credentials()
+        guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        let data = try await send(.dashboard(mesocycleId: row.mesocycleId, sessionId: row.id, cursor: 0, limit: 1), nil, config)
+        let page = try JSONDecoder().decode(WorkoutTrackerDashboard.self, from: data)
+        try page.validate()
+        guard generation == ticket, state.enabled, page.dashboard.activeMesocycle?.id == row.mesocycleId,
+              page.dashboard.sessions.count == 1, page.dashboard.sessions.first?.id == row.id else { throw WorkoutTrackerContractError.invalidSnapshot }
+        return page
+    }
+
     func refreshIndex() async throws {
         guard !busy else { throw WorkoutTrackerContractError.deliveryInProgress }
         let config = try credentials()

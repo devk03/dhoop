@@ -6,9 +6,10 @@ struct CardioHistoryView: View {
     @Binding var range: MetricRangeSelection
     let now: Date
     let controller: RunningSessionController
+    @State private var historySource = "WHOOP"
     @State private var kind: CardioHistoryKind?
     @State private var search = ""
-    @State private var visibleCount = 40
+    @State private var visibleCount = 20
     @State private var selected: CardioHistoryGroup?
     @State private var exportURL: URL?
     @State private var preparingExport = false
@@ -26,6 +27,9 @@ struct CardioHistoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+            NoopSegmentedControl("Workout history source", options: ["WHOOP", "Life"], selection: $historySource)
+            if historySource == "Life" { WorkoutHistoryView() }
+            else {
             MetricRangeControl(selection: $range, now: now)
             Picker("Workout type", selection: $kind) {
                 Text("All types").tag(nil as CardioHistoryKind?)
@@ -68,7 +72,7 @@ struct CardioHistoryView: View {
                 }
             }
             if filtered.count > visibleCount {
-                Button("Load older sessions · \(filtered.count - visibleCount) more") { visibleCount += 40 }
+                Button("Load older sessions · \(filtered.count - visibleCount) more") { visibleCount += 20 }
                     .font(StrandFont.subhead).frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget).buttonStyle(NoopButtonStyle(.secondary))
             }
             NoopCard {
@@ -99,10 +103,11 @@ struct CardioHistoryView: View {
             }
             Text("Dates use the workout's start time. Linked recordings stay available; unknown activity types retain their recorded labels.")
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }
         }
-        .onChange(of: range) { _, _ in visibleCount = 40 }
-        .onChange(of: kind) { _, _ in visibleCount = 40 }
-        .onChange(of: search) { _, _ in visibleCount = 40 }
+        .onChange(of: range) { _, _ in visibleCount = 20 }
+        .onChange(of: kind) { _, _ in visibleCount = 20 }
+        .onChange(of: search) { _, _ in visibleCount = 20 }
         .sheet(item: $selected) { group in
             CardioHistoryDetail(group: group, payloads: model.payloads, canDelete: canDelete, delete: deleteRecording)
         }

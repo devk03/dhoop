@@ -16,7 +16,7 @@ struct RunningView: View {
 private struct RunningContent: View, Equatable {
     @ObservedObject var controller: RunningSessionController
     @ObservedObject var hiit: HIITController
-    @State private var workoutMode = "Zone run"
+    @State private var workoutMode = "Strength"
     @State private var section = "Train"
     @State private var historyRange: MetricRangeSelection = { var range = MetricRangeSelection(); range.preset = .month; return range }()
     @State private var capturedAt = Date()
@@ -72,7 +72,7 @@ private struct RunningContent: View, Equatable {
                     if controller.session == nil && !hiit.hasSession && !meditation.session.isInProgress && !liftSession.isActive {
                         WorkoutModePicker(selection: $workoutMode)
                     }
-                    if liftSession.isActive || workoutMode == "Strength" {
+                    if liftSession.isActive || (controller.session == nil && !hiit.hasSession && !meditation.session.isInProgress && workoutMode == "Strength") {
                         LiftLogView(embedded: true)
                     } else if workoutMode == "Meditation" && controller.session == nil && !hiit.hasSession {
                         MeditationCard()
@@ -92,7 +92,9 @@ private struct RunningContent: View, Equatable {
         }
         .onAppear {
             capturedAt = Date()
-            if liftSession.isActive { workoutMode = "Strength" }
+            if controller.hasSession { workoutMode = "Zone run" }
+            else if hiit.hasSession { workoutMode = hiit.selectedKind == .intervals ? "Intervals" : "HIIT" }
+            else if liftSession.isActive { workoutMode = "Strength" }
             else if meditation.session.isInProgress { workoutMode = "Meditation" }
         }
         .confirmationDialog("Discard this workout?", isPresented: Binding(get: { discardRunID != nil }, set: { if !$0 { discardRunID = nil } }), titleVisibility: .visible, presenting: discardRunID) { id in

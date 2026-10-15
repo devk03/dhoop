@@ -9,19 +9,21 @@ struct WorkoutTrackerSessionView: View {
     let readAt: Date?
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
     @ObservedObject private var frontend = WorkoutFrontendClient.shared
+    private var newerCachedPage: WorkoutTrackerDashboard? {
+        guard let page = tracker.state.frontendPage,
+              page.lifeRevision >= (lifeRevision ?? 0),
+              page.dashboard.sessions.contains(where: { $0.id == session.id && $0.mesocycleId == session.mesocycleId }) else { return nil }
+        return page
+    }
     private var current: WorkoutTrackerDashboard.Session {
-        tracker.state.frontendPage?.dashboard.sessions.first { $0.id == session.id && $0.mesocycleId == session.mesocycleId } ?? session
+        newerCachedPage?.dashboard.sessions.first { $0.id == session.id && $0.mesocycleId == session.mesocycleId } ?? session
     }
-    private var revision: Int? {
-        tracker.state.frontendPage?.dashboard.sessions.contains { $0.id == session.id && $0.mesocycleId == session.mesocycleId } == true
-            ? tracker.state.frontendPage?.lifeRevision : lifeRevision
-    }
-    private var snapshotReadAt: Date? {
-        tracker.state.frontendPage?.dashboard.sessions.contains { $0.id == session.id && $0.mesocycleId == session.mesocycleId } == true
-            ? tracker.state.frontendReadAt : readAt
-    }
+    private var revision: Int? { newerCachedPage?.lifeRevision ?? lifeRevision }
+    private var snapshotReadAt: Date? { newerCachedPage == nil ? readAt : tracker.state.frontendReadAt }
     @AppStorage(UnitPrefs.systemKey) private var units = UnitSystem.metric.rawValue
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var showingShare = false
+    @State private var showingSchedule = false
     private var system: UnitSystem { UnitSystem(rawValue: units) ?? .metric }
 
     var body: some View {
@@ -31,10 +33,6 @@ struct WorkoutTrackerSessionView: View {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Label(current.status.replacingOccurrences(of: "_", with: " ").capitalized, systemImage: "link")
                             .font(StrandFont.headline)
-                        if let snapshotReadAt { Text("Website snapshot · \(snapshotReadAt.formatted(date: .abbreviated, time: .shortened))").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
-                        if let revision { Text("Life revision \(revision)").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
-                        Text("Prescribed targets and saved actuals are separate. WHOOP recordings and pending changes do not imply website acceptance.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).fixedSize(horizontal: false, vertical: true)
                         if !current.notes.isEmpty { Text(current.notes).font(StrandFont.body) }
                         if !current.readiness.isEmpty { Text("Readiness: \(current.readiness)").font(StrandFont.subhead) }
                         if !current.rating.isEmpty { Text("Rating: \(current.rating)").font(StrandFont.subhead) }
@@ -81,9 +79,54 @@ struct WorkoutTrackerSessionView: View {
                         }
                     }
                 }
-                if let revision { lifecycle(revision: revision) }
+                if current.status == "planned", current.scheduledDate.isEmpty, frontend.state.capabilities?.sessionDateScheduling == true {
+                    Button { showingSchedule = true } label: { Label("Schedule workout", systemImage: "calendar.badge.plus") }
+                        .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
+                }
+                if current.status == "completed" {
+                    Button { showingShare = true } label: { Label("Share workout", systemImage: "square.and.arrow.up") }
+                        .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
+                }
+                if let revision, frontend.state.capabilities?.frontendStart == true { lifecycle(revision: revision) }
+                if let snapshotReadAt {
+                    Text("Life · updated \(snapshotReadAt.formatted(date: .abbreviated, time: .shortened))")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                }
             }
         }
+        .sheet(isPresented: $showingSchedule) {
+            if let revision {
+                WorkoutDateScheduleSheet(row: .init(id: current.id, mesocycleId: current.mesocycleId,
+                    weekNumber: current.weekNumber, sessionKey: current.sessionKey, kind: current.kind, title: current.title,
+                    scheduledDate: current.scheduledDate, status: current.status, completedAt: current.completedAt,
+                    exerciseCount: current.exercises.count, completedSetCount: current.exercises.reduce(0) { $0 + $1.sets.filter(\.completed).count },
+                    totalSetCount: current.exercises.reduce(0) { $0 + $1.sets.count }), revision: revision, refresh: refresh)
+            }
+        }
+        .sheet(isPresented: $showingShare) {
+            WorkoutShareSheet(title: current.title, content: shareCard)
+        }
+    }
+
+    private var shareCard: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space4) {
+            Text("Dhoop · \(current.title)").font(StrandFont.title2)
+            Text(current.scheduledDate.isEmpty ? (current.completedAt.isEmpty ? "Date unavailable" : current.completedAt) : current.scheduledDate)
+                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+            Text("\(current.exercises.count) exercises · \(current.exercises.reduce(0) { $0 + $1.sets.filter(\.completed).count }) completed sets")
+                .font(StrandFont.headline)
+            ForEach(Array(current.exercises.prefix(6))) { exercise in
+                NoopCard {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                        Text(exercise.name).font(StrandFont.headline)
+                        Text("\(exercise.sets.filter(\.completed).count) completed sets").font(StrandFont.subhead)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if current.exercises.count > 6 { Text("+\(current.exercises.count - 6) more exercises").font(StrandFont.caption) }
+            Text("Source: Life workout log. A WHOOP heart-rate trace is not attached to this log.")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+        }.padding(NoopMetrics.space4).background(StrandPalette.surfaceBase).foregroundStyle(StrandPalette.textPrimary)
     }
 
     private func lifecycle(revision: Int) -> some View {

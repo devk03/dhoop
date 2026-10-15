@@ -21,7 +21,7 @@ settings:
     # iOS build number (CFBundleVersion). GLOBAL so the iOS app AND its widget extension inherit the
     # SAME value — they must match or iOS warns "extension version must match parent app" (#416).
     # macOS sets its own CFBundleVersion on the Strand target and is unaffected by this.
-    CURRENT_PROJECT_VERSION: "498"
+    CURRENT_PROJECT_VERSION: "499"
     SWIFT_VERSION: "5.0"
     # Emit localizable strings so Xcode auto-extracts every LocalizedStringKey into the
     # String Catalog on build (the English (US) base entries).
@@ -107,6 +107,8 @@ targets:
       - StrandiOS/Workouts/WorkoutSyncTransport.swift
       - StrandiOS/Workouts/WorkoutTrackerState.swift
       - StrandiOS/Workouts/WorkoutTrackerDashboard.swift
+      - StrandiOS/Workouts/WorkoutHistoryPage.swift
+      - StrandiOS/Workouts/WorkoutStrengthPage.swift
       - StrandiOS/Workouts/WorkoutFrontendCommand.swift
       - StrandiOS/Workouts/WorkoutFrontendClient.swift
       - StrandiOS/Workouts/WorkoutConnectionProvisioner.swift
@@ -118,6 +120,7 @@ targets:
       - StrandiOS/Workouts/WorkoutTrackerKeychain.swift
       - StrandiOS/Workouts/WorkoutCapturePayload.swift
       - StrandiOS/Workouts/WorkoutTrackerOutbox.swift
+      - Strand/Data/WorkoutReviewStore.swift
       - Strand/Data/WorkoutTrackerManifest.swift
       - Strand/Data/LiftSessionDetailModel.swift
       - Strand/Data/LiftSessionEngine.swift

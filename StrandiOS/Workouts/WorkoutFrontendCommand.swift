@@ -51,6 +51,7 @@ struct WorkoutFrontendCapabilities: Codable, Equatable {
     let frontendStart: Bool
     let actions: [String]
     let lifeRevision: Int
+    var sessionDateScheduling: Bool? = nil
     func validate() throws {
         guard schemaVersion == 1, lifeRevision >= 0, actions.count <= 30,
               Set(actions).count == actions.count, Set(actions).isSubset(of: Self.supportedActions)

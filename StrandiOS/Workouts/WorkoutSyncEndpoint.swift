@@ -1,6 +1,8 @@
 import Foundation
 
 enum WorkoutSyncEndpoint: Equatable {
+    case strength
+    case history(WorkoutHistoryFilters, cursor: String?)
     case catalog
     case dashboard(mesocycleId: Int?, sessionId: Int?, cursor: Int, limit: Int)
     case manifest(Int)
@@ -27,6 +29,17 @@ enum WorkoutSyncEndpoint: Equatable {
         let prefix = "/api/integrations/dhoop/workouts/"
         var items: [URLQueryItem] = []
         switch self {
+        case .strength:
+            parts.path = prefix + "dashboard"
+            items = [URLQueryItem(name: "view", value: "strength"), URLQueryItem(name: "limit", value: "8")]
+        case .history(let filters, let cursor):
+            guard filters.valid, cursor.map({ !$0.isEmpty && $0.utf8.count <= 4096 }) ?? true else { throw WorkoutSyncTransportError.configuration }
+            parts.path = prefix + "dashboard"
+            items = [URLQueryItem(name: "view", value: "history"), URLQueryItem(name: "limit", value: "20"), URLQueryItem(name: "status", value: filters.status)]
+            if let id = filters.mesocycleId { items.append(URLQueryItem(name: "mesocycleId", value: String(id))) }
+            for (name, value) in [("historyCursor", cursor), ("kind", filters.kind), ("since", filters.since), ("until", filters.until)] {
+                if let value { items.append(URLQueryItem(name: name, value: value)) }
+            }
         case .catalog: parts.path = prefix + "catalog"
         case .dashboard(let cycle, let session, let cursor, let limit):
             guard cursor >= 0, (1...25).contains(limit), cycle.map({ $0 > 0 }) ?? true,
@@ -69,6 +82,8 @@ enum WorkoutSyncEndpoint: Equatable {
 
 /// Only reviewed machine codes cross the transport boundary; arbitrary response text stays private.
 enum WorkoutSyncRejection: String, Codable {
+    case historyChanged = "WORKOUT_HISTORY_CHANGED"
+    case snapshotConflict = "WORKOUT_SNAPSHOT_CONFLICT"
     case lifeRevisionConflict = "life_revision_conflict"
     case manifestConflict = "manifest_conflict"
     case revisionConflict = "revision_conflict"
@@ -85,6 +100,7 @@ enum WorkoutSyncRejection: String, Codable {
 
     var explanation: String {
         switch self {
+        case .historyChanged, .snapshotConflict: return "Workout history changed. Refresh before loading more; existing pages are retained."
         case .lifeRevisionConflict: return "The website revision changed. Compare the current tracker before reviewing a new delivery."
         case .manifestConflict: return "The prescription changed. Original workout IDs are retained; targets will not be guessed."
         case .revisionConflict: return "The tracker has different content for this source revision. Review current observations before preparing another event."

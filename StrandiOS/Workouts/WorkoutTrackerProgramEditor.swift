@@ -4,6 +4,7 @@ import StrandDesign
 
 struct WorkoutTrackerProgramEditor: View {
     let page: WorkoutTrackerDashboard
+    var liftingOnly = false
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
     @State private var action = "update_athlete_profile"
     @State private var name = ""
@@ -21,11 +22,14 @@ struct WorkoutTrackerProgramEditor: View {
     private var scale: Double { imperial ? 1 : UnitFormatter.poundsPerKilogram }
     private var unit: String { imperial ? "lb" : "kg" }
     private var primary: [WorkoutTrackerDashboard.Benchmark] { page.dashboard.benchmarks.filter(\.isPrimary) }
-    private let actions: [(String, String)] = [
+    private var actions: [(String, String)] {
+        let all: [(String, String)] = [
         ("update_athlete_profile", "Athlete profile"), ("update_benchmarks", "Strength benchmarks"),
         ("recalculate_half_marathon_weights", "Recalculate remaining workouts"),
         ("create_four_lift_program", "Create four-lift program"), ("restart_half_marathon_program", "Restart half-marathon program"),
         ("create_mesocycle", "Create training cycle"), ("reset_mesocycle", "Reset this cycle")]
+        return liftingOnly ? all.filter { ["update_athlete_profile", "update_benchmarks", "create_four_lift_program", "reset_mesocycle"].contains($0.0) } : all
+    }
 
     var body: some View {
         ScreenScaffold(title: "Program settings", subtitle: LocalizedStringKey(page.dashboard.activeMesocycle?.name ?? "Life workout tracker")) {
@@ -89,6 +93,7 @@ struct WorkoutTrackerProgramEditor: View {
         }
     }
     private func build() throws -> [String: WorkoutTrackerValue] {
+        guard actions.contains(where: { $0.0 == action }) else { throw WorkoutTrackerContractError.invalidSnapshot }
         var result: [String: WorkoutTrackerValue] = ["action": .string(action)]
         let creating = ["create_mesocycle", "create_four_lift_program", "restart_half_marathon_program"].contains(action)
         if creating {

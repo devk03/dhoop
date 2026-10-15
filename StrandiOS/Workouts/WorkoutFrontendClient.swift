@@ -73,6 +73,7 @@ final class WorkoutFrontendClient: ObservableObject {
     func prepare(command:[String:WorkoutTrackerValue],revision:Int) throws -> UUID {
         guard !storageUnavailable,!busy,unresolved==nil else { throw Failure.unresolved }
         guard case .string(let action)=command["action"],supports(action,lifecycle:action=="start_session" || (action=="update_session" && command["status"] != nil)),revision>=0 else { throw Failure.disabled }
+        if action == "update_session", command["date"] != nil, state.capabilities?.sessionDateScheduling != true { throw Failure.disabled }
         let config=try credentials()
         // Match the service's documented name normalization before freezing receipt identity.
         var normalized = command

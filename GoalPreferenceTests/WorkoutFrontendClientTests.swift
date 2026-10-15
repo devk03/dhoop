@@ -35,6 +35,27 @@ final class WorkoutFrontendClientTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: object)
     }
 
+    func testSchedulingRequiresExplicitCapabilityAndDoesNotRequireWorkoutStartPermission() async throws {
+        for allowed in [false, true] {
+            let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in
+                XCTAssertEqual(endpoint, .frontendCapabilities); XCTAssertNil(body)
+                return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true,
+                    "frontendStart": false, "sessionDateScheduling": allowed, "lifeRevision": 4, "actions": ["update_session"]])
+            }, readCredential: { self.config }, saveCredential: { _ in })
+            try await enable(client)
+            let schedule: [String: WorkoutTrackerValue] = ["action": .string("update_session"), "sessionId": .number(10),
+                "mesocycleId": .number(1), "date": .string("2026-10-20")]
+            if allowed {
+                let id = try client.prepare(command: schedule, revision: 4)
+                XCTAssertEqual(client.unresolved?.id, id)
+                XCTAssertNil(client.unresolved?.intent.command["status"])
+                XCTAssertNil(client.unresolved?.attemptedAt)
+            } else { XCTAssertThrowsError(try client.prepare(command: schedule, revision: 4)) }
+            var start = schedule; start["status"] = .string("in_progress")
+            XCTAssertThrowsError(try client.prepare(command: start, revision: 4))
+        }
+    }
+
     func testDefaultOffAndCapabilitiesAreReadOnly() async throws {
         var writes = 0, requests = 0
         let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in

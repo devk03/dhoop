@@ -355,6 +355,7 @@ struct StrandiOSApp: App {
                 // supported, so this is safe on every device/simulator combination.
                 .task {
                     await WorkoutConnectionProvisioner.runLocalLaunchImport()
+                    await WorkoutHistoryReadProof.runIfRequested()
                     RemoteBuzzClient.shared.setForeground(scenePhase == .active)
                     meditation.attach(model: model, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.meditation, $0) })
                     watch.activate()
