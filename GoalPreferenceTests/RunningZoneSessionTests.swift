@@ -13,6 +13,24 @@ final class RunningZoneSessionTests: XCTestCase {
                     connected: connected, alertsEnabled: enabled, mayBuzz: bonded)
     }
 
+    func testTraceKeepsOnlyAcceptedReadingsAndBreaksAtPausesAndMissingData() throws {
+        var run = makeSession()
+        sample(&run, 100, 130); sample(&run, 101, 131)
+        sample(&run, 101, 131); sample(&run, 102, 160, device: "other")
+        sample(&run, 110, 140)
+        run.pause(); run.resume(); sample(&run, 111, 140)
+        let points = try XCTUnwrap(run.trace)
+        XCTAssertEqual(points.map(\.timestamp), [100, 101, 110, 111])
+        XCTAssertEqual(points.map(\.segment), [1, 1, 2, 3])
+        let bytes = try JSONEncoder().encode(run)
+        XCTAssertEqual(try JSONDecoder().decode(RunningZoneSession.self, from: bytes).trace, points)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        legacy.removeValue(forKey: "trace")
+        let restored = try JSONDecoder().decode(RunningZoneSession.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(restored.trace)
+        XCTAssertEqual(restored.inZoneSeconds, run.inZoneSeconds)
+    }
+
     func testGoalCountsOnlyIntervalsWhoseTwoFreshEndpointsAreInZone() {
         var session = makeSession()
         sample(&session, 100, 110) // Warm-up is not goal time.

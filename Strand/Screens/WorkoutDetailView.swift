@@ -63,6 +63,9 @@ struct WorkoutDetailView: View {
 
     /// Drives the GPX/FIT export chooser for the recorded route.
     @State private var showRouteExport = false
+    #if os(iOS)
+    @State private var showingWorkoutShare = false
+    #endif
 
     /// Steps over the session window for an on-foot sport (#398): the count plus whether it came from the
     /// strap's own counter (MG/5.0) or the phone pedometer (fallback for WHOOP 4.0 / not-yet-synced / CSV
@@ -93,7 +96,22 @@ struct WorkoutDetailView: View {
                 effortCard(strain: strain)
             }
         }
+        #if os(iOS)
+        .sheet(isPresented: $showingWorkoutShare) {
+            WorkoutSharePreview(title: WorkoutSource.displaySport(row.sport),
+                start: Date(timeIntervalSince1970: Double(row.startTs)), end: Date(timeIntervalSince1970: Double(row.endTs)),
+                duration: row.durationS ?? Double(max(0, row.endTs - row.startTs)),
+                average: row.avgHr.map(Double.init), peak: row.maxHr,
+                points: hrPoints.map { RunningTracePoint(timestamp: $0.date.timeIntervalSince1970, bpm: Int($0.value.rounded()), segment: Int($0.segment) ?? 0) },
+                source: "Stored workout-window HR · bucket averages")
+        }
+        #endif
         .toolbar {
+            #if os(iOS)
+            ToolbarItem(placement: .primaryAction) {
+                Button { showingWorkoutShare = true } label: { Label("Share workout", systemImage: "square.and.arrow.up") }.disabled(!loaded)
+            }
+            #endif
             // A Done affordance for the sheet on both platforms (iOS gets the grabber too).
             ToolbarItem(placement: .cancellationAction) {
                 Button("Done") { dismiss() }
@@ -117,7 +135,13 @@ struct WorkoutDetailView: View {
         // HR curve over the exact session window — a finer bucket than the 24h chart so a short run
         // still reads as a curve, not a handful of points.
         let buckets = await repo.workoutHrBuckets(from: row.startTs, to: row.endTs, source: row.source)
-        let points = buckets.map { TrendPoint(date: Date(timeIntervalSince1970: TimeInterval($0.ts)), value: $0.bpm) }
+        let bucketSeconds = max(15, min(300, (row.endTs - row.startTs) / 120))
+        var segment = 0, previousTs: Int?
+        let points = buckets.map { bucket -> TrendPoint in
+            if previousTs.map({ bucket.ts - $0 > bucketSeconds }) ?? false { segment += 1 }
+            previousTs = bucket.ts
+            return TrendPoint(date: Date(timeIntervalSince1970: Double(bucket.ts)), value: bucket.bpm, segment: String(segment))
+        }
 
         // Zones: prefer the imported per-workout percentages (a WHOOP-computed split), and only fall
         // back to deriving zone-minutes from the strap's own raw HR when the row has none — so we

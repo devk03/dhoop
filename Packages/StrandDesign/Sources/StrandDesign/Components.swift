@@ -17,6 +17,7 @@ public enum NoopMetrics {
     // grid only offers a cell its content height, so there's nothing for the shorter tile to grow into),
     // so we pin a single height that clears the tallest layout (value + inline sparkline + caption).
     public static let keyMetricTileHeight: CGFloat = 122
+    public static let sharePreviewWidth: CGFloat = 390
     public static let chartHeight: CGFloat = 220
     /// Compact dashboard plots and scalable numeral bases; views scale these with Dynamic Type.
     public static let dashboardTraceHeight: CGFloat = 156

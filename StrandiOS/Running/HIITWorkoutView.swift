@@ -135,6 +135,7 @@ struct HIITReviewView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardMetricNumber
+    @State private var showingShare = false
     private var total: HIITEffort { run.effort() }
     var body: some View {
         NavigationStack {
@@ -160,6 +161,8 @@ struct HIITReviewView: View {
                         ProgressView(value: min(total.observedSeconds, run.elapsed), total: max(1, run.elapsed)).tint(StrandPalette.metricCyan)
                     }
                 }
+                Button { showingShare = true } label: { Label("Share workout", systemImage: "square.and.arrow.up") }
+                    .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
                 if !run.zones.isEmpty { zoneCard }
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -181,6 +184,13 @@ struct HIITReviewView: View {
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
             .navigationTitle("\((run.kind ?? .hiit).title) effort").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $showingShare) {
+                WorkoutSharePreview(title: (run.kind ?? .hiit).title, start: run.startedAt,
+                    end: run.endedAt ?? run.startedAt.addingTimeInterval(run.elapsed), duration: run.elapsed,
+                    average: total.average, peak: total.peak,
+                    points: run.points.map { RunningTracePoint(timestamp: $0.receivedAt, bpm: $0.bpm, segment: $0.segment) },
+                    source: "WHOOP · recorded interval observations")
+            }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }

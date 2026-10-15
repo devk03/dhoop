@@ -70,6 +70,7 @@ struct RunningZoneSession: Codable, Equatable {
     private(set) var latestBPM: Int?
     private(set) var lastAcceptedAt: TimeInterval?
     private(set) var completedAt: Date?
+    private(set) var trace: [RunningTracePoint]?
     private var previous: CodableSample?
     private var hasEnteredZone = false
     private var outsideSince: TimeInterval?
@@ -148,6 +149,9 @@ struct RunningZoneSession: Codable, Equatable {
         let gap = previous.map { sample.receivedAt - $0.time }
         let contiguous = gap.map { $0 > 0 && $0 <= Self.maximumGap } ?? false
         if !contiguous { outsideSince = nil; outsideDirection = nil }
+        let segment = (trace?.last?.segment ?? 0) + (contiguous ? 0 : 1)
+        if trace == nil { trace = [] }
+        trace?.append(RunningTracePoint(timestamp: sample.receivedAt, bpm: sample.bpm, segment: segment))
         if let previous, let gap, contiguous {
             observedSeconds += gap
             weightedHeartRate += (Double(previous.bpm) + Double(sample.bpm)) / 2 * gap
@@ -181,6 +185,12 @@ struct RunningZoneSession: Codable, Equatable {
     }
 }
 
+struct RunningTracePoint: Codable, Equatable, Sendable {
+    let timestamp: Double
+    let bpm: Int
+    let segment: Int
+}
+
 struct RunningSessionSummary: Codable, Identifiable, Equatable {
     let id: UUID
     let deviceId: String
@@ -195,4 +205,5 @@ struct RunningSessionSummary: Codable, Identifiable, Equatable {
     let averageBPM: Double?
     let maximumBPM: Int?
     let goalMet: Bool
+    var trace: [RunningTracePoint]? = nil
 }

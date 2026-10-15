@@ -285,6 +285,12 @@ private struct ZoneRunReviewView: View {
     let run: RunningSessionSummary
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
+    @EnvironmentObject private var repo: Repository
+    @State private var historyTrace: [RunningTracePoint] = []
+    @State private var traceLoaded = false
+    @State private var showingShare = false
+    private var points: [RunningTracePoint] { run.trace ?? historyTrace }
+    private var source: String { run.trace == nil ? "Stored WHOOP HR · wall-clock time" : "WHOOP · recorded session observations" }
     var body: some View {
         NavigationStack {
             ScreenScaffold(title: nil) {
@@ -303,18 +309,41 @@ private struct ZoneRunReviewView: View {
                     metric("Active elapsed", clock(run.elapsedSeconds))
                     metric("Measured intervals", clock(run.observedSeconds))
                 }
+                WorkoutHeartRateCard(points: points, start: run.startedAt, end: run.endedAt, target: run.target, source: source, loading: !traceLoaded && run.trace == nil)
+                Button { showingShare = true } label: { Label("Share workout", systemImage: "square.and.arrow.up") }
+                    .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
                 NoopCard {
                     DisclosureGroup("Source and zone method") {
                         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                             Text("WHOOP · \(run.readableSamples) readable samples")
                             Text(run.target.method)
                             Text("Device: \(run.deviceId)")
-                            Text("This saved zone session contains summary values. No raw session HR trace was saved.")
+                            Text(run.trace == nil ? "Historical readings come from this strap's stored workout window and may include pauses. Saved in-zone statistics remain the original session summary." : "The chart contains accepted session samples. Pauses and missing readings remain gaps.")
                         }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }.font(StrandFont.subhead)
                 }
             }
             .navigationTitle("\(run.target.name) run").navigationBarTitleDisplayMode(.inline)
+            .task(id: run.id) {
+                guard run.trace == nil else { return }
+                let samples = await repo.hrSamples(deviceIds: [run.deviceId], from: Int(run.startedAt.timeIntervalSince1970), to: Int(run.endedAt.timeIntervalSince1970), limit: -1)
+                let trace = await Task.detached(priority: .userInitiated) { () -> [RunningTracePoint] in
+                    var segment = 0, last: Int?
+                    return samples.sorted { $0.ts < $1.ts }.compactMap { sample in
+                        guard (30...220).contains(sample.bpm), last != sample.ts else { return nil }
+                        if last.map({ sample.ts - $0 > 2 }) ?? true { segment += 1 }
+                        last = sample.ts
+                        return RunningTracePoint(timestamp: Double(sample.ts), bpm: sample.bpm, segment: segment)
+                    }
+                }.value
+                guard !Task.isCancelled else { return }
+                historyTrace = trace; traceLoaded = true
+            }
+            .sheet(isPresented: $showingShare) {
+                WorkoutSharePreview(title: "\(run.target.name) run", start: run.startedAt, end: run.endedAt,
+                    duration: run.elapsedSeconds, average: run.averageBPM, peak: run.maximumBPM, points: points,
+                    target: run.target, inZone: run.inZoneSeconds, source: source)
+            }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }

@@ -64,6 +64,7 @@ final class RunningSessionController: ObservableObject {
     private var elapsedBeforeResume: TimeInterval = 0
     private var runningSinceUptime: TimeInterval?
     private var lastPersistUptime: TimeInterval = 0
+    private var draftWriteGeneration = 0
     private var baselineGeneration = 0
     private var configuredDeviceId: String?
     private var workingSession: RunningZoneSession?
@@ -278,7 +279,7 @@ final class RunningSessionController: ObservableObject {
         let summary = RunningSessionSummary(id: run.id, deviceId: run.deviceId, target: run.target,
             startedAt: run.startedAt, endedAt: run.completedAt ?? (run.phase == .completed ? run.lastAcceptedAt.map { Date(timeIntervalSince1970: $0) } : nil) ?? Date(), elapsedSeconds: elapsedSeconds,
             inZoneSeconds: run.inZoneSeconds, goalSeconds: run.goalSeconds, observedSeconds: run.observedSeconds,
-            readableSamples: run.readableSamples, averageBPM: run.averageBPM, maximumBPM: run.maximumBPM, goalMet: run.inZoneSeconds >= run.goalSeconds)
+            readableSamples: run.readableSamples, averageBPM: run.averageBPM, maximumBPM: run.maximumBPM, goalMet: run.inZoneSeconds >= run.goalSeconds, trace: run.trace)
         persistDraft()
         isSaving = true; saveState = .working; statusMessage = "Saving workout…"
         let preferences = defaults
@@ -514,8 +515,13 @@ final class RunningSessionController: ObservableObject {
 
     private func persistDraft() {
         guard let workingSession else { return }
-        if let data = try? JSONEncoder().encode(Draft(session: workingSession, elapsedSeconds: elapsedSeconds)) {
-            defaults.set(data, forKey: Keys.draft)
+        draftWriteGeneration += 1
+        let ticket = draftWriteGeneration, snapshot = Draft(session: workingSession, elapsedSeconds: elapsedSeconds)
+        Task { [weak self] in
+            let data = await Task.detached(priority: .utility) { try? JSONEncoder().encode(snapshot) }.value
+            guard let self, let data, ticket == self.draftWriteGeneration,
+                  self.workingSession?.id == workingSession.id else { return }
+            self.defaults.set(data, forKey: Keys.draft)
         }
     }
 
