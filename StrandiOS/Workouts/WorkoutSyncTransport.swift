@@ -34,7 +34,12 @@ final class WorkoutSyncTransport: NSObject, URLSessionTaskDelegate, @unchecked S
         request.httpMethod = endpoint.method; request.httpBody = body
         request.setValue("Bearer " + credentials.credential, forHTTPHeaderField: "Authorization")
         request.setValue(credentials.installationId.uuidString.lowercased(), forHTTPHeaderField: "X-Dhoop-Installation-Id")
+        if let id = credentials.accessClientId, let secret = credentials.accessClientSecret {
+            request.setValue(id, forHTTPHeaderField: "CF-Access-Client-Id")
+            request.setValue(secret, forHTTPHeaderField: "CF-Access-Client-Secret")
+        }
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("DhoopWorkout/1.0", forHTTPHeaderField: "User-Agent")
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         let (stream, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw WorkoutSyncTransportError.invalidResponse }

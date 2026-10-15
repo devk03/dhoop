@@ -123,9 +123,17 @@ struct WorkoutSyncConfiguration: Codable {
     var origin: String
     var installationId: UUID
     var credential: String
+    var accessClientId: String? = nil
+    var accessClientSecret: String? = nil
     var valid: Bool {
         (try? WorkoutSyncEndpoint.catalog.url(origin: origin)) != nil && (
             credential.range(of: #"^[0-9a-fA-F]{64,1024}$"#, options: .regularExpression) != nil ||
-            credential.range(of: #"^[A-Za-z0-9_-]{43,1024}$"#, options: .regularExpression) != nil)
+            credential.range(of: #"^[A-Za-z0-9_-]{43,1024}$"#, options: .regularExpression) != nil) && validAccessPair
+    }
+    private var validAccessPair: Bool {
+        if accessClientId == nil && accessClientSecret == nil { return true }
+        guard let id = accessClientId, let secret = accessClientSecret else { return false }
+        return id.range(of: #"^[A-Za-z0-9._-]{10,256}$"#, options: .regularExpression) != nil &&
+            secret.range(of: #"^[A-Za-z0-9_+./=-]{20,1024}$"#, options: .regularExpression) != nil
     }
 }

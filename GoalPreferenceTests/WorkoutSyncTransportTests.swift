@@ -44,6 +44,27 @@ final class WorkoutSyncTransportTests: XCTestCase {
         XCTAssertEqual(body, Data("{}".utf8))
         await fulfillment(of: [observed], timeout: 2)
     }
+    func testExplicitWorkoutAccessPairIsSentWithoutCookiesAndLegacyConfigsStillDecode() async throws {
+        var credential = credentials()
+        credential.accessClientId = "workout-only.access"
+        credential.accessClientSecret = String(repeating: "b", count: 64)
+        let observed = expectation(description: "Workout-only Access headers")
+        WorkoutMockProtocol.handler = { request in
+            XCTAssertEqual(request.value(forHTTPHeaderField: "CF-Access-Client-Id"), "workout-only.access")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "CF-Access-Client-Secret"), String(repeating: "b", count: 64))
+            XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "DhoopWorkout/1.0")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Cookie")); observed.fulfill()
+            return (200, ["Content-Type": "application/json"], Data("{}".utf8))
+        }
+        _ = try await WorkoutSyncTransport().send(to: .frontendCapabilities, credentials: credential, configuration: config())
+        await fulfillment(of: [observed], timeout: 2)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(credential)) as? [String: Any])
+        object.removeValue(forKey: "accessClientId"); object.removeValue(forKey: "accessClientSecret")
+        let legacy = try JSONDecoder().decode(WorkoutSyncConfiguration.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertTrue(legacy.valid); XCTAssertNil(legacy.accessClientSecret)
+        credential.accessClientSecret = nil; XCTAssertFalse(credential.valid)
+        credential.accessClientSecret = "bad\r\nheader"; XCTAssertFalse(credential.valid)
+    }
     func testReceiptLookupPostsOriginalBodyToReadOnlyRouteWithDedicatedHeaders() async throws {
         let credential = credentials(), original = Data("{\"eventId\":\"unchanged\"}".utf8)
         let observed = expectation(description: "Exact lookup route")

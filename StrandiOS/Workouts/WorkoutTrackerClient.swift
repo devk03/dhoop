@@ -113,9 +113,9 @@ final class WorkoutTrackerClient: ObservableObject {
         let id = UUID(); var next = state; next.legacyExerciseIdentities[key] = id
         try commit(next); return id
     }
-    func configure(origin: String, token: String, installationId: UUID) throws {
+    func configure(origin: String, token: String, installationId: UUID, accessClientId: String? = nil, accessClientSecret: String? = nil) throws {
         guard !busy else { throw WorkoutSyncTransportError.configuration }
-        let value = WorkoutSyncConfiguration(origin: origin, installationId: installationId, credential: token)
+        let value = WorkoutSyncConfiguration(origin: origin, installationId: installationId, credential: token, accessClientId: accessClientId, accessClientSecret: accessClientSecret)
         guard value.valid else { throw WorkoutSyncTransportError.configuration }
         var next = state
         next.enabled = false; next.origin = origin; next.installationId = installationId

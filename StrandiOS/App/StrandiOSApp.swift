@@ -354,6 +354,7 @@ struct StrandiOSApp: App {
                 // waiting for the next foreground. activate() is idempotent + a no-op where WC isn't
                 // supported, so this is safe on every device/simulator combination.
                 .task {
+                    await WorkoutConnectionProvisioner.runLocalLaunchImport()
                     RemoteBuzzClient.shared.setForeground(scenePhase == .active)
                     meditation.attach(model: model, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.meditation, $0) })
                     watch.activate()

@@ -47,9 +47,9 @@ final class WorkoutFrontendClient: ObservableObject {
         config.enabled=state.enabled;return config
     }
     private func commit(_ next:WorkoutFrontendState) throws { try store.save(next);state=next }
-    func configure(origin:String,installationId:UUID,token:String) throws {
+    func configure(origin:String,installationId:UUID,token:String,accessClientId:String? = nil,accessClientSecret:String? = nil) throws {
         guard !busy,!storageUnavailable,unresolved==nil else { throw Failure.unresolved }
-        let config=WorkoutSyncConfiguration(enabled:false,origin:origin,installationId:installationId,credential:token.trimmingCharacters(in:.whitespacesAndNewlines))
+        let config=WorkoutSyncConfiguration(enabled:false,origin:origin,installationId:installationId,credential:token.trimmingCharacters(in:.whitespacesAndNewlines),accessClientId:accessClientId,accessClientSecret:accessClientSecret)
         guard config.valid else { throw Failure.disabled }
         var next=state;next.enabled=false;next.origin=origin;next.installationId=installationId;next.capabilities=nil;next.checkedAt=nil
         try saveCredential(config);try commit(next);generation+=1
