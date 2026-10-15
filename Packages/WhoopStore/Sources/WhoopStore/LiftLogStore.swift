@@ -357,6 +357,16 @@ public struct LiftSetRow: Equatable, Codable, Sendable {
     }
 }
 
+public enum LiftExerciseRelationshipError: LocalizedError {
+    case invalidParent, existingRelationship
+    public var errorDescription: String? {
+        switch self {
+        case .invalidParent: return "Choose an existing parent exercise from this device. Exercise relationships cannot contain a cycle."
+        case .existingRelationship: return "This exercise already exists. Create a distinct name for the variation; existing history is retained."
+        }
+    }
+}
+
 // MARK: - Store
 
 extension WhoopStore {
@@ -419,6 +429,24 @@ extension WhoopStore {
                         """, arguments: [r.deviceId]) ?? 0
                     if total >= WhoopStore.maxRememberedExercises {
                         throw LiftExerciseVocabularyFull(limit: WhoopStore.maxRememberedExercises)
+                    }
+                }
+                if let parentID = r.parentExerciseId {
+                    let existing = try Row.fetchOne(db, sql: "SELECT id,parentExerciseId FROM liftExercise WHERE deviceId = ? AND name = ?", arguments: [r.deviceId,r.name])
+                    let existingParent: String? = existing?["parentExerciseId"]
+                    if existing != nil && existingParent != parentID { throw LiftExerciseRelationshipError.existingRelationship }
+                    // Reusing an unchanged child remains possible if its parent was forgotten.
+                    if existing == nil {
+                        let childID = r.id
+                        var cursor: String? = parentID
+                        var visited = Set([childID])
+                        while let id = cursor {
+                            guard visited.insert(id).inserted,
+                                  let parent = try Row.fetchOne(db, sql: "SELECT parentExerciseId FROM liftExercise WHERE id = ? AND deviceId = ?", arguments: [id,r.deviceId]) else {
+                                throw LiftExerciseRelationshipError.invalidParent
+                            }
+                            cursor = parent["parentExerciseId"]
+                        }
                     }
                 }
                 try db.execute(sql: """

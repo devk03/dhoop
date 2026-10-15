@@ -76,6 +76,22 @@ final class LiftPhaseMetadataTests: XCTestCase {
         XCTAssertEqual(childHistory, [set])
     }
 
+    func testVariationParentMustBeLocalAndCannotReclassifyExistingHistory() async throws {
+        let store = try await WhoopStore.inMemory()
+        let parent = LiftExerciseRow(id: "parent", deviceId: "strap", name: "Press", primaryMuscle: nil, createdAt: 100, lastUsedTs: nil)
+        _ = try await store.upsertLiftExercises([parent])
+        for (id,device,name,parentID) in [("self","strap","Self","self"),("foreign","other","Foreign","parent"),("missing","strap","Missing","gone"),("parent","strap","Press","parent")] {
+            do {
+                _ = try await store.upsertLiftExercises([.init(id:id,deviceId:device,name:name,primaryMuscle:nil,createdAt:100,lastUsedTs:nil,parentExerciseId:parentID)])
+                XCTFail("Invalid parent must not save")
+            } catch { }
+        }
+        let local = try await store.liftExercises(deviceId: "strap")
+        let other = try await store.liftExercises(deviceId: "other")
+        XCTAssertEqual(local,[parent])
+        XCTAssertTrue(other.isEmpty)
+    }
+
     func testLegacyCodableRowsDoNotInventMetadata() throws {
         let session = try JSONDecoder().decode(LiftSessionRow.self, from: Data("""
             {"id":"s","deviceId":"d","startTs":100,"sport":"Strength Training"}

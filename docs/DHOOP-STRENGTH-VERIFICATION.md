@@ -520,3 +520,10 @@ The iOS artifact is build 495 with the stable owner bundle/signing identity and 
 The phone listing reports `0A-Homeboy` disconnected; this build is not installed or hardware-verified.
 The selected ImageGen study and exact prompt are saved under `docs/design/dhoop-strength-phase-study*`.
 The study's demo values, navigation and illustrative receipt freshness are not production data.
+
+Variation storage rejects foreign/missing/self parents and attempts to reclassify an existing named
+exercise as a new variation. Recency/classification writes preserve established ancestry, including
+when its parent was explicitly forgotten. Parent and child remain separate names/IDs and previous
+performance histories. These guards serve Apple's existing writer; Android retains matching nullable
+schema/models but has no corresponding strength creation UI/writer. The 53 selected store tests passed
+in `/private/tmp/dhoop-lift-496-store-tests.log`.
