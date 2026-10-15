@@ -113,6 +113,8 @@ struct WorkoutSharePreview: View {
 struct WorkoutShareSheet<Content: View>: View {
     let title: String
     let content: Content
+    var shareLabel: LocalizedStringKey = "Share workout"
+    var failureText: LocalizedStringKey = "Could not prepare the image. Your workout is unchanged."
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var colorScheme
@@ -128,10 +130,10 @@ struct WorkoutShareSheet<Content: View>: View {
                     Group {
                         if let image {
                             ShareLink(item: image, preview: SharePreview(title, image: image)) {
-                                Label("Share workout", systemImage: "square.and.arrow.up")
+                                Label(shareLabel, systemImage: "square.and.arrow.up")
                             }.buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
                         } else if preparationFailed {
-                            Text("Could not prepare the image. Your workout is unchanged.").font(StrandFont.caption)
+                            Text(failureText).font(StrandFont.caption)
                         } else { ProgressView("Preparing preview…") }
                     }.padding(NoopMetrics.space3).background(StrandPalette.surfaceBase)
                 }

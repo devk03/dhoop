@@ -11,6 +11,7 @@ struct CutSleepView: View {
     @State private var capturedAt = Date()
     @State private var refreshToken = 0
     @State private var showHealth = false
+    @State private var sleepExport: SleepExportReport?
     @State private var nightSelection = ""
     @State private var timelineSource = ""
     @State private var episodeSelection = ""
@@ -44,12 +45,18 @@ struct CutSleepView: View {
     var body: some View {
         ScreenScaffold(title: nil, onRefresh: refresh, lazy: false) {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            HStack {
-                Text("Sleep").font(StrandFont.title1)
-                Spacer(minLength: NoopMetrics.space2)
-                Button(action: refresh) { Image(systemName: "arrow.clockwise").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
-                    .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Refresh sleep comparison")
-                    .disabled(history.isRefreshing || (history.snapshot == nil && history.error == nil))
+            let headerLayout = typeSize >= .xxLarge
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
+                : AnyLayout(HStackLayout(alignment: .center, spacing: NoopMetrics.space2))
+            headerLayout {
+                Text("Sleep").font(StrandFont.title1).frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: NoopMetrics.space2) {
+                    NoopAsyncButton("Share sleep", systemImage: "square.and.arrow.up", kind: .secondary) { try await prepareExport() }
+                        .disabled(result == nil || selectedNight == nil || history.isRefreshing)
+                    Button(action: refresh) { Image(systemName: "arrow.clockwise").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
+                        .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Refresh sleep comparison")
+                        .disabled(history.isRefreshing || (history.snapshot == nil && history.error == nil))
+                }
             }
             MetricRangeControl(selection: $selection, now: capturedAt)
             if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
@@ -91,6 +98,26 @@ struct CutSleepView: View {
                 AppleHealthView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showHealth = false } } }
             }
         }
+        .sheet(item: $sleepExport) { report in
+            WorkoutShareSheet(title: "Dhoop sleep · \(report.day)", content: SleepExportCard(report: report),
+                shareLabel: "Share sleep", failureText: "Could not prepare the image. Your sleep data is unchanged.")
+        }
+    }
+    private func prepareExport() async throws {
+        guard let result, let day = selectedNight else { throw SleepExportLoader.Failure.unavailable }
+        let deviceID = repo.deviceId
+        let whoopReading = whoop.first { $0.day == day }, comparisonReading = apple.first { $0.day == day }
+        let first = SleepExportProjection.source(day: day, id: "whoop", name: "WHOOP", reading: whoopReading,
+            timelines: result.whoopTimelines, selectedEpisodeID: selectedSource == "whoop" ? selectedEpisode?.id : nil)
+        let second = SleepExportProjection.source(day: day, id: "comparison", name: comparisonName, reading: comparisonReading,
+            timelines: apple.flatMap(\.timelines), selectedEpisodeID: selectedSource == "apple" ? selectedEpisode?.id : nil)
+        // Select the exact owner already used by the frozen daily reading/timeline, never another provider.
+        let request = SleepExportReport(day: day, goalMinutes: Double(DhoopSleepGoal.minutes),
+            selectedSource: selectedSource == "whoop" ? "whoop" : "comparison", sources: [first, second])
+        let report = await SleepExportLoader.load(request, whoopSourceID: first.readingSourceID, comparisonSourceID: second.readingSourceID, repo: repo)
+        guard !Task.isCancelled, deviceID == repo.deviceId else { throw SleepExportLoader.Failure.changed }
+        guard report.hasData else { throw SleepExportLoader.Failure.unavailable }
+        sleepExport = report
     }
     private func refresh() { ble.syncNow(); capturedAt = Date(); refreshToken += 1 }
     private var availableNights: [String] {
