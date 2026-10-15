@@ -20,6 +20,19 @@ struct SleepExportReport: Identifiable {
         let unit: String
         var detail: String
         var id: String { title }
+        var isReadable: Bool { value.map { $0.isFinite && $0 >= 0 } ?? false }
+        var shareQualifier: String? {
+            guard isReadable else { return nil }
+            if title == "HRV" {
+                if detail.localizedCaseInsensitiveContains("method unverified") { return "Method unverified" }
+                if detail.localizedCaseInsensitiveContains("rMSSD") { return "rMSSD" }
+                if detail.localizedCaseInsensitiveContains("SDNN") { return "SDNN" }
+                return detail.isEmpty ? nil : detail
+            }
+            if title == "Resting HR", detail.contains("Wake-date") { return "Wake date" }
+            if title == "Average HR", detail.contains("sleep window") { return "Sleep window" }
+            return nil
+        }
         var text: String {
             guard let value, value.isFinite, value >= 0 else { return "Unavailable" }
             return value.formatted(.number.precision(.fractionLength(0...1))) + " " + unit
@@ -43,6 +56,11 @@ struct SleepExportReport: Identifiable {
     var id: String { day }
     var hasData: Bool { sources.contains { $0.totalMinutes != nil || $0.timeline != nil } }
     var highlighted: Source? { sources.first { $0.id == selectedSource } ?? sources.first }
+    var shareMetricTitles: [String] {
+        ["Average HR", "HRV", "Resting HR", "Snoring time"].filter { title in
+            sources.contains { source in source.metrics.contains { $0.title == title && $0.isReadable } }
+        }
+    }
     static func duration(_ minutes: Double?) -> String {
         guard let minutes, minutes.isFinite, minutes >= 0 else { return "Unavailable" }
         let rounded = minutes.rounded()

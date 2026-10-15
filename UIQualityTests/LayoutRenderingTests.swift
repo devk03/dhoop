@@ -73,13 +73,16 @@ final class LayoutRenderingTests: XCTestCase {
                 .init(start: start + 323 * 60, end: start + 455 * 60, stage: "core"),
                 .init(start: start + 455 * 60, end: start + 472 * 60, stage: "unspecified"),
                 .init(start: start + 472 * 60, end: start + 480 * 60, stage: "awake")]),
-            metrics: [.init(title: "Average HR", value: 57, unit: "bpm", detail: "Demo readings"),
-                .init(title: "HRV", value: 64, unit: "ms", detail: "Demo rMSSD"), .init(title: "Resting HR", value: 51, unit: "bpm", detail: "Demo RHR")])
+            metrics: [.init(title: "Average HR", value: 57, unit: "bpm", detail: "28036 demo readings · recorded asleep intervals"),
+                .init(title: "HRV", value: 64, unit: "ms", detail: "Dhoop estimate · HRV method unverified"), .init(title: "Resting HR", value: 51, unit: "bpm", detail: "Wake-date RHR record")])
         let missing = SleepExportReport.Source(id: "comparison", name: "8sleep", method: "No record for this date", totalMinutes: nil,
             stages: [nil, nil, nil, nil], timeline: nil, metrics: [])
-        let report = SleepExportReport(day: "2026-10-15", goalMinutes: 495, selectedSource: "whoop", sources: [source, missing])
-        try render(SleepExportCard(report: report), name: "sleep-export-demo-390", size: .large, scheme: .dark, width: 390)
-        try render(SleepExportCard(report: report), name: "sleep-export-demo-narrow", size: .large, scheme: .light, width: 320)
+        let eight = SleepExportReport.Source(id: "comparison", name: "8sleep", method: "HealthKit provider · via Apple Health", totalMinutes: 457,
+            stages: [nil, nil, nil, nil], timeline: nil, metrics: [.init(title: "Average HR", value: 55.2, unit: "bpm", detail: "30 demo readings · sleep period"),
+                .init(title: "HRV", value: nil, unit: "ms", detail: "SDNN · No readable provider samples")])
+        let report = SleepExportReport(day: "2026-10-15", goalMinutes: 495, selectedSource: "whoop", sources: [source, eight])
+        try render(SleepExportCard(report: report), name: "sleep-export-demo-390", size: .large, scheme: .dark, width: 390, maximumHeight: 800)
+        try render(SleepExportCard(report: report), name: "sleep-export-demo-narrow", size: .large, scheme: .light, width: 320, maximumHeight: 900)
         try render(SleepExportCard(report: report), name: "sleep-export-demo-large-text", size: .accessibility3, scheme: .dark, width: 390)
         let absent = SleepExportReport(day: "2026-10-15", goalMinutes: 495, selectedSource: "comparison", sources: [missing])
         try render(SleepExportCard(report: absent), name: "sleep-export-demo-unavailable", size: .large, scheme: .dark, width: 390)
@@ -103,12 +106,13 @@ final class LayoutRenderingTests: XCTestCase {
         let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
 
-    private func render<V: View>(_ view: V, name: String, size: DynamicTypeSize, scheme: ColorScheme, width: CGFloat) throws {
+    private func render<V: View>(_ view: V, name: String, size: DynamicTypeSize, scheme: ColorScheme, width: CGFloat, maximumHeight: CGFloat? = nil) throws {
         let renderer = ImageRenderer(content: view.frame(width: width).environment(\.dynamicTypeSize, size).environment(\.colorScheme, scheme))
         renderer.scale = 1
         let image = try XCTUnwrap(renderer.uiImage)
         XCTAssertEqual(image.size.width, width, accuracy: 1)
         XCTAssertGreaterThan(image.size.height, 100)
+        if let maximumHeight { XCTAssertLessThanOrEqual(image.size.height, maximumHeight, "The share graphic must remain compact without reducing readable type") }
         let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways
         add(attachment)
     }

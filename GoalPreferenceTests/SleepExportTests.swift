@@ -64,4 +64,29 @@ final class SleepExportTests: XCTestCase {
         XCTAssertEqual(SleepExportReport.duration(nil), "Unavailable")
         XCTAssertEqual(SleepExportReport.duration(0), "0m")
     }
+
+    func testCompactShareIncludesOnlyObservedMetricRowsAndPreservesMethodLabels() {
+        let metrics = [SleepExportReport.Metric(title: "Average HR", value: 56.6, unit: "bpm", detail: "28036 measured readings · recorded asleep intervals"),
+            .init(title: "HRV", value: 96.6, unit: "ms", detail: "Dhoop estimate · HRV method unverified"),
+            .init(title: "Resting HR", value: 48, unit: "bpm", detail: "Wake-date RHR record"),
+            .init(title: "Snoring time", value: nil, unit: "min", detail: "Not collected")]
+        var source = SleepExportReport.Source(id: "whoop", name: "WHOOP", method: "Dhoop estimate", totalMinutes: 468,
+            stages: [85, 105, 278, 0], timeline: nil, metrics: metrics)
+        var report = SleepExportReport(day: "2026-10-15", goalMinutes: 495, selectedSource: "whoop", sources: [source])
+        XCTAssertEqual(report.shareMetricTitles, ["Average HR", "HRV", "Resting HR"])
+        XCTAssertNil(metrics[0].shareQualifier, "Sample counts belong in diagnostics, not the share image")
+        XCTAssertEqual(metrics[1].shareQualifier, "Method unverified")
+        XCTAssertEqual(metrics[2].shareQualifier, "Wake date")
+        source.metrics[3].value = 0
+        report.sources = [source]
+        XCTAssertTrue(report.shareMetricTitles.contains("Snoring time"), "An actually measured zero is distinct from no feed")
+        for (detail, expected) in [("Imported WHOOP · rMSSD", "rMSSD"), ("30 provider readings · SDNN · sleep period", "SDNN"),
+                                   ("Unknown future method", "Unknown future method")] {
+            XCTAssertEqual(SleepExportReport.Metric(title: "HRV", value: 64, unit: "ms", detail: detail).shareQualifier, expected)
+        }
+        source.metrics = [.init(title: "HRV", value: .nan, unit: "ms", detail: "rMSSD"),
+            .init(title: "Resting HR", value: -1, unit: "bpm", detail: "")]
+        report.sources = [source]
+        XCTAssertTrue(report.shareMetricTitles.isEmpty)
+    }
 }
