@@ -21,7 +21,7 @@ struct WorkoutTrackerSessionView: View {
     private var revision: Int? { newerCachedPage?.lifeRevision ?? lifeRevision }
     private var snapshotReadAt: Date? { newerCachedPage == nil ? readAt : tracker.state.frontendReadAt }
     @AppStorage(UnitPrefs.systemKey) private var units = UnitSystem.metric.rawValue
-    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var dirtySetIDs: Set<Int> = []
     @State private var showingShare = false
     @State private var showingSchedule = false
     private var system: UnitSystem { UnitSystem(rawValue: units) ?? .metric }
@@ -31,43 +31,28 @@ struct WorkoutTrackerSessionView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Label(current.status.replacingOccurrences(of: "_", with: " ").capitalized, systemImage: "link")
-                            .font(StrandFont.headline)
+                        HStack(spacing: NoopMetrics.space2) {
+                            Label(current.status.replacingOccurrences(of: "_", with: " ").capitalized, systemImage: current.status == "completed" ? "checkmark.circle.fill" : "calendar")
+                                .font(StrandFont.subhead)
+                            Spacer(minLength: NoopMetrics.space2)
+                            if let revision {
+                                NavigationLink { WorkoutTrackerSessionEditor(session: current, revision: revision) } label: {
+                                    Image(systemName: "square.and.pencil")
+                                }.buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Edit workout notes and metrics")
+                                    .disabled(!dirtySetIDs.isEmpty)
+                            }
+                        }
                         if !current.notes.isEmpty { Text(current.notes).font(StrandFont.body) }
                         if !current.readiness.isEmpty { Text("Readiness: \(current.readiness)").font(StrandFont.subhead) }
                         if !current.rating.isEmpty { Text("Rating: \(current.rating)").font(StrandFont.subhead) }
-                        if let revision {
-                            NavigationLink("Edit workout log") { WorkoutTrackerSessionEditor(session: current, revision: revision) }
-                                .buttonStyle(NoopButtonStyle(.secondary))
-                        }
                     }
                 }
                 ForEach(current.exercises) { exercise in
-                    NoopCard {
-                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                            Text(exercise.name).font(StrandFont.headline)
-                            Text(WorkoutTrackerLoadMode(rawValue: exercise.loadMode)?.explanation ?? exercise.loadMode)
-                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            if !exercise.notes.isEmpty { Text(exercise.notes).font(StrandFont.subhead).fixedSize(horizontal: false, vertical: true) }
-                            if !exercise.originalExerciseName.isEmpty && exercise.originalExerciseName != exercise.name {
-                                Text("Replaces \(exercise.originalExerciseName)").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            }
-                            ForEach(exercise.sets) { row in
-                                setRow(row, mode: exercise.loadMode)
-                                if let revision {
-                                    NavigationLink("Log set \(row.setNumber)") {
-                                        WorkoutTrackerSetEditor(session: current, exercise: exercise, row: row, revision: revision, system: system)
-                                    }.buttonStyle(NoopButtonStyle(.secondary))
-                                }
-                            }
-                            if let revision {
-                                NavigationLink("Adjust or replace exercise") {
-                                    WorkoutTrackerExerciseEditor(session: current, exercise: exercise,
-                                        library: tracker.state.frontendPage?.dashboard.exerciseLibrary ?? [], revision: revision)
-                                }.buttonStyle(NoopButtonStyle(.secondary))
-                            }
-                        }
-                    }
+                    WorkoutInlineExerciseCard(session: current, exercise: exercise,
+                        library: tracker.state.frontendPage?.dashboard.exerciseLibrary ?? [], revision: revision,
+                        system: system, refresh: refresh, dirtyChanged: { id, dirty in
+                            if dirty { dirtySetIDs.insert(id) } else { dirtySetIDs.remove(id) }
+                        }, hasUnsavedEdits: !dirtySetIDs.isEmpty)
                 }
                 if !current.metrics.isEmpty {
                     NoopCard {
@@ -87,13 +72,21 @@ struct WorkoutTrackerSessionView: View {
                     Button { showingShare = true } label: { Label("Share workout", systemImage: "square.and.arrow.up") }
                         .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
                 }
-                if let revision, frontend.state.capabilities?.frontendStart == true { lifecycle(revision: revision) }
+                if !dirtySetIDs.isEmpty {
+                    Text("Save edited sets before finishing or reopening the workout.").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+                }
+                if let revision { completion(revision: revision).disabled(!dirtySetIDs.isEmpty) }
                 if let snapshotReadAt {
                     Text("Life · updated \(snapshotReadAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 }
             }
         }
+        .task(id: session.id) {
+            if frontend.state.enabled { try? await frontend.checkCapabilities() }
+            try? await refresh()
+        }
+        .refreshable { try? await refresh() }
         .sheet(isPresented: $showingSchedule) {
             if let revision {
                 WorkoutDateScheduleSheet(row: .init(id: current.id, mesocycleId: current.mesocycleId,
@@ -129,54 +122,26 @@ struct WorkoutTrackerSessionView: View {
         }.padding(NoopMetrics.space4).background(StrandPalette.surfaceBase).foregroundStyle(StrandPalette.textPrimary)
     }
 
-    private func lifecycle(revision: Int) -> some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            Text("Workout status in Life").font(StrandFont.headline)
-            Text("These actions update the shared tracker. They do not start or stop a separate WHOOP recording.")
-                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            if ["planned", "in_progress"].contains(current.status) {
-                WorkoutFrontendSubmitSection(title: "Start in Life", action: "start_session", revision: revision, lifecycle: true, command: {
-                    ["action": .string("start_session"), "mesocycleId": .number(Double(current.mesocycleId)), "sessionId": .number(Double(current.id))]
-                }, refresh: refresh).id("start-\(revision)")
-            }
-            ForEach(current.status == "skipped" ? ["planned"] : current.status == "completed" ? ["planned"] : ["completed", "skipped"], id: \.self) { status in
-                WorkoutFrontendSubmitSection(title: status == "planned" ? "Reopen in Life" : status == "completed" ? "Complete in Life" : "Skip in Life",
-                    action: "update_session", revision: revision, lifecycle: true, command: {
-                        ["action": .string("update_session"), "mesocycleId": .number(Double(current.mesocycleId)),
-                         "sessionId": .number(Double(current.id)), "status": .string(status)]
-                    }, refresh: refresh).id("\(status)-\(revision)")
+    @ViewBuilder private func completion(revision: Int) -> some View {
+        if frontend.state.capabilities?.sessionCompletion == true {
+            if current.status == "completed" {
+                WorkoutFrontendSubmitSection(title: "Reopen workout", action: "update_session", revision: revision, command: {
+                    ["action": .string("update_session"), "mesocycleId": .number(Double(current.mesocycleId)),
+                     "sessionId": .number(Double(current.id)), "status": .string("planned")]
+                }, refresh: refresh).id("reopen-\(revision)")
+            } else if ["planned", "in_progress"].contains(current.status), !current.scheduledDate.isEmpty {
+                WorkoutFrontendSubmitSection(title: "Finish workout", action: "update_session", revision: revision, command: {
+                    ["action": .string("update_session"), "mesocycleId": .number(Double(current.mesocycleId)),
+                     "sessionId": .number(Double(current.id)), "status": .string("completed")]
+                }, refresh: refresh).id("finish-\(revision)")
+            } else if current.status == "planned" {
+                Text("Schedule a date before finishing this workout.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
         }
     }
     private func refresh() async throws { try await tracker.refreshDashboard(mesocycleId: session.mesocycleId, sessionId: session.id) }
 
-    private func setRow(_ row: WorkoutTrackerDashboard.SetLog, mode: String) -> some View {
-        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.space3))
-        return layout {
-            Label("Set \(row.setNumber) · \(row.setType)", systemImage: row.completed ? "checkmark.circle.fill" : "circle")
-                .font(StrandFont.caption).foregroundStyle(row.completed ? StrandPalette.metricCyan : StrandPalette.textSecondary)
-                .accessibilityValue(row.completed ? "Completed in Life" : "Not completed in Life")
-            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                Text("Prescribed").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                Text(mode == "duration" ? "Timed exercise" : "\(load(row.plannedLoad, mode: mode)) × \(row.plannedReps)").font(StrandFont.bodyNumber)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                Text("Actual saved in Life").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                if mode == "duration" {
-                    Text(row.completed ? "Completed" : "Not logged").font(StrandFont.subhead)
-                } else if row.actualLoad != nil || row.actualReps != nil {
-                    Text("\(row.actualLoad.map { load($0, mode: mode) } ?? "—") × \(row.actualReps.map(String.init) ?? "—")").font(StrandFont.bodyNumber)
-                    if let rir = row.rir { Text("\(rir.formatted()) RIR").font(StrandFont.caption) }
-                } else { Text("Not logged").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary) }
-            }.frame(maxWidth: .infinity, alignment: .leading)
-        }.padding(.vertical, NoopMetrics.space2)
-    }
-    private func load(_ pounds: Double, mode: String) -> String {
-        if mode == "bodyweight" { return "Bodyweight" }
-        if mode == "duration" { return "Time-based" }
-        return UnitFormatter.massFromKilograms(pounds / UnitFormatter.poundsPerKilogram, system: system)
-    }
+
 }
 
 extension WorkoutTrackerValue {

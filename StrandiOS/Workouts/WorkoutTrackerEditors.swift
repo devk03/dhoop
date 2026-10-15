@@ -202,7 +202,7 @@ struct WorkoutTrackerSessionEditor: View {
                     }
                 }
                 WorkoutFrontendSubmitSection(title: "Save log in Life", action: "update_session", revision: revision, command: build, refresh: refresh)
-                Text("Saving the log does not mark the workout complete. Use the workout's Complete action after reviewing your sets.")
+                Text("Saving the log does not mark the workout complete. Use Finish workout after reviewing your sets.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
         }
