@@ -1000,11 +1000,7 @@ final class Repository: ObservableObject {
         #if os(iOS)
         // Capture after foreground/sync processing even if only raw HR changed and daily caches did
         // not. The cadence guard prevents refresh bursts from rescanning each packet or pass.
-        defer {
-            if PuffinExperiment.autoDetectWorkoutsEnabled {
-                Task { await captureWorkoutReviewsIfNeeded() }
-            }
-        }
+        defer { Task { await captureWorkoutReviewsIfNeeded() } }
         #endif
 
         // DIFF before publishing (FIX 3): if this refresh produced byte-identical caches AND we've already
@@ -3336,12 +3332,12 @@ final class Repository: ObservableObject {
     #if os(iOS)
     private func captureWorkoutReviewsIfNeeded(now: Date = Date()) async {
         let selectedDevice = deviceId
+        guard workoutReviewCaptureCadence.begin(deviceID: selectedDevice, now: now) else { return }
+        defer { workoutReviewCaptureCadence.finish() }
         if !workoutReviewSaving {
             _ = try? WorkoutReviewStore().expirePending(deviceID: selectedDevice, now: Int(now.timeIntervalSince1970))
         }
-        guard PuffinExperiment.autoDetectWorkoutsEnabled,
-              workoutReviewCaptureCadence.begin(deviceID: selectedDevice, now: now) else { return }
-        defer { workoutReviewCaptureCadence.finish() }
+        guard PuffinExperiment.autoDetectWorkoutsEnabled else { return }
         do {
             let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("DhoopHIIT", isDirectory: true)
