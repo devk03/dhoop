@@ -36,13 +36,30 @@ final class LayoutRenderingTests: XCTestCase {
             let entry = VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 Text("Front Squat · Demo layout").font(StrandFont.headline)
                 WorkoutSetEntryRow(number: 1, kind: "work", loadUnit: "lb", loadHint: "190", repsHint: "6", completed: true, dirty: false, showRIR: false,
-                    load: .constant("190"), reps: .constant("6"), rir: .constant(""), save: {})
+                    load: .constant("190"), reps: .constant("6"), rir: .constant(""), save: {}, showHistory: {})
                 WorkoutSetEntryRow(number: 2, kind: "work", loadUnit: "lb", loadHint: "190", repsHint: "6", completed: false, dirty: false, showRIR: true,
-                    load: .constant(""), reps: .constant(""), rir: .constant(""), save: {})
+                    load: .constant(""), reps: .constant(""), rir: .constant(""), save: {}, showHistory: {})
                 WorkoutSetEntryRow(number: 3, kind: "warmup", loadUnit: nil, loadHint: "", repsHint: "10", completed: false, dirty: false, showRIR: false,
-                    load: .constant(""), reps: .constant(""), rir: .constant(""), save: {})
+                    load: .constant(""), reps: .constant(""), rir: .constant(""), save: {}, editingEnabled: false, showHistory: {})
             }.padding(NoopMetrics.space4).background(StrandPalette.surfaceRaised).foregroundStyle(StrandPalette.textPrimary)
             try await renderHosted(entry, name: "inline-sets-" + label, size: size, scheme: scheme, width: width)
+        }
+    }
+
+    func testPreviousSetPopupRemainsReadableWithLongNamesLargeTextAndMissingActuals() throws {
+        let report = WorkoutPreviousSetReport(exerciseName: "Incline dumbbell bench press", setLabel: "Set 2 · Work",
+            weekLabel: "Program week 2", workoutTitle: "Upper body · Workout A", dateLabel: "Scheduled 2026-10-08",
+            completionLabel: "Completed Oct 8, 2026 at 6:42 PM", result: "57.5 lb × 12 reps", loadDetail: "Weight per hand", unavailable: nil)
+        let missing = WorkoutPreviousSetReport(exerciseName: "Bench press", setLabel: "Set 2", weekLabel: "Program week 2",
+            workoutTitle: nil, dateLabel: nil, completionLabel: nil, result: nil, loadDetail: nil,
+            unavailable: "Last week's set has no usable recorded weight and reps. Planned targets are not shown as results.")
+        for (label, size, scheme, width) in [("narrow-dark", DynamicTypeSize.large, ColorScheme.dark, CGFloat(320)),
+                                            ("large-dark", .accessibility3, .dark, 390),
+                                            ("narrow-light", .large, .light, 320)] {
+            try render(WorkoutPreviousSetContent(report: report).padding(NoopMetrics.space4).background(NoopVisualStyle.canvas),
+                name: "previous-set-" + label, size: size, scheme: scheme, width: width)
+            try render(WorkoutPreviousSetContent(report: missing).padding(NoopMetrics.space4).background(NoopVisualStyle.canvas),
+                name: "previous-set-unavailable-" + label, size: size, scheme: scheme, width: width)
         }
     }
 

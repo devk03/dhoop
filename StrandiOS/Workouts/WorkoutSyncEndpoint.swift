@@ -3,6 +3,7 @@ import Foundation
 enum WorkoutSyncEndpoint: Equatable {
     case strength
     case history(WorkoutHistoryFilters, cursor: String?)
+    case previousSet(mesocycleId: Int, sessionId: Int, setId: Int)
     case catalog
     case dashboard(mesocycleId: Int?, sessionId: Int?, cursor: Int, limit: Int)
     case manifest(Int)
@@ -29,6 +30,11 @@ enum WorkoutSyncEndpoint: Equatable {
         let prefix = "/api/integrations/dhoop/workouts/"
         var items: [URLQueryItem] = []
         switch self {
+        case .previousSet(let cycle, let session, let set):
+            guard cycle > 0, session > 0, set > 0 else { throw WorkoutSyncTransportError.configuration }
+            parts.path = prefix + "dashboard"
+            items = [URLQueryItem(name: "view", value: "previous_set"), URLQueryItem(name: "mesocycleId", value: String(cycle)),
+                URLQueryItem(name: "sessionId", value: String(session)), URLQueryItem(name: "setId", value: String(set))]
         case .strength:
             parts.path = prefix + "dashboard"
             items = [URLQueryItem(name: "view", value: "strength"), URLQueryItem(name: "limit", value: "8")]

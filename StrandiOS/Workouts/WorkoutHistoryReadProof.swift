@@ -24,7 +24,20 @@ enum WorkoutHistoryReadProof {
             stage = "strength"
             let strength = try await client.readStrength()
             try strength.validate()
-            if let row = strength.nextUp { _ = try await client.readHistorySession(row) }
+            var previousSetVerified = false
+            var previousSetAvailability = "not_checked"
+            var previousSetReason: String?
+            if let row = strength.nextUp {
+                let detail = try await client.readHistorySession(row)
+                if let session = detail.dashboard.sessions.first,
+                   let exercise = session.exercises.first(where: { !$0.sets.isEmpty }),
+                   let set = exercise.sets.first(where: { $0.setType == "work" }) ?? exercise.sets.first {
+                    stage = "previous_set"
+                    let previous = try await client.readPreviousSet(session: session, exercise: exercise, set: set, minimumRevision: detail.lifeRevision)
+                    previousSetVerified = true; previousSetAvailability = previous.availability
+                    previousSetReason = previous.unavailableReason
+                }
+            }
             stage = "capabilities"
             let frontend = WorkoutFrontendClient.shared
             try await frontend.checkCapabilities()
@@ -36,7 +49,9 @@ enum WorkoutHistoryReadProof {
                 "strengthReadVerified": true, "liftingProgramCount": strength.programs.count,
                 "pendingLiftingWorkouts": strength.counts.pending, "schedulingEnabled": true,
                 "manualCompletionEnabled": frontend.state.capabilities?.sessionCompletion == true,
+                "previousSetReadVerified": previousSetVerified, "previousSetAvailability": previousSetAvailability,
                 "lifecycleEnabled": false, "writesAttempted": false]
+            if let previousSetReason { result["previousSetReason"] = previousSetReason }
         } catch {
             result["stage"] = stage
             if case WorkoutSyncTransportError.http(let code) = error { result["httpStatus"] = code }

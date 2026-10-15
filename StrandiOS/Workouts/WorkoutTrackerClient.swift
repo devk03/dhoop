@@ -174,6 +174,20 @@ final class WorkoutTrackerClient: ObservableObject {
         try commit(next)
     }
 
+    /// A popup read never commits a dashboard or changes an in-progress edit buffer.
+    func readPreviousSet(session: WorkoutTrackerDashboard.Session, exercise: WorkoutTrackerDashboard.Exercise,
+                         set: WorkoutTrackerDashboard.SetLog, minimumRevision: Int) async throws -> WorkoutPreviousSetPage {
+        let ticket = generation, config = try credentials()
+        guard config.enabled else { throw WorkoutSyncTransportError.disabled }
+        let data = try await send(.previousSet(mesocycleId: session.mesocycleId, sessionId: session.id, setId: set.id), nil, config)
+        let page = try JSONDecoder().decode(WorkoutPreviousSetPage.self, from: data)
+        try page.validate(session: session, exercise: exercise, set: set)
+        guard !Task.isCancelled, generation == ticket, state.enabled, page.lifeRevision >= minimumRevision else {
+            throw WorkoutTrackerContractError.invalidSnapshot
+        }
+        return page
+    }
+
     func readStrength() async throws -> WorkoutStrengthPage {
         let ticket = generation, config = try credentials()
         guard config.enabled else { throw WorkoutSyncTransportError.disabled }

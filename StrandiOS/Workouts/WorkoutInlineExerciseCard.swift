@@ -15,6 +15,7 @@ struct WorkoutInlineExerciseCard: View {
     @State private var showingSwap = false
     @State private var showRIR = false
     @State private var replacement = ""
+    @State private var historySet: WorkoutTrackerDashboard.SetLog?
     private var mode: WorkoutTrackerLoadMode? { .init(rawValue: exercise.loadMode) }
     private var alternatives: [WorkoutTrackerDashboard.LibraryItem] {
         library.filter { $0.movementPattern == exercise.movementPattern && $0.exerciseKey != exercise.exerciseKey }
@@ -84,7 +85,8 @@ struct WorkoutInlineExerciseCard: View {
                 ForEach(exercise.sets) { row in
                     if let revision {
                         WorkoutInlineSetRow(session: session, exercise: exercise, row: row, revision: revision,
-                            system: system, showRIR: showRIR, refresh: refresh, dirtyChanged: { dirtyChanged(row.id, $0) })
+                            system: system, showRIR: showRIR, refresh: refresh, dirtyChanged: { dirtyChanged(row.id, $0) },
+                            showHistory: { historySet = row })
                             .id("\(row.id)-\(system.rawValue)")
                     } else {
                         Text("Set \(row.setNumber) · \(row.completed ? "Completed" : "Not completed")").font(StrandFont.body)
@@ -92,6 +94,9 @@ struct WorkoutInlineExerciseCard: View {
                 }
                 if mode != .duration { Text("Empty fields show targets, not logged actuals.").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary) }
             }
+        }.sheet(item: $historySet) { row in
+            WorkoutPreviousSetSheet(session: session, exercise: exercise, row: row, revision: revision ?? 0, system: system)
+                .id("\(session.id)-\(session.weekNumber)-\(exercise.id)-\(exercise.exerciseKey)-\(exercise.loadMode)-\(row.id)-\(row.setType)-\(row.setNumber)-\(system.rawValue)")
         }
     }
 }

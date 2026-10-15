@@ -16,6 +16,8 @@ struct WorkoutSetEntryRow: View {
     @Binding var reps: String
     @Binding var rir: String
     let save: () async throws -> Void
+    var editingEnabled = true
+    var showHistory: (() -> Void)? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     @StateObject private var operation = NoopActionController()
 
@@ -25,10 +27,16 @@ struct WorkoutSetEntryRow: View {
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
                 : AnyLayout(HStackLayout(alignment: .center, spacing: NoopMetrics.space2))
             layout {
-                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                    Text("\(number)").font(StrandFont.bodyNumber)
-                    if kind != "work" { Text(kind.capitalized).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
-                }.frame(minWidth: NoopMetrics.minimumTouchTarget, alignment: .leading)
+                if let showHistory {
+                    Button(action: showHistory) {
+                        HStack(spacing: NoopMetrics.space1) {
+                            Image(systemName: "info.circle").font(StrandFont.caption).foregroundStyle(StrandPalette.metricCyan)
+                            setLabel
+                        }
+                    }.buttonStyle(NoopIconButtonStyle())
+                        .accessibilityLabel("Last week's results for set \(number)")
+                        .accessibilityHint("Shows recorded weight and repetitions without changing this set")
+                } else { setLabel.frame(minWidth: NoopMetrics.minimumTouchTarget, alignment: .leading) }
                 if let loadUnit { field(loadUnit, hint: loadHint, text: $load, label: "Set \(number) actual weight in \(loadUnit)") }
                 if let repsHint { field("Reps", hint: repsHint, text: $reps, label: "Set \(number) actual repetitions", integer: true) }
                 Button { operation.submit(save) } label: {
@@ -36,7 +44,7 @@ struct WorkoutSetEntryRow: View {
                         if operation.state.isWorking { ProgressView().progressViewStyle(.circular) }
                         else { Image(systemName: completed && !dirty ? "checkmark.circle.fill" : "checkmark.circle") }
                     }.foregroundStyle(completed && !dirty ? StrandPalette.metricCyan : StrandPalette.textSecondary)
-                }.buttonStyle(NoopIconButtonStyle()).disabled(operation.state.isWorking)
+                }.buttonStyle(NoopIconButtonStyle()).disabled(!editingEnabled || operation.state.isWorking)
                     .accessibilityLabel(dirty ? "Save set \(number)" : completed ? "Mark set \(number) incomplete" : "Complete set \(number)")
                     .accessibilityValue(dirty ? "Unsaved changes" : completed ? "Saved in Life" : "Not completed")
             }
@@ -51,6 +59,12 @@ struct WorkoutSetEntryRow: View {
                 if case .failed(let message) = operation.state { Text(message) }
             }
     }
+    private var setLabel: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+            Text("\(number)").font(StrandFont.bodyNumber).foregroundStyle(StrandPalette.textPrimary)
+            if kind != "work" { Text(kind.capitalized).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+        }
+    }
     private func field(_ title: String, hint: String, text: Binding<String>, label: String, integer: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             if typeSize.isAccessibilitySize || title.hasPrefix("RIR") {
@@ -61,6 +75,7 @@ struct WorkoutSetEntryRow: View {
                 .padding(NoopMetrics.space2).frame(minHeight: NoopMetrics.minimumTouchTarget)
                 .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopVisualStyle.compactRadius))
                 .accessibilityLabel(label)
+                .disabled(!editingEnabled)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

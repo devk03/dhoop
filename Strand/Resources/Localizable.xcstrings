@@ -1,6 +1,262 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "Recorded in Life · Read only": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recorded in Life · Read only"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "In Life erfasst · Schreibgeschützt"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registrado en Life · Solo lectura"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Enregistré dans Life · Lecture seule"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registrato in Life · Sola lettura"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zapisano w Life · Tylko do odczytu"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registado no Life · Só de leitura"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Записано в Life · Только чтение"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已记录于 Life · 只读"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已記錄於 Life · 唯讀"
+        }
+      }
+    }
+  },
+  "Last week's results could not be loaded. Your current set is unchanged.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Last week's results could not be loaded. Your current set is unchanged."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Die Ergebnisse der letzten Woche konnten nicht geladen werden. Dein aktueller Satz bleibt unverändert."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No se pudieron cargar los resultados de la semana pasada. Tu serie actual no ha cambiado."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Impossible de charger les résultats de la semaine dernière. Votre série actuelle reste inchangée."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Impossibile caricare i risultati della settimana scorsa. La serie attuale non è stata modificata."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nie udało się wczytać wyników z zeszłego tygodnia. Bieżąca seria pozostaje bez zmian."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não foi possível carregar os resultados da semana passada. A tua série atual não foi alterada."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Не удалось загрузить результаты прошлой недели. Текущий подход не изменён."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "无法加载上周的结果。当前组的数据未更改。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "無法載入上週的結果。目前組的資料未變更。"
+        }
+      }
+    }
+  },
+  "Loading last week's set…": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Loading last week's set…"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Satz der letzten Woche wird geladen…"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Cargando la serie de la semana pasada…"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Chargement de la série de la semaine dernière…"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Caricamento della serie della settimana scorsa…"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wczytywanie serii z zeszłego tygodnia…"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A carregar a série da semana passada…"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Загрузка подхода прошлой недели…"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在加载上周的组…"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在載入上週的組…"
+        }
+      }
+    }
+  },
+  "Last week's results for set %lld": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Last week's results for set %lld"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ergebnisse der letzten Woche für Satz %lld"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Resultados de la semana pasada para la serie %lld"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Résultats de la semaine dernière pour la série %lld"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Risultati della settimana scorsa per la serie %lld"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wyniki z zeszłego tygodnia dla serii %lld"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Resultados da semana passada para a série %lld"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Результаты прошлой недели для подхода %lld"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "第 %lld 组上周的结果"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "第 %lld 組上週的結果"
+        }
+      }
+    }
+  },
     "Scores could not be saved. A later scoring pass will retry.": {
       "localizations": {
         "de": {

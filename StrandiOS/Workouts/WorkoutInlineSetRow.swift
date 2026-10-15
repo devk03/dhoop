@@ -11,6 +11,7 @@ struct WorkoutInlineSetRow: View {
     let showRIR: Bool
     let refresh: () async throws -> Void
     let dirtyChanged: (Bool) -> Void
+    var showHistory: (() -> Void)? = nil
     @ObservedObject private var frontend = WorkoutFrontendClient.shared
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
     @State private var draft: WorkoutInlineSetDraft
@@ -23,9 +24,10 @@ struct WorkoutInlineSetRow: View {
 
     init(session: WorkoutTrackerDashboard.Session, exercise: WorkoutTrackerDashboard.Exercise,
          row: WorkoutTrackerDashboard.SetLog, revision: Int, system: UnitSystem, showRIR: Bool,
-         refresh: @escaping () async throws -> Void, dirtyChanged: @escaping (Bool) -> Void) {
+         refresh: @escaping () async throws -> Void, dirtyChanged: @escaping (Bool) -> Void,
+         showHistory: (() -> Void)? = nil) {
         self.session = session; self.exercise = exercise; self.row = row; self.revision = revision
-        self.system = system; self.showRIR = showRIR; self.refresh = refresh; self.dirtyChanged = dirtyChanged
+        self.system = system; self.showRIR = showRIR; self.refresh = refresh; self.dirtyChanged = dirtyChanged; self.showHistory = showHistory
         _draft = State(initialValue: .init(row: row, massScale: system == .imperial ? 1 : UnitFormatter.poundsPerKilogram))
     }
     var body: some View {
@@ -36,9 +38,10 @@ struct WorkoutInlineSetRow: View {
                     loadHint: (row.plannedLoad / draft.massScale).formatted(.number.grouping(.never).precision(.fractionLength(0...2))),
                     repsHint: mode == .duration ? nil : String(row.plannedReps), completed: row.completed,
                     dirty: draft.isDirty, showRIR: showRIR,
-                    load: $draft.load, reps: $draft.reps, rir: $draft.rir, save: save)
+                    load: $draft.load, reps: $draft.reps, rir: $draft.rir, save: save,
+                    editingEnabled: sameConnection && frontend.supports("update_set") && operationID == nil && !draft.conflicts(with: row),
+                    showHistory: showHistory)
                     .focused($focused)
-                    .disabled(!sameConnection || !frontend.supports("update_set") || operationID != nil || draft.conflicts(with: row))
             } else { Text("Unsupported load mode. View this set in Life.").font(StrandFont.caption) }
             if draft.conflicts(with: row) {
                 Text("This set changed in Life. Your input is retained; review the current values before saving.")
