@@ -35,6 +35,7 @@ enum WorkoutHistoryReadProof {
                 "detailVerified": !chain.sessions.isEmpty, "filteredReadVerified": true, "filteredRows": filteredPage.sessions.count,
                 "strengthReadVerified": true, "liftingProgramCount": strength.programs.count,
                 "pendingLiftingWorkouts": strength.counts.pending, "schedulingEnabled": true,
+                "manualCompletionEnabled": frontend.state.capabilities?.sessionCompletion == true,
                 "lifecycleEnabled": false, "writesAttempted": false]
         } catch {
             result["stage"] = stage
