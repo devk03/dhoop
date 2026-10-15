@@ -6,6 +6,7 @@ enum WorkoutHistoryReadProof {
     static func runIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("--workout-history-proof") else { return }
         var result: [String: Any] = ["schemaVersion": 1, "status": "not_verified"]
+        var stage = "history"
         do {
             let client = WorkoutTrackerClient.shared, filters = WorkoutHistoryFilters()
             let first = try await client.readHistory(filters: filters, cursor: nil)
@@ -20,15 +21,23 @@ enum WorkoutHistoryReadProof {
             var filtered = filters; filtered.kind = "strength"
             let filteredPage = try await client.readHistory(filters: filtered, cursor: nil)
             guard filteredPage.filters == filtered else { throw WorkoutTrackerContractError.invalidSnapshot }
+            stage = "strength"
             let strength = try await client.readStrength()
             try strength.validate()
             if let row = strength.nextUp { _ = try await client.readHistorySession(row) }
+            stage = "capabilities"
+            let frontend = WorkoutFrontendClient.shared
+            try await frontend.checkCapabilities()
+            guard frontend.state.capabilities?.sessionDateScheduling == true,
+                  frontend.state.capabilities?.frontendStart == false else { throw WorkoutTrackerContractError.invalidSnapshot }
             result = ["schemaVersion": 1, "status": "authenticated_history_reads_verified",
                 "pages": pages, "rows": chain.sessions.count, "revision": first.lifeRevision,
                 "detailVerified": !chain.sessions.isEmpty, "filteredReadVerified": true, "filteredRows": filteredPage.sessions.count,
                 "strengthReadVerified": true, "liftingProgramCount": strength.programs.count,
-                "pendingLiftingWorkouts": strength.counts.pending, "writesAttempted": false]
+                "pendingLiftingWorkouts": strength.counts.pending, "schedulingEnabled": true,
+                "lifecycleEnabled": false, "writesAttempted": false]
         } catch {
+            result["stage"] = stage
             if case WorkoutSyncTransportError.http(let code) = error { result["httpStatus"] = code }
             result["errorType"] = String(describing: type(of: error))
         }
