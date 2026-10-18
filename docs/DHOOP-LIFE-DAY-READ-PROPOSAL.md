@@ -57,10 +57,14 @@ connection identity without promising that workout-only setup already enables pr
 | --- | --- |
 | Task/note | `itemId:string|null`, canonical `ref:string|null`, `kind:task|note`, readable `title`, `done:boolean|null`, `date`, `category:{id,label}`, `calendarLink` or null. Null identity is explicit legacy data; do not mint IDs from titles/positions. Notes have null completion. |
 | Tracker event | `id` (canonical UUID), `date`, `title`, `category`, `startTime`/`endTime` or null, `timeZone`, `gcalEventId` or null, `updatedAt`. No `done`. |
-| Calendar event | `calendarId`, `eventId`, `title`, `allDay`, timed `startAt`/`endAt` or date bounds, `timeZone`, optional recurrence occurrence identity, explicit linked task/event identity, `localProjection:boolean`. No `done`. |
+| Calendar event | `calendarId`, `eventId`, `title`, `allDay`, timed `startAt`/`endAt` or date bounds, `timeZone`, optional recurrence occurrence identity, `entityKey:string|null`, `localProjection:boolean`. No `done`. |
 
-A task calendar link carries the confirmed event identity/time and scheduling state, not an inferred
-title match. Pending local projections stay labelled pending. Deduplicate a linked event's visual
+A calendar link carries `entityKey` (`task:<canonical itemId>` or
+`event:<canonical tracker_events UUID>`), confirmed Calendar identity/time and scheduling state,
+not an inferred title match. Unlinked Google events have null `entityKey`. Social events retain
+their UUID and have no completion state; removing their Calendar time preserves the social record.
+Native reads do not expose scheduling/removal mutations. Pending local projections stay labelled
+pending. Deduplicate a linked event's visual
 row only by explicit calendar ID/event ID or canonical entity link, retaining both source identities.
 Keep unlinked calendar/social items visible. Exclude notes, people, attendees, calendar descriptions,
 journal text and health metrics from this minimal payload; titles are already separate from notes.
