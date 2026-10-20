@@ -9,6 +9,7 @@ final class SleepWebhookClient: ObservableObject {
     @Published private(set) var checkpoint = SleepWebhookCheckpoint()
     @Published private(set) var isSending = false
     @Published private(set) var storageUnavailable = false
+    @Published private(set) var checkResult: String?
     private var worker: Task<Void, Never>?
     private var generation = 0
     private var runAgain = false
@@ -51,15 +52,15 @@ final class SleepWebhookClient: ObservableObject {
     func setEnabled(_ enabled: Bool) throws {
         if enabled { _ = try credentials() }
         var next = checkpoint; next.enabled = enabled; next.nextAttempt = nil
-        next.message = enabled ? "Sleep sends after the day ends" : "Sleep delivery is off"
-        try commit(next); generation += 1; worker?.cancel()
+        next.message = enabled ? "Verified sleep sends after processing" : "Sleep delivery is off"
+        try commit(next); checkResult = nil; generation += 1; worker?.cancel()
         SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled)
     }
     func setProteinEnabled(_ enabled: Bool) throws {
         if enabled { guard try credentials().hasProteinBearer else { throw SleepWebhookFailure.credentials } }
         var next = checkpoint; next.version = 2; next.proteinEnabled = enabled; next.proteinNextAttempt = nil
         next.proteinMessage = enabled ? "Protein sends after the day ends" : "Protein delivery is off"
-        try commit(next); generation += 1; worker?.cancel()
+        try commit(next); checkResult = nil; generation += 1; worker?.cancel()
         SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled)
     }
     func enqueue(model: AppModel, force: Bool = false) {
@@ -86,11 +87,20 @@ final class SleepWebhookClient: ObservableObject {
         guard !storageUnavailable, checkpoint.anyEnabled else {
             throw ActionFailure(message: "Summary delivery is unavailable or off. Saved events remain on this phone.")
         }
+        checkResult = nil
+        let previousSleep = checkpoint.delivery.lastAcceptedEvent?.eventId
+        let previousProtein = checkpoint.delivery.lastAcceptedProtein?.eventId
         let completed = await deliver(model: model, force: true)
         try Task.checkCancellation()
         guard completed else {
+            checkResult = "Some summaries could not be sent. Review their status and retry."
             throw ActionFailure(message: "The summary check encountered an interruption. Check the Sleep and Protein delivery statuses. Received summaries stay acknowledged; pending events are retained.")
         }
+        if previousSleep != checkpoint.delivery.lastAcceptedEvent?.eventId || previousProtein != checkpoint.delivery.lastAcceptedProtein?.eventId {
+            checkResult = "Life confirmed receipt. Any manual values it kept are shown below."
+        } else if checkpoint.sleepBacklog == true {
+            checkResult = "Checked. More summaries may be waiting; check again later."
+        } else { checkResult = "Checked. No new summaries are ready to send." }
     }
     func deliver(model: AppModel, force: Bool = false) async -> Bool {
         guard !isSending, !storageUnavailable, checkpoint.anyEnabled else { return true }
@@ -125,9 +135,10 @@ final class SleepWebhookClient: ObservableObject {
                         let differences = summaries.filter { $0.day <= completed.through && next.delivery.proteinAcknowledged?[$0.day] != $0 }
                         next.proteinBacklog = differences.count > 1
                         guard let candidate = oldestFirst ? differences.last : differences.first else {
+                            next.proteinFailures = 0; next.proteinNextAttempt = nil
                             if next.delivery.lastAcceptedProtein == nil {
                                 next.proteinMessage = "No protein logged for a completed day. Manual entry on Life is available."
-                            }
+                            } else { next.proteinMessage = "No new protein summaries ready" }
                             try commit(next); continue
                         }
                         next.version = 2; _ = try next.delivery.prepareProtein(candidate)
@@ -144,26 +155,27 @@ final class SleepWebhookClient: ObservableObject {
                         ? "Received by Life · manual protein preserved" : "Protein received by Life"
                 } else {
                     if next.delivery.pending == nil {
-                        guard !model.intelligence.computing, !RescoreBackgroundScheduler.isRescoreOwed else {
-                            next.sleepBacklog = true; next.message = "Waiting for sleep processing"
-                            try commit(next); continue
-                        }
+                        let before = SleepExportReadiness(computing: model.intelligence.computing,
+                            rescoreOwed: RescoreBackgroundScheduler.isRescoreOwed, generation: RescoreBackgroundScheduler.currentOwedToken,
+                            completedPass: RescoreBackgroundScheduler.isOwedAfterCompletedPass)
                         guard let healthStore = await model.repo.storeHandle() else { throw SleepWebhookFailure.storage }
                         let ids = await model.repo.sleepComparisonSourceIds().filter { !$0.hasSuffix("-noop") }
                         let rows = try await healthStore.verifiedWhoopSleepTotals(rawSourceIds: ids, from: sleepDays.from, to: sleepDays.through)
                         try Task.checkCancellation()
                         guard ticket == generation, checkpoint.enabled else { return false }
                         next = checkpoint
-                        guard !model.intelligence.computing, !RescoreBackgroundScheduler.isRescoreOwed else {
-                            next.sleepBacklog = true; next.message = "Waiting for sleep processing"
-                            try commit(next); continue
-                        }
-                        let candidates = rows.reversed().map { SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
+                        let after = SleepExportReadiness(computing: model.intelligence.computing,
+                            rescoreOwed: RescoreBackgroundScheduler.isRescoreOwed, generation: RescoreBackgroundScheduler.currentOwedToken,
+                            completedPass: RescoreBackgroundScheduler.isOwedAfterCompletedPass)
+                        let waiting = rows.contains { $0.estimated && !before.allows(estimated: true, after: after) }
+                        let candidates = rows.reversed().filter { before.allows(estimated: $0.estimated, after: after) }.map { SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
                             method: $0.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles") }
                         let differences = candidates.filter { next.delivery.acknowledged[$0.wakeDate] != $0 }
-                        next.sleepBacklog = differences.count > 1
+                        next.sleepBacklog = differences.count > 1 || waiting
                         guard let candidate = oldestFirst ? differences.last : differences.first else {
-                            if next.delivery.lastAcceptedAt == nil { next.message = "No verified sleep summary available through today" }
+                            next.failures = 0; next.nextAttempt = nil
+                            if waiting { next.message = "Waiting for sleep processing" }
+                            else { next.message = "No new sleep summaries ready" }
                             try commit(next); continue
                         }
                         _ = try next.delivery.prepare(candidate); next.message = "Sending verified sleep summary"
@@ -206,13 +218,14 @@ final class SleepWebhookClient: ObservableObject {
         catch { storageUnavailable = true; checkpoint.message = "Delivery state could not be saved. Export is paused." }
     }
     static func safeMessage(_ error: Error) -> String {
-        guard let failure = error as? SleepWebhookFailure else { return "Connection interrupted. Pending sleep is saved for retry." }
+        guard let failure = error as? SleepWebhookFailure else { return "Connection interrupted. Your pending summary is saved for retry." }
         switch failure {
-        case .http(let code): return "Website returned HTTP \(code). Pending sleep is saved."
+        case .http(let code): return [401, 403].contains(code) ? "Life access was denied. Review the connection settings; your pending summary is saved." : "Life returned HTTP \(code). Your pending summary is saved; retry when connected."
+        case .receiver(_, let code): return code.guidance
         case .invalidSummary: return "A local record is invalid. Check the logged values; nothing was acknowledged."
         case .credentials: return "Credentials unavailable. Unlock the phone or update the connection."
         case .travelPause: return "Paused outside America/Los_Angeles. No dates are converted."
-        case .invalidAcknowledgement, .responseTooLarge: return "Website acknowledgement was invalid. Pending sleep is saved."
+        case .invalidAcknowledgement, .responseTooLarge: return "Life's receipt could not be verified. Your pending summary is saved for retry."
         case .storage, .invalidState: return "Delivery state could not be read or saved. Export is paused."
         case .expiredSetup: return "Setup expired or does not match this phone. Prepare a new setup."
         default: return "Check the connection settings. Nothing was acknowledged."

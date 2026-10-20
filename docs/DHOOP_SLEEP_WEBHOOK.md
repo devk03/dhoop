@@ -193,7 +193,12 @@ A backup-excluded, atomically replaced checkpoint stores the installation ID, re
 bytes, bounded receipts and retry deadline. A malformed or unreadable checkpoint pauses delivery instead
 of inventing a new identity. Credential rotation retains the pending event; changing destinations clears
 the destination receipt ledger while keeping the installation revision counter. Already pending events
-can retry without waiting for a fresh health-store read or rescore. New events wait for rescore completion.
+can retry without waiting for a fresh health-store read or rescore. New estimated events require an unchanged idle readiness fence across that atomic read. With no
+rescore debt, the committed estimate is eligible. With debt, only a completed pass that left the
+same nonempty debt token outstanding is eligible; running, interrupted, new or unproven debt blocks
+estimates. This exports the last completed committed snapshot, not a claim that the newest raw inputs
+have been rescored. Official imported records remain independently eligible. Estimate labeling,
+corrections, immutable retries and manual ownership are unchanged.
 
 Build 439 sends completed local days only. Each invocation sends at most two events per enabled metric,
 newest then oldest outstanding, with a durable backlog marker for bounded catch-up. Automatic retries

@@ -51,6 +51,7 @@ struct SleepWebhookAcknowledgement: Decodable {
 enum SleepWebhookFailure: Error {
     case invalidConfiguration, invalidSummary, invalidAcknowledgement, invalidState
     case storage, credentials, http(Int), responseTooLarge, travelPause, expiredSetup
+    case receiver(Int, LifeSyncReceiverCode)
 }
 
 /// Durable single-flight outbox: checkpoint before HTTP; acknowledge only an exact receipt.

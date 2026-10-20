@@ -109,6 +109,8 @@ targets:
     sources:
       - GoalPreferenceTests
       - StrandiOS/Export/SleepWebhookDelivery.swift
+      - StrandiOS/Export/LifeSyncReceiverCode.swift
+      - StrandiOS/Export/LifeSyncStatus.swift
       - StrandiOS/Export/ProteinWebhookDelivery.swift
       - StrandiOS/Export/SleepWebhookSecureSetup.swift
       - StrandiOS/Export/SleepWebhookTransport.swift

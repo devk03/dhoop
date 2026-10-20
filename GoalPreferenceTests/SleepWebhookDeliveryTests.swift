@@ -135,6 +135,44 @@ private final class SleepWebhookMockProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+final class SleepExportReadinessTests: XCTestCase {
+    func testCompletedEstimateDoesNotWaitForUnsettledNewerDebt() {
+        let completed = SleepExportReadiness(computing: false, rescoreOwed: true, generation: "debt-2", completedPass: true)
+        XCTAssertTrue(completed.allows(estimated: true, after: completed), "A completed estimate remains exportable while newer inputs await processing")
+    }
+    func testIncompleteOrRunningPassCannotExportAnEstimate() {
+        for state in [
+            SleepExportReadiness(computing: false, rescoreOwed: true, generation: "interrupted"),
+            SleepExportReadiness(computing: true, rescoreOwed: true, generation: "running", completedPass: true),
+            SleepExportReadiness(computing: true, rescoreOwed: false, generation: nil),
+            SleepExportReadiness(computing: false, rescoreOwed: true, generation: nil, completedPass: true),
+            SleepExportReadiness(computing: false, rescoreOwed: true, generation: "", completedPass: true)
+        ] {
+            XCTAssertFalse(state.allows(estimated: true, after: state))
+        }
+        let idle = SleepExportReadiness(computing: false, rescoreOwed: false, generation: nil)
+        XCTAssertTrue(idle.allows(estimated: true, after: idle))
+    }
+    func testChangedReadFenceRequiresAnotherEstimateRead() {
+        let before = SleepExportReadiness(computing: false, rescoreOwed: true, generation: "debt-2", completedPass: true)
+        for after in [
+            SleepExportReadiness(computing: false, rescoreOwed: true, generation: "debt-3", completedPass: true),
+            SleepExportReadiness(computing: false, rescoreOwed: true, generation: "debt-2", completedPass: false),
+            SleepExportReadiness(computing: true, rescoreOwed: true, generation: "debt-2", completedPass: true),
+            SleepExportReadiness(computing: false, rescoreOwed: false, generation: "debt-2", completedPass: true)
+        ] {
+            XCTAssertFalse(before.allows(estimated: true, after: after))
+        }
+        let idle = SleepExportReadiness(computing: false, rescoreOwed: false, generation: "debt-1")
+        XCTAssertFalse(idle.allows(estimated: true, after: .init(computing: false, rescoreOwed: false, generation: "debt-2")))
+    }
+    func testOfficialImportIsIndependentOfLocalAnalysisDebt() {
+        let before = SleepExportReadiness(computing: true, rescoreOwed: true, generation: "running")
+        let after = SleepExportReadiness(computing: false, rescoreOwed: true, generation: "newer")
+        XCTAssertTrue(before.allows(estimated: false, after: after))
+    }
+}
+
 final class SleepWebhookTransportTests: XCTestCase {
     private var credentials: SleepWebhookCredentials {
         .init(endpoint: "https://track.kunjadia.dev/api/webhooks/sleep", bearer: String(repeating: "t", count: 43), clientId: "test.access", clientSecret: "test-secret")
@@ -171,6 +209,44 @@ final class SleepWebhookTransportTests: XCTestCase {
             SleepWebhookMockProtocol.status = status; SleepWebhookMockProtocol.mime = mime
             do { _ = try await SleepWebhookTransport().send(Data("{}".utf8), credentials: credentials, configuration: config); XCTFail("Unacceptable receiver response accepted") }
             catch { XCTAssertTrue(error is SleepWebhookFailure) }
+        }
+    }
+    func testReviewedReceiverCodesHaveSafeActionableGuidance() async throws {
+        let cases: [(Int, LifeSyncReceiverCode)] = [
+            (401, .unauthorized), (503, .notConfigured), (503, .saveFailed), (503, .writeConflict),
+            (409, .identityConflict), (409, .installationConflict), (409, .eventConflict), (409, .revisionConflict),
+            (400, .invalidPayload), (400, .invalidOrigin), (413, .payloadTooLarge),
+            (415, .unsupportedMediaType), (415, .unsupportedEncoding), (422, .unsupportedSchema),
+            (422, .unsupportedTimeZone), (422, .legacyTimeZone), (422, .unsupportedKind),
+            (422, .unsupportedCoverage), (404, .notFound), (405, .unsupportedMethod)
+        ]
+        for (status, code) in cases {
+            SleepWebhookMockProtocol.status = status
+            SleepWebhookMockProtocol.body = try JSONSerialization.data(withJSONObject: ["error": code.rawValue, "message": "private response prose"])
+            do {
+                _ = try await SleepWebhookTransport().send(Data("{}".utf8), credentials: credentials, configuration: config)
+                XCTFail("A rejection must never be accepted")
+            } catch SleepWebhookFailure.receiver(let actualStatus, let actualCode) {
+                XCTAssertEqual(actualStatus, status); XCTAssertEqual(actualCode, code)
+                XCTAssertFalse(actualCode.guidance.contains("private response prose"))
+                XCTAssertFalse(actualCode.guidance.isEmpty)
+            } catch { XCTFail("Reviewed code did not receive its specific guidance: \(code.rawValue)") }
+        }
+    }
+    func testUnknownMismatchedHTMLAndOversizedErrorBodiesUseStatusOnly() async throws {
+        let cases: [(Int, String, Data)] = [
+            (503, "application/json", Data("{\"error\":\"unreviewed_private_message\"}".utf8)),
+            (503, "application/json", Data("{\"error\":\"unauthorized\"}".utf8)),
+            (403, "text/html", Data("<html>Private access page</html>".utf8)),
+            (503, "application/json", Data("{\"error\":\"save_failed\"}".utf8) + Data(repeating: 32, count: 4096))
+        ]
+        for (status, mime, body) in cases {
+            SleepWebhookMockProtocol.status = status; SleepWebhookMockProtocol.mime = mime; SleepWebhookMockProtocol.body = body
+            do {
+                _ = try await SleepWebhookTransport().send(Data("{}".utf8), credentials: credentials, configuration: config)
+                XCTFail("An unreviewed response must not be accepted")
+            } catch SleepWebhookFailure.http(let actualStatus) { XCTAssertEqual(actualStatus, status) }
+            catch { XCTFail("Arbitrary response body must not become a receiver error") }
         }
     }
     func testOversizedStreamRejectedWithoutContentLength() async throws {

@@ -15,6 +15,7 @@ final class SleepWebhookTransport: NSObject, URLSessionTaskDelegate, @unchecked 
         }
         configuration.httpShouldSetCookies = false
         configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
         configuration.urlCache = nil
         configuration.timeoutIntervalForRequest = 12
         configuration.timeoutIntervalForResource = 20
@@ -32,7 +33,23 @@ final class SleepWebhookTransport: NSObject, URLSessionTaskDelegate, @unchecked 
         request.setValue(credentials.clientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
         let (stream, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw SleepWebhookFailure.invalidAcknowledgement }
-        guard http.statusCode == 200 else { throw SleepWebhookFailure.http(http.statusCode) }
+        if http.statusCode != 200 {
+            guard http.mimeType?.lowercased() == "application/json", response.expectedContentLength <= 4096 else {
+                throw SleepWebhookFailure.http(http.statusCode)
+            }
+            var body = Data()
+            for try await byte in stream {
+                try Task.checkCancellation()
+                guard body.count < 4096 else { throw SleepWebhookFailure.http(http.statusCode) }
+                body.append(byte)
+            }
+            struct Rejection: Decodable { let error: String }
+            if let rejected = try? JSONDecoder().decode(Rejection.self, from: body),
+               let code = LifeSyncReceiverCode(rawValue: rejected.error), code.matches(status: http.statusCode) {
+                throw SleepWebhookFailure.receiver(http.statusCode, code)
+            }
+            throw SleepWebhookFailure.http(http.statusCode)
+        }
         guard http.mimeType?.lowercased() == "application/json" else { throw SleepWebhookFailure.invalidAcknowledgement }
         if response.expectedContentLength > 16_384 { throw SleepWebhookFailure.responseTooLarge }
         var result = Data()
