@@ -28,6 +28,8 @@ public enum NoopMetrics {
     public static let dashboardHeartNumber: CGFloat = 32
     public static let dashboardHeartChartHeight: CGFloat = 104
     public static let dashboardTileMinimumWidth: CGFloat = 160
+    /// Compact ring for the exported sleep graphic; on-screen goal rings retain their own size.
+    public static let sleepShareRingDiameter: CGFloat = 104
     public static let sleepGoalDiameter: CGFloat = 120
     public static let sleepGoalStroke: CGFloat = 6
     public static let sleepGoalNumber: CGFloat = 22

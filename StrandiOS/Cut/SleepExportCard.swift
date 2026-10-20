@@ -6,31 +6,41 @@ import StrandDesign
 struct SleepExportCard: View {
     let report: SleepExportReport
     @Environment(\.dynamicTypeSize) private var typeSize
-    @ScaledMetric(relativeTo: .title) private var ringSize = NoopMetrics.sleepGoalDiameter
+    @ScaledMetric(relativeTo: .title) private var ringSize = NoopMetrics.sleepShareRingDiameter
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.sleepGoalNumber
     private var dateLabel: String {
         let formatter = DateFormatter(); formatter.locale = .current; formatter.calendar = Calendar(identifier: .gregorian); formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: report.day)?.formatted(.dateTime.month(.abbreviated).day().year()) ?? report.day
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Sleep").font(StrandFont.title1)
-                Spacer(minLength: NoopMetrics.space2)
-                Text(dateLabel).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-            }
-            NoopCard(padding: NoopMetrics.space3) {
-                VStack(spacing: NoopMetrics.space3) {
-                    let layout = typeSize.isAccessibilitySize
-                        ? AnyLayout(VStackLayout(spacing: NoopMetrics.space4))
-                        : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.space3))
-                    layout { ForEach(report.sources) { summary($0) } }
-                    Text("Duration goal · \(SleepExportReport.duration(report.goalMinutes))")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Sleep").font(StrandFont.title1)
+                    Spacer(minLength: NoopMetrics.space2)
+                    Text(dateLabel).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                }
+                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                    Text("Sleep").font(StrandFont.title1)
+                    Text(dateLabel).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                 }
             }
-            if let source = report.highlighted { stageSummary(source) }
-            if !report.shareMetricTitles.isEmpty { heartSummary }
+            VStack(spacing: NoopMetrics.space3) {
+                let layout = typeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(spacing: NoopMetrics.space4))
+                    : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.space3))
+                layout { ForEach(report.sources) { summary($0) } }
+                Text("Duration goal · \(SleepExportReport.duration(report.goalMinutes))")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
+            if let source = report.highlighted {
+                separator
+                stageSummary(source)
+            }
+            if !report.shareMetricTitles.isEmpty {
+                separator
+                heartSummary
+            }
             VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                 HStack {
                     Text("Dhoop").font(StrandFont.caption)
@@ -46,50 +56,51 @@ struct SleepExportCard: View {
     private func summary(_ source: SleepExportReport.Source) -> some View {
         let fraction = source.totalMinutes.map { $0 / max(1, report.goalMinutes) }
         let tint = source.id == "whoop" ? StrandChartStyle.stageDeep : StrandPalette.metricPurple
-        return VStack(spacing: NoopMetrics.space2) {
-            Text(source.name).font(StrandFont.headline)
-            ZStack {
-                Circle().stroke(StrandPalette.hairline, lineWidth: NoopMetrics.sleepGoalStroke)
-                Circle().trim(from: 0, to: min(1, max(0, fraction ?? 0)))
-                    .stroke(tint, style: StrokeStyle(lineWidth: NoopMetrics.sleepGoalStroke, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                VStack(spacing: NoopMetrics.space1) {
-                    Text(source.totalMinutes.map { SleepExportReport.duration($0) } ?? "—")
-                        .font(StrandFont.number(numberSize, weight: .semibold)).monospacedDigit()
-                    Text(fraction.map { "\(($0 * 100).rounded().formatted(.number.precision(.fractionLength(0))))%" } ?? "No record")
-                        .font(StrandFont.captionNumber).foregroundStyle(tint)
-                }
-            }.frame(width: ringSize, height: ringSize)
-        }.frame(maxWidth: .infinity)
+        return ZStack {
+            Circle().stroke(StrandPalette.hairline, lineWidth: NoopMetrics.sleepGoalStroke)
+            Circle().trim(from: 0, to: min(1, max(0, fraction ?? 0)))
+                .stroke(tint, style: StrokeStyle(lineWidth: NoopMetrics.sleepGoalStroke, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: NoopMetrics.space1) {
+                Text(source.name).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Text(source.totalMinutes.map { SleepExportReport.duration($0) } ?? "—")
+                    .font(StrandFont.number(numberSize, weight: .semibold)).monospacedDigit()
+                Text(fraction.map { "\(($0 * 100).rounded().formatted(.number.precision(.fractionLength(0))))%" } ?? "No record")
+                    .font(StrandFont.captionNumber).foregroundStyle(tint)
+            }
+        }.frame(width: ringSize, height: ringSize)
+            .frame(maxWidth: .infinity)
+    }
+    private var separator: some View {
+        Rectangle().fill(StrandPalette.hairline).frame(height: NoopMetrics.hairlineWidth)
+            .accessibilityHidden(true)
     }
     private func stageSummary(_ source: SleepExportReport.Source) -> some View {
         let values = Array(zip(["deep", "rem", "core", "unspecified"], source.stages)).filter { $0.1 != nil }
-        return NoopCard(padding: NoopMetrics.space3) {
-            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                Text("Stages · \(source.name)").font(StrandFont.headline)
-                if let timeline = source.timeline, !timeline.intervals.isEmpty {
-                    chart(timeline)
-                    Text("\(clock(timeline.start))–\(clock(timeline.end))")
-                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+        return VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            Text("Stages · \(source.name)").font(StrandFont.headline)
+            if let timeline = source.timeline, !timeline.intervals.isEmpty {
+                chart(timeline)
+                Text("\(clock(timeline.start))–\(clock(timeline.end))")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            } else {
+                Text("No timestamped stages available").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
+            if !values.isEmpty {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                        ForEach(values.indices, id: \.self) { stageCell(values[$0]) }
+                    }
                 } else {
-                    Text("No timestamped stages available").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
-                if !values.isEmpty {
-                    if typeSize.isAccessibilitySize {
-                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                            ForEach(values.indices, id: \.self) { stageCell(values[$0]) }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: NoopMetrics.space3) {
+                            ForEach(values.indices, id: \.self) { stageCell(values[$0]).fixedSize(horizontal: true, vertical: true) }
                         }
-                    } else {
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .top, spacing: NoopMetrics.space3) {
-                                ForEach(values.indices, id: \.self) { stageCell(values[$0]).fixedSize(horizontal: true, vertical: true) }
-                            }
-                            Grid(alignment: .topLeading, horizontalSpacing: NoopMetrics.space3, verticalSpacing: NoopMetrics.space2) {
-                                ForEach(Array(stride(from: 0, to: values.count, by: 2)), id: \.self) { index in
-                                    GridRow {
-                                        stageCell(values[index])
-                                        if index + 1 < values.count { stageCell(values[index + 1]) }
-                                    }
+                        Grid(alignment: .topLeading, horizontalSpacing: NoopMetrics.space3, verticalSpacing: NoopMetrics.space2) {
+                            ForEach(Array(stride(from: 0, to: values.count, by: 2)), id: \.self) { index in
+                                GridRow {
+                                    stageCell(values[index])
+                                    if index + 1 < values.count { stageCell(values[index + 1]) }
                                 }
                             }
                         }
@@ -105,7 +116,7 @@ struct SleepExportCard: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var heartSummary: some View {
-        NoopCard(padding: NoopMetrics.space3) {
+        Group {
             if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                     ForEach(report.shareMetricTitles, id: \.self) { title in
@@ -123,7 +134,7 @@ struct SleepExportCard: View {
             } else {
                 Grid(alignment: .topLeading, horizontalSpacing: NoopMetrics.space3, verticalSpacing: NoopMetrics.space2) {
                     GridRow {
-                        Text("Heart").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        Color.clear.frame(width: 0, height: 0).accessibilityHidden(true)
                         ForEach(report.sources) { source in Text(source.name).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                     }
                     ForEach(report.shareMetricTitles, id: \.self) { title in
@@ -173,7 +184,7 @@ struct SleepExportCard: View {
             AxisGridLine().foregroundStyle(StrandPalette.hairline.opacity(StrandChartStyle.gridOpacity))
             AxisValueLabel { if let level = value.as(Int.self) { Text(["Unclassified", "Deep", "Light", "REM", "Awake"][level]).font(StrandFont.caption) } }
         } }.chartLegend(.hidden)
-            .frame(height: typeSize.isAccessibilitySize ? NoopMetrics.dashboardTraceHeight * 2 : NoopMetrics.dashboardHeartChartHeight)
+            .frame(height: typeSize.isAccessibilitySize ? NoopMetrics.dashboardTraceHeight * 2 : NoopMetrics.dashboardTrendHeight)
             .accessibilityLabel("Recorded sleep stages with gaps preserved")
     }
     private func clock(_ ts: Double) -> String { Date(timeIntervalSince1970: ts).formatted(date: .omitted, time: .shortened) }

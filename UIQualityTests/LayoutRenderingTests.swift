@@ -81,8 +81,8 @@ final class LayoutRenderingTests: XCTestCase {
             stages: [nil, nil, nil, nil], timeline: nil, metrics: [.init(title: "Average HR", value: 55.2, unit: "bpm", detail: "30 demo readings · sleep period"),
                 .init(title: "HRV", value: nil, unit: "ms", detail: "SDNN · No readable provider samples")])
         let report = SleepExportReport(day: "2026-10-15", goalMinutes: 495, selectedSource: "whoop", sources: [source, eight])
-        try render(SleepExportCard(report: report), name: "sleep-export-demo-390", size: .large, scheme: .dark, width: 390, maximumHeight: 800)
-        try render(SleepExportCard(report: report), name: "sleep-export-demo-narrow", size: .large, scheme: .light, width: 320, maximumHeight: 900)
+        try render(SleepExportCard(report: report), name: "sleep-export-demo-390", size: .large, scheme: .dark, width: 390, maximumHeight: 620)
+        try render(SleepExportCard(report: report), name: "sleep-export-demo-narrow", size: .large, scheme: .light, width: 320, maximumHeight: 680)
         try render(SleepExportCard(report: report), name: "sleep-export-demo-large-text", size: .accessibility3, scheme: .dark, width: 390)
         let absent = SleepExportReport(day: "2026-10-15", goalMinutes: 495, selectedSource: "comparison", sources: [missing])
         try render(SleepExportCard(report: absent), name: "sleep-export-demo-unavailable", size: .large, scheme: .dark, width: 390)
