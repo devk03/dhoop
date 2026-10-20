@@ -248,6 +248,8 @@ private struct ProteinInlineEntry: View {
                         .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 }.font(StrandFont.subhead).tint(StrandPalette.metricProtein)
                     .frame(minHeight: NoopMetrics.minimumTouchTarget)
+                Text("Life sync sends completed-day totals when enabled. A local save is not a website receipt.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 DisclosureGroup("Daily target (optional)") {
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                         TextField("Target in grams", text: $target)
@@ -287,6 +289,6 @@ private struct ProteinInlineEntry: View {
         let now = Date()
         try store.add(grams: value, name: name, day: Repository.localDayKey(now), now: now)
         grams = ""; name = ""; focused = nil
-        savedMessage = "Saved \(value.formatted()) g · \(now.formatted(date: .abbreviated, time: .shortened))"
+        savedMessage = "Saved on this phone · \(value.formatted()) g · \(now.formatted(date: .abbreviated, time: .shortened))"
     }
 }

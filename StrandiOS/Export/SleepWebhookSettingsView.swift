@@ -22,51 +22,29 @@ struct SleepWebhookSettingsView: View {
                         }))
                         .font(StrandFont.headline).toggleStyle(NoopSwitchStyle())
                         .disabled(client.storageUnavailable || (!client.checkpoint.enabled && !client.hasCredentials))
-                        Text("WHOOP sleep totals and their source. Manual sleep on Life takes priority.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        LifeSyncStatusView(status: LifeSyncStatus(checkpoint: client.checkpoint, protein: false,
+                            checking: client.isSending, storageUnavailable: client.storageUnavailable))
                         Divider()
                         Toggle("Protein", isOn: Binding(get: { client.checkpoint.proteinEnabled == true }, set: { enabled in
                             if perform({ try client.setProteinEnabled(enabled) }), enabled { client.enqueue(model: model, force: true) }
                         }))
                         .font(StrandFont.headline).toggleStyle(NoopSwitchStyle())
                         .disabled(client.storageUnavailable || (client.checkpoint.proteinEnabled != true && !client.hasProteinCredentials))
-                        Text("Grams logged in Dhoop. Manual totals on Life take priority. An unlogged day stays blank.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        Text("Sends after the day ends, when iOS allows. Protein needs no calorie log, weight or target.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                        LifeSyncStatusView(status: LifeSyncStatus(checkpoint: client.checkpoint, protein: true,
+                            checking: client.isSending, storageUnavailable: client.storageUnavailable))
                     }
                 }
-                StrandCard {
-                    VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                        Label("Delivery", systemImage: "paperplane").font(StrandFont.headline)
-                        Text("Sleep · \(client.checkpoint.message)").font(StrandFont.subhead)
-                            .foregroundStyle(StrandPalette.textSecondary).accessibilityIdentifier("sleepWebhookStatus")
-                        if let event = client.checkpoint.delivery.lastAcceptedEvent,
-                           let date = client.checkpoint.delivery.lastAcceptedAt {
-                            Text("Wake date \(event.wakeDate) · received \(date.formatted(date: .abbreviated, time: .shortened))")
-                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        }
-                        Divider()
-                        Text("Protein · \(client.checkpoint.proteinMessage ?? "Not enabled")")
-                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                        if let event = client.checkpoint.delivery.lastAcceptedProtein,
-                           let date = client.checkpoint.delivery.proteinAcceptedAt {
-                            Text("Logged date \(event.day) · received \(date.formatted(date: .abbreviated, time: .shortened))")
-                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        }
-                        if client.checkpoint.delivery.hasPending {
-                            Label("Pending event saved on this phone", systemImage: "tray.full")
-                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        }
-                        NoopAsyncButton("Check & send summaries", systemImage: "arrow.up.circle", fullWidth: true) {
-                            try await client.sendAvailableSummaries(model: model)
-                            error = nil
-                        }
-                            .disabled(!client.checkpoint.anyEnabled || client.isSending || client.storageUnavailable)
-                        Text("Completion means the available-summary check finished. Only the dated receipt above confirms website acceptance.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                    NoopAsyncButton("Sync now", systemImage: "arrow.triangle.2.circlepath", fullWidth: true) {
+                        try await client.sendAvailableSummaries(model: model)
+                        error = nil
+                    }.disabled(!client.checkpoint.anyEnabled || client.isSending || client.storageUnavailable)
+                    if let result = client.checkResult {
+                        Text(result).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            .accessibilityIdentifier("lifeSyncCheckResult")
                     }
                 }
+                DisclosureGroup("Connection settings") {
                 StrandCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Label("Connection", systemImage: "lock.shield").font(StrandFont.headline)
@@ -119,10 +97,13 @@ struct SleepWebhookSettingsView: View {
                         }.font(StrandFont.subhead).disabled(client.isSending)
                     }
                 }
+                }.font(StrandFont.subhead)
                 if let error { Text(error).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical) }
-                Text("Verified sleep summaries can send on their wake date after processing. Protein sends after the consumption day ends. Opening Dhoop retries pending updates; iOS controls background timing. Export pauses outside America/Los_Angeles. No meal names, calories, weight or raw sensor traces are sent.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                DisclosureGroup("How Life sync works") {
+                    Text("Verified WHOOP sleep sends after processing. Protein sends after the logged day ends; no calories or weight are required. Life keeps manual values. Newer sleep analysis may still be pending. Opening Dhoop retries saved events; iOS controls background timing. Export pauses outside America/Los_Angeles.")
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true).padding(.top, NoopMetrics.space2)
+                }.font(StrandFont.subhead)
             }.foregroundStyle(StrandPalette.textPrimary)
         }
         .task { if !client.checkpoint.delivery.endpoint.isEmpty { endpoint = client.checkpoint.delivery.endpoint } }
