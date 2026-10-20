@@ -11,8 +11,13 @@ struct WorkoutHistoryView: View {
     @State private var kind = "all"
     @State private var range = { var value = MetricRangeSelection(); value.preset = .all; return value }()
     @State private var capturedAt = Date()
-    @State private var busy = false
-    @State private var error: String?
+    @StateObject private var refreshState = WorkoutRefreshController()
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var visible = false
+    @State private var loadedConnection: String?
+    private var busy: Bool { refreshState.busy }
+    private var connectionIdentity: String { "\(client.state.origin ?? "")|\(client.state.installationId?.uuidString ?? "")|\(client.state.enabled)" }
+    private var requestIdentity: String { "\(connectionIdentity)|\(requested)" }
     @State private var selected: WorkoutHistoryPage.Session?
     private var requested: WorkoutHistoryFilters {
         var value = filters
@@ -37,16 +42,12 @@ struct WorkoutHistoryView: View {
                 Spacer(minLength: NoopMetrics.space2)
                 NoopAsyncButton("Refresh", systemImage: "arrow.clockwise", kind: .secondary) { try await load(reset: true) }.disabled(busy || !client.state.enabled)
             }
-            if let error { Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
+            WorkoutRefreshFeedback(state: refreshState, retry: { try await load(reset: true) })
             if chain.requiresRefresh {
                 Text("Workout changes are shown. Refresh before loading more history.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
-            if busy { ProgressView("Reading workouts…") }
             if let loaded = chain.filters, loaded != requested, !chain.sessions.isEmpty {
                 Text("Previous results retained. Refresh to apply the selected filters.").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
-            }
-            if !busy && chain.sessions.isEmpty {
-                Text(plannedProgramID == nil ? "No completed Life workouts in this range." : "No planned lifting workouts in this range.").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
             }
             // Keep loaded rows mounted when presenting details; neither filters nor scroll is reset.
             ForEach(chain.sessions) { row in
@@ -70,26 +71,35 @@ struct WorkoutHistoryView: View {
                 NoopAsyncButton("Load 20 older workouts", systemImage: "arrow.down", kind: .secondary, fullWidth: true) { try await load(reset: false) }
                     .disabled(busy || chain.requiresRefresh || requested != chain.filters || !client.state.enabled)
             }
-            Text("\(chain.sessions.count) loaded · newest first").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            if chain.sessions.isEmpty && !busy && refreshState.errorMessage == nil && refreshState.lastSuccess != nil {
+                Text("No workouts in this range.").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+            }
+            if !chain.sessions.isEmpty { Text("\(chain.sessions.count) loaded · newest first").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
         }
-        .task(id: requested) { if !busy { try? await load(reset: true) } }
+        .task(id: requestIdentity) {
+            if loadedConnection != connectionIdentity { chain = .init(); refreshState.reset(); loadedConnection = connectionIdentity }
+            try? await load(reset: true)
+        }
+        .onAppear { visible = true; capturedAt = Date(); Task { try? await load(reset: true) } }
+        .onDisappear { visible = false; refreshState.cancel() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active && visible && selected == nil { capturedAt = Date(); Task { try? await load(reset: true) } }
+        }
         .sheet(item: $selected, onDismiss: {
-            if let page = client.state.frontendPage {
+            if loadedConnection == connectionIdentity, let page = client.state.frontendPage {
                 for session in page.dashboard.sessions { chain.reconcile(session, readRevision: page.lifeRevision) }
             }
         }) { row in WorkoutHistorySessionSheet(row: row) }
     }
     private func load(reset: Bool) async throws {
-        guard !busy else { return }
         let query = requested, cursor = reset ? nil : chain.nextCursor
-        busy = true; error = nil
-        defer { busy = false }
-        do {
+        let connection = connectionIdentity
+        try await refreshState.refresh(identity: "\(connection)|\(query)|\(cursor ?? "first")") {
             let page = try await client.readHistory(filters: query, cursor: cursor)
-            guard !Task.isCancelled, requested == query else { return }
+            guard !Task.isCancelled, requested == query, connection == connectionIdentity else { throw CancellationError() }
             try chain.accept(page, requestedFilters: query, cursor: cursor)
-        } catch is CancellationError { throw CancellationError() }
-        catch { self.error = error.localizedDescription; throw error }
+            loadedConnection = connection
+        }
     }
 }
 
@@ -98,12 +108,15 @@ struct WorkoutHistorySessionSheet: View {
     @State private var page: WorkoutTrackerDashboard?
     @State private var error: String?
     @State private var readAt: Date?
+    @State private var protectedEdits = false
+    @State private var confirmDiscard = false
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             Group {
                 if let page, let session = page.dashboard.sessions.first {
-                    WorkoutTrackerSessionView(session: session, lifeRevision: page.lifeRevision, readAt: readAt)
+                    WorkoutTrackerSessionView(session: session, lifeRevision: page.lifeRevision, readAt: readAt,
+                        refreshOnAppear: false, protectionChanged: { protectedEdits = $0 }, exerciseLibrary: page.dashboard.exerciseLibrary)
                 } else if let error {
                     VStack(spacing: NoopMetrics.space3) {
                         Text(error).font(StrandFont.subhead)
@@ -111,12 +124,23 @@ struct WorkoutHistorySessionSheet: View {
                     }.padding(NoopMetrics.space4)
                 } else { ProgressView("Reading workout…") }
             }
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { if protectedEdits { confirmDiscard = true } else { dismiss() } }
+            } }
             .task(id: row.id) { try? await load() }
+            .interactiveDismissDisabled(protectedEdits)
+            .confirmationDialog("Discard unsaved workout changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) { }
+            }
         }
     }
     private func load() async throws {
-        do { page = try await WorkoutTrackerClient.shared.readHistorySession(row); readAt = Date(); error = nil }
+        do {
+            let result = try await WorkoutTrackerClient.shared.readHistorySession(row)
+            try Task.checkCancellation()
+            page = result; readAt = Date(); error = nil
+        }
         catch { self.error = error.localizedDescription; throw error }
     }
 }

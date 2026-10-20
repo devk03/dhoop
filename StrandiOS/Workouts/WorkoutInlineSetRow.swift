@@ -57,8 +57,8 @@ struct WorkoutInlineSetRow: View {
             if frontend.unresolved?.id == operationID && operationID != nil {
                 NavigationLink("Recover pending save") { WorkoutFrontendSettingsView() }.buttonStyle(NoopButtonStyle(.secondary))
             }
-        }.onChange(of: draft.isDirty) { _, value in dirtyChanged(value) }
-        .onDisappear { dirtyChanged(false) }
+        }.onChange(of: draft.isDirty) { _, _ in dirtyChanged(draft.isDirty || operationID != nil) }
+        .onChange(of: operationID) { _, _ in dirtyChanged(draft.isDirty || operationID != nil) }
         .onChange(of: row) { _, value in
             if operationID == nil && !draft.isDirty { adopt(value) }
         }

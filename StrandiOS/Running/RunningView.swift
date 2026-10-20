@@ -33,7 +33,11 @@ private struct RunningContent: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.controller === rhs.controller }
 
     var body: some View {
-        ScreenScaffold(title: nil, onRefresh: { capturedAt = Date(); await repo.refresh() }) {
+        ScreenScaffold(title: nil, onRefresh: {
+            capturedAt = Date()
+            if section == "Train" && workoutMode == "Strength" { try? await WorkoutTrackerClient.shared.refreshStrength() }
+            else { await repo.refresh() }
+        }) {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 let headerLayout = dynamicTypeSize.isAccessibilitySize
                     ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
@@ -48,10 +52,9 @@ private struct RunningContent: View, Equatable {
                     Spacer(minLength: 0)
                     if section == "Train" {
                         HStack(spacing: NoopMetrics.space2) {
-                        Button { controller.testBuzz() } label: { Label("Test buzz", systemImage: "wave.3.right") }
-                            .font(StrandFont.caption).buttonStyle(NoopButtonStyle(.secondary))
-                            .disabled(!controller.strapAlertsReady || !controller.workoutHapticsEnabled)
                         Menu {
+                            Button("Buzz strap", systemImage: "wave.3.right") { controller.testBuzz() }
+                                .disabled(!controller.strapAlertsReady || !controller.workoutHapticsEnabled)
                             Button("History", systemImage: "clock") { section = "History" }
                             Button("Detected activity", systemImage: "figure.run") { section = "Review" }
                             NavigationLink("WHOOP alerts", destination: RemoteBuzzSettingsView())

@@ -7,28 +7,45 @@ struct WorkoutTrackerSessionView: View {
     let session: WorkoutTrackerDashboard.Session
     let lifeRevision: Int?
     let readAt: Date?
+    var refreshOnAppear = true
+    var protectionChanged: (Bool) -> Void = { _ in }
+    var exerciseLibrary: [WorkoutTrackerDashboard.LibraryItem] = []
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
     @ObservedObject private var frontend = WorkoutFrontendClient.shared
-    private var newerCachedPage: WorkoutTrackerDashboard? {
-        guard let page = tracker.state.frontendPage,
-              page.lifeRevision >= (lifeRevision ?? 0),
-              page.dashboard.sessions.contains(where: { $0.id == session.id && $0.mesocycleId == session.mesocycleId }) else { return nil }
-        return page
-    }
-    private var current: WorkoutTrackerDashboard.Session {
-        newerCachedPage?.dashboard.sessions.first { $0.id == session.id && $0.mesocycleId == session.mesocycleId } ?? session
-    }
-    private var revision: Int? { newerCachedPage?.lifeRevision ?? lifeRevision }
-    private var snapshotReadAt: Date? { newerCachedPage == nil ? readAt : tracker.state.frontendReadAt }
+    @State private var snapshot: WorkoutEditableSnapshot?
+    private var current: WorkoutTrackerDashboard.Session { snapshot?.current.session ?? session }
+    private var revision: Int? { snapshot?.current.revision ?? lifeRevision }
+    private var snapshotReadAt: Date? { snapshot?.current.readAt ?? readAt }
+    @StateObject private var refreshState = WorkoutRefreshController()
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var visible = false
+    @State private var showDiscard = false
+    @State private var draftGeneration = 0
+    @State private var openedContext: String?
+    @State private var editingSystem: UnitSystem?
+    private var connectionChanged: Bool { openedContext.map { $0 != connectionIdentity } ?? false }
     @AppStorage(UnitPrefs.systemKey) private var units = UnitSystem.metric.rawValue
     @State private var dirtySetIDs: Set<Int> = []
     @State private var showingShare = false
     @State private var showingSchedule = false
-    private var system: UnitSystem { UnitSystem(rawValue: units) ?? .metric }
+    private var system: UnitSystem { editingSystem ?? UnitSystem(rawValue: units) ?? .metric }
 
     var body: some View {
-        ScreenScaffold(title: LocalizedStringKey(current.title), subtitle: LocalizedStringKey(current.scheduledDate.isEmpty ? "Unscheduled" : current.scheduledDate)) {
+        ScreenScaffold(title: LocalizedStringKey(current.title), subtitle: LocalizedStringKey(current.scheduledDate.isEmpty ? "Unscheduled" : current.scheduledDate), onRefresh: { try? await refresh() }) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                WorkoutRefreshFeedback(state: refreshState, retry: refresh)
+                if connectionChanged {
+                    Text("The connection changed. Close and reopen this workout before saving. Your edits are retained here.")
+                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.statusWarning)
+                }
+                if snapshot?.pending != nil {
+                    NoopCard {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                            Text("Life has newer workout data. Your edits are retained.").font(StrandFont.subhead)
+                            Button("Load latest workout") { showDiscard = true }.buttonStyle(NoopButtonStyle(.secondary))
+                        }
+                    }
+                }
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         HStack(spacing: NoopMetrics.space2) {
@@ -49,10 +66,12 @@ struct WorkoutTrackerSessionView: View {
                 }
                 ForEach(current.exercises) { exercise in
                     WorkoutInlineExerciseCard(session: current, exercise: exercise,
-                        library: tracker.state.frontendPage?.dashboard.exerciseLibrary ?? [], revision: revision,
+                        library: snapshot?.current.library ?? exerciseLibrary, revision: revision,
                         system: system, refresh: refresh, dirtyChanged: { id, dirty in
                             if dirty { dirtySetIDs.insert(id) } else { dirtySetIDs.remove(id) }
                         }, hasUnsavedEdits: !dirtySetIDs.isEmpty)
+                        .id("\(exercise.id)-\(draftGeneration)")
+                        .disabled(connectionChanged)
                 }
                 if !current.metrics.isEmpty {
                     NoopCard {
@@ -75,18 +94,36 @@ struct WorkoutTrackerSessionView: View {
                 if !dirtySetIDs.isEmpty {
                     Text("Save edited sets before finishing or reopening the workout.").font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                 }
-                if let revision { completion(revision: revision).disabled(!dirtySetIDs.isEmpty) }
+                if let revision { completion(revision: revision).disabled(!dirtySetIDs.isEmpty || connectionChanged) }
                 if let snapshotReadAt {
                     Text("Life · updated \(snapshotReadAt.formatted(date: .abbreviated, time: .shortened))")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 }
             }
         }
-        .task(id: session.id) {
+        .disabled(connectionChanged)
+        .task(id: connectionIdentity) {
+            if openedContext == nil { openedContext = connectionIdentity; editingSystem = UnitSystem(rawValue: units) ?? .metric }
+            guard !connectionChanged else { refreshState.reset(); return }
+            if snapshot == nil { snapshot = .init(session: session, revision: lifeRevision, readAt: readAt, library: exerciseLibrary) }
             if frontend.state.enabled { try? await frontend.checkCapabilities() }
-            try? await refresh()
+            if refreshOnAppear { try? await refresh() }
         }
-        .refreshable { try? await refresh() }
+        .onAppear { visible = true }
+        .onDisappear { visible = false; refreshState.cancel() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active && visible && !connectionChanged { Task { try? await refresh() } }
+        }
+        .onChange(of: dirtySetIDs) { _, ids in
+            snapshot?.reconsider(protectedSetIDs: ids)
+            protectionChanged(!ids.isEmpty)
+        }
+        .confirmationDialog("Discard unsaved changes and load the latest workout?", isPresented: $showDiscard, titleVisibility: .visible) {
+            Button("Discard changes", role: .destructive) {
+                dirtySetIDs = []; snapshot?.usePendingAfterDiscard(); draftGeneration += 1
+            }
+            Button("Keep editing", role: .cancel) { }
+        }
         .sheet(isPresented: $showingSchedule) {
             if let revision {
                 WorkoutDateScheduleSheet(row: .init(id: current.id, mesocycleId: current.mesocycleId,
@@ -139,7 +176,18 @@ struct WorkoutTrackerSessionView: View {
             }
         }
     }
-    private func refresh() async throws { try await tracker.refreshDashboard(mesocycleId: session.mesocycleId, sessionId: session.id) }
+    private var connectionIdentity: String { "\(session.mesocycleId)|\(session.id)|\(tracker.state.origin ?? "")|\(tracker.state.installationId?.uuidString ?? "")|\(tracker.state.enabled)" }
+    private func refresh() async throws {
+        guard !connectionChanged else { throw WorkoutSyncTransportError.configuration }
+        let identity = connectionIdentity
+        try await refreshState.refresh(identity: identity) {
+            try await tracker.refreshDashboard(mesocycleId: session.mesocycleId, sessionId: session.id)
+            guard !Task.isCancelled, identity == connectionIdentity, let page = tracker.state.frontendPage else { throw CancellationError() }
+            var value = snapshot ?? .init(session: session, revision: lifeRevision, readAt: readAt, library: exerciseLibrary)
+            try value.receive(page, readAt: tracker.state.frontendReadAt ?? Date(), protectedSetIDs: dirtySetIDs)
+            snapshot = value
+        }
+    }
 
 
 }

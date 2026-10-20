@@ -26,8 +26,14 @@ struct WorkoutFrontendSettingsView: View {
                             try await client.checkCapabilities()
                         }.disabled(!client.state.enabled || client.busy || client.storageUnavailable)
                         if let capabilities = client.state.capabilities, let checked = client.state.checkedAt {
-                            Text(capabilities.frontendStart ? "Workout start and status changes available" : "Workout start and status changes unavailable")
+                            Text(capabilities.manualCommands && capabilities.actions.contains("update_set") ? "Set logging available" : "Set logging unavailable")
                                 .font(StrandFont.subhead)
+                            Text(capabilities.manualCommands && capabilities.actions.contains("update_session") && capabilities.sessionCompletion == true ? "Manual workout completion available" : "Manual workout completion unavailable")
+                                .font(StrandFont.subhead)
+                            DisclosureGroup("WHOOP recording") {
+                                Text(capabilities.manualCommands && capabilities.actions.contains("start_session") && capabilities.frontendStart ? "Starting a WHOOP recording is available." : "Starting a WHOOP recording from Life is unavailable. Manual logging and completion are separate.")
+                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            }.font(StrandFont.subhead)
                             Text("Checked \(checked.formatted(date: .abbreviated, time: .shortened)) · revision \(capabilities.lifeRevision)")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         }
