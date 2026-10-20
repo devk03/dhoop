@@ -1,3 +1,4 @@
+#if DEBUG
 import XCTest
 import GRDB
 
@@ -38,3 +39,4 @@ final class OwnerDataReviewSliceTests: XCTestCase {
         try slice.read { db in XCTAssertEqual(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM hrSample"), 2) }
     }
 }
+#endif
