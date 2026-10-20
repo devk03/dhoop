@@ -10,6 +10,8 @@ final class WorkoutTrackerClient: ObservableObject {
     @Published private(set) var state = WorkoutTrackerState()
     @Published private(set) var busy = false
     @Published private(set) var storageUnavailable = false
+    @Published private(set) var strengthPage: WorkoutStrengthPage?
+    let strengthRefresh = WorkoutRefreshController()
     private let store: WorkoutTrackerFileStore
     private let send: (WorkoutSyncEndpoint, Data?, WorkoutSyncConfiguration) async throws -> Data
     private let readCredential: () throws -> WorkoutSyncConfiguration?
@@ -124,12 +126,14 @@ final class WorkoutTrackerClient: ObservableObject {
         try commit(next)
         try saveCredential(value)
         generation += 1
+        strengthPage = nil; strengthRefresh.reset()
     }
     func setEnabled(_ value: Bool) throws {
         if value { _ = try credentials() }
         var next = state; next.enabled = value
         next.message = value ? "Tracker enabled. Refresh routines to check the connection." : "Tracker is off. Local workouts are kept."
         try commit(next); generation += 1
+        strengthPage = nil; strengthRefresh.reset()
     }
     func prepareMetadataBackup() async throws -> URL {
         guard !busy, !storageUnavailable, preparingCaptures.isEmpty, transmittingCaptures.isEmpty else { throw WorkoutTrackerContractError.deliveryInProgress }
@@ -148,6 +152,7 @@ final class WorkoutTrackerClient: ObservableObject {
         let merged = try await Task.detached(priority: .utility) { try fileStore.mergedBackup(from: package, current: current) }.value
         guard revision == stateRevision, !Task.isCancelled else { throw WorkoutTrackerContractError.deliveryInProgress }
         try commit(merged); generation += 1
+        strengthPage = nil; strengthRefresh.reset()
     }
     func metadataBackupSummary(at package: URL) async throws -> WorkoutTrackerBackupManifest {
         let fileStore = store
@@ -186,6 +191,16 @@ final class WorkoutTrackerClient: ObservableObject {
             throw WorkoutTrackerContractError.invalidSnapshot
         }
         return page
+    }
+
+    func refreshStrength() async throws {
+        let ticket = generation
+        let identity = "\(state.origin ?? "")|\(state.installationId?.uuidString ?? "")|\(ticket)"
+        try await strengthRefresh.refresh(identity: identity) {
+            let page = try await self.readStrength()
+            guard !Task.isCancelled, self.generation == ticket else { throw CancellationError() }
+            self.strengthPage = page
+        }
     }
 
     func readStrength() async throws -> WorkoutStrengthPage {
