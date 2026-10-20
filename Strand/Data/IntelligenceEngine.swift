@@ -677,6 +677,11 @@ final class IntelligenceEngine: ObservableObject {
     /// live night can be scored against your norm.
     func analyzeRecent(maxDays: Int = 21, force: Bool = true, skipIfUnchanged: Bool = false,
                        triggerLabel: String? = nil) async {
+        #if DEBUG && targetEnvironment(simulator)
+        // An explicitly requested owner-data review uses saved aggregates. Partial raw history must
+        // never be treated as complete input for rescoring those genuine measurements.
+        if ProcessInfo.processInfo.arguments.contains("--owner-data-review") { return }
+        #endif
         // #899-A: a concurrent pass already holds the lock. A NON-forced idle tick is safe to drop (the
         // in-flight pass already covers the same window). But a FORCED call is a real update path (a
         // post-backfill rescore after a sync) , dropping it would leave a freshly-synced night unscored

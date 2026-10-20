@@ -4,7 +4,7 @@ import XCTest
 final class ProductionReadinessUITests: XCTestCase {
     func testPrimaryScreensAndConnectionDisclosures() throws {
         let app = XCUIApplication(bundleIdentifier: "com.devkunjadia.zhoop.loshi.noop")
-        app.launchArguments = ["-noop.onboarded", "YES", "-noop.acceptedTermsVersion", "2.0",
+        app.launchArguments = ["--owner-data-review", "-noop.onboarded", "YES", "-noop.acceptedTermsVersion", "2.0",
             "-noop.lastSeenChangelogVersion", "11.8.0", "-theme.appearance", "dark"]
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["Sleep"].waitForExistence(timeout: 30), app.debugDescription)
