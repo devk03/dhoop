@@ -356,6 +356,9 @@ struct StrandiOSApp: App {
                 .task {
                     await WorkoutConnectionProvisioner.runLocalLaunchImport()
                     await WorkoutHistoryReadProof.runIfRequested()
+                    #if DEBUG
+                    await LifeSyncReadinessProof.runIfRequested(model: model)
+                    #endif
                     RemoteBuzzClient.shared.setForeground(scenePhase == .active)
                     meditation.attach(model: model, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.meditation, $0) })
                     watch.activate()
