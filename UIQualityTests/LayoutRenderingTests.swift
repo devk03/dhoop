@@ -2,6 +2,7 @@ import XCTest
 import SwiftUI
 import StrandDesign
 import UIKit
+@testable import NOOP_Staging
 
 @MainActor
 final class LayoutRenderingTests: XCTestCase {
@@ -86,6 +87,27 @@ final class LayoutRenderingTests: XCTestCase {
         try render(SleepExportCard(report: report), name: "sleep-export-demo-large-text", size: .accessibility3, scheme: .dark, width: 390)
         let absent = SleepExportReport(day: "2026-10-15", goalMinutes: 495, selectedSource: "comparison", sources: [missing])
         try render(SleepExportCard(report: absent), name: "sleep-export-demo-unavailable", size: .large, scheme: .dark, width: 390)
+    }
+
+    func testLifeDeliveryEvidenceIsReadableAtNarrowAndAccessibilitySizes() async throws {
+        var checkpoint = NOOP_Staging.SleepWebhookCheckpoint()
+        checkpoint.enabled = true; checkpoint.proteinEnabled = true
+        checkpoint.message = "Waiting for sleep processing"
+        let waiting = NOOP_Staging.LifeSyncStatus(checkpoint: checkpoint, protein: false, checking: false, storageUnavailable: false)
+        let checking = NOOP_Staging.LifeSyncStatus(checkpoint: checkpoint, protein: true, checking: true, storageUnavailable: false)
+        checkpoint.proteinFailures = 1
+        checkpoint.proteinMessage = "Life access was denied. Review the connection settings; your pending summary is saved."
+        let failed = NOOP_Staging.LifeSyncStatus(checkpoint: checkpoint, protein: true, checking: false, storageUnavailable: false)
+        for (label, size, scheme, width) in [("narrow-dark", DynamicTypeSize.large, ColorScheme.dark, CGFloat(320)),
+                                            ("large-dark", .accessibility3, .dark, 390), ("narrow-light", .large, .light, 320)] {
+            let screen = VStack(alignment: .leading, spacing: NoopMetrics.space4) {
+                Text("Demo state fixtures").font(StrandFont.headline)
+                NOOP_Staging.LifeSyncStatusView(status: waiting)
+                NOOP_Staging.LifeSyncStatusView(status: checking)
+                NOOP_Staging.LifeSyncStatusView(status: failed)
+            }.padding(NoopMetrics.space4).background(StrandPalette.surfaceBase).foregroundStyle(StrandPalette.textPrimary)
+            try await renderHosted(screen, name: "life-sync-states-" + label, size: size, scheme: scheme, width: width)
+        }
     }
 
     private func renderHosted<V: View>(_ content: V, name: String, size: DynamicTypeSize, scheme: ColorScheme, width: CGFloat) async throws {

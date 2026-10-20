@@ -79,6 +79,19 @@ packages:
     url: https://github.com/weichsel/ZIPFoundation.git
     exactVersion: 0.9.20
 targets:
+  DhoopFlowUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - FlowUITests
+    dependencies:
+      - target: NOOPiOS
+    settings:
+      base:
+        TEST_TARGET_NAME: NOOPiOS
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).flow-ui-tests
   DhoopUIQualityTests:
     type: bundle.unit-test
     platform: iOS
@@ -671,6 +684,14 @@ targets:
 # Explicit schemes so `xcodebuild -scheme Strand …` builds + tests the macOS app (with StrandTests
 # wired in) and `-scheme NOOPiOS …` builds the iOS app. Names match the app-build CI matrix.
 schemes:
+  DhoopFlowUITests:
+    build:
+      targets:
+        NOOPiOS: [all]
+        DhoopFlowUITests: [test]
+    test:
+      targets:
+        - DhoopFlowUITests
   DhoopUIQualityTests:
     build:
       targets:
