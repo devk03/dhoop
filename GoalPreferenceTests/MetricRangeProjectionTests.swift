@@ -98,6 +98,10 @@ final class MetricRangeProjectionTests: XCTestCase {
         let groups = MetricRangeProjection.groups(rows, window: window, separateMethods: false, allowZero: true)
         XCTAssertEqual(groups[0].mean, 50)
         XCTAssertEqual(groups[0].readings.map(\.value), [60, 40])
+        let explicitZero = MetricRangeProjection.loggedProtein(standalone: [("2026-03-05", 0)], food: [("2026-03-06", nil)])
+        XCTAssertEqual(explicitZero.map(\.day), ["2026-03-05"])
+        XCTAssertEqual(explicitZero.first?.value, 0)
+        XCTAssertTrue(MetricRangeProjection.loggedProtein(standalone: [], food: []).isEmpty)
     }
     func testEmptyRangeHasNoFabricatedAverageAndAllHistoryHasNoInventedDayDenominator() {
         XCTAssertTrue(MetricRangeProjection.groups([], window: window, separateMethods: false).isEmpty)

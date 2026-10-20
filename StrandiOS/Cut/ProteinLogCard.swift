@@ -15,17 +15,19 @@ struct ProteinLogCard: View {
     @State private var showEditor = false
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardTileNumber
 
+    private var loggedReadings: [DashboardDailyReading] {
+        guard !protein.storageUnavailable else { return [] }
+        return MetricRangeProjection.loggedProtein(standalone: protein.entries.map { ($0.day, $0.grams) },
+            food: food.food.flatMap { day, entries in entries.map { (day, $0.protein) } })
+    }
     private var weekReadings: [DashboardDailyReading] {
-        guard !protein.storageUnavailable, let today = HeartDashboardProjection.date(day),
+        guard let today = HeartDashboardProjection.date(day),
               let start = Calendar.current.date(byAdding: .day, value: -6, to: today) else { return [] }
-        return HeartDashboardProjection.bounded(MetricRangeProjection.loggedProtein(
-            standalone: protein.entries.map { ($0.day, $0.grams) },
-            food: food.food.flatMap { day, entries in entries.map { (day, $0.protein) } }),
-            from: Repository.localDayKey(start), through: day)
+        return HeartDashboardProjection.bounded(loggedReadings, from: Repository.localDayKey(start), through: day)
     }
 
     var body: some View {
-        let grams = protein.total(day: logDay, foodProtein: food.protein(day: logDay))
+        let grams = loggedReadings.first { $0.day == logDay }?.value
         let loggedDate = HeartDashboardProjection.date(logDay)?.formatted(.dateTime.month(.abbreviated).day()) ?? logDay
         NoopCard(padding: NoopMetrics.space3, tint: StrandPalette.metricProtein, fillHeight: true) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
@@ -36,15 +38,15 @@ struct ProteinLogCard: View {
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                         }
-                        Text(protein.storageUnavailable ? "—" : "\(grams.formatted(.number.precision(.fractionLength(0)))) g")
+                        Text(grams.map { "\($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "—")
                             .font(StrandFont.number(numberSize, weight: .semibold))
                     }.foregroundStyle(StrandPalette.textPrimary).frame(minHeight: NoopMetrics.minimumTouchTarget).contentShape(Rectangle())
-                }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Expand protein history").accessibilityValue(protein.storageUnavailable ? "Protein log unavailable" : "\(grams.formatted()) grams logged")
+                }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Expand protein history").accessibilityValue(protein.storageUnavailable ? "Protein log unavailable" : grams.map { "\($0.formatted()) grams logged" } ?? "No protein logged for this date")
                 if protein.storageUnavailable { Text("Protein log unavailable").font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical) }
-                Text(protein.storageUnavailable ? "Saved entries need a successful read" : (protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)"))
+                Text(protein.storageUnavailable ? "Saved entries need a successful read" : grams == nil ? "No protein logged for this date" : (protein.targetGrams.map { "Logged \(loggedDate) · target \($0.formatted(.number.precision(.fractionLength(0)))) g" } ?? "Logged \(loggedDate)"))
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let target = protein.targetGrams, !protein.storageUnavailable {
+                if let target = protein.targetGrams, let grams, !protein.storageUnavailable {
                     ProgressView(value: min(grams, target), total: target).tint(StrandPalette.metricProtein)
                 }
                 if let today = HeartDashboardProjection.date(day), let start = Calendar.current.date(byAdding: .day, value: -6, to: today) {

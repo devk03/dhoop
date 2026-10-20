@@ -1,6 +1,70 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "No protein logged for this date": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No protein logged for this date"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Für dieses Datum ist kein Protein erfasst"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No hay proteína registrada para esta fecha"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Aucune protéine enregistrée pour cette date"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nessuna proteina registrata per questa data"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Brak zapisanego białka dla tej daty"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nenhuma proteína registada para esta data"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "За эту дату белок не записан"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此日期未记录蛋白质摄入"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此日期未記錄蛋白質攝取量"
+        }
+      }
+    }
+  },
   "Life sync sends completed-day totals when enabled. A local save is not a website receipt.": {
     "localizations": {
       "en": {
