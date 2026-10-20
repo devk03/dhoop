@@ -1,6 +1,2054 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "Life sync sends completed-day totals when enabled. A local save is not a website receipt.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life sync sends completed-day totals when enabled. A local save is not a website receipt."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wenn aktiviert, sendet Life Sync die Summen abgeschlossener Tage. Lokales Speichern bestätigt keinen Empfang auf der Website."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Si está activada, la sincronización con Life envía los totales de los días finalizados. Guardar en el teléfono no confirma la recepción en la web."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Lorsque la synchronisation Life est activée, elle envoie les totaux des jours terminés. Un enregistrement local ne confirme pas la réception sur le site."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Se attiva, la sincronizzazione con Life invia i totali dei giorni conclusi. Il salvataggio locale non conferma la ricezione sul sito."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Włączona synchronizacja z Life wysyła sumy z zakończonych dni. Zapis lokalny nie potwierdza odbioru przez stronę."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Quando ativada, a sincronização com Life envia os totais dos dias concluídos. Guardar no telefone não confirma a receção no site."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "При включённой синхронизации Life отправляются итоги завершённых дней. Локальное сохранение не подтверждает получение сайтом."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "启用后，Life 同步会发送已结束日期的汇总。在本机保存不代表网站已接收。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "啟用後，Life 同步會傳送已結束日期的彙總。在本機儲存不代表網站已接收。"
+        }
+      }
+    }
+  },
+  "Saved on this phone · %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Saved on this phone · %@"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Auf diesem Telefon gespeichert · %@"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Guardado en este teléfono · %@"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Enregistré sur ce téléphone · %@"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Salvato su questo telefono · %@"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zapisano na tym telefonie · %@"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Guardado neste telefone · %@"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Сохранено на этом телефоне · %@"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已保存在此手机上 · %@"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已儲存在此手機上 · %@"
+        }
+      }
+    }
+  },
+  "Logged date %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Logged date %@"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Erfassungsdatum %@"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Fecha de registro %@"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Jour enregistré %@"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Data registrata %@"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Data wpisu %@"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Data registada %@"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Дата записи %@"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "记录日期 %@"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "記錄日期 %@"
+        }
+      }
+    }
+  },
+  "Wake date %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wake date %@"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Aufwachdatum %@"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Fecha al despertar %@"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Date du réveil %@"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Data del risveglio %@"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Data przebudzenia %@"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Data do despertar %@"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Дата пробуждения %@"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "醒来日期 %@"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "醒來日期 %@"
+        }
+      }
+    }
+  },
+  "Received %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Received %@"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Empfangen: %@"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recibido: %@"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reçu le %@"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ricevuto: %@"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Otrzymano: %@"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recebido em %@"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Получено: %@"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "接收于 %@"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "接收於 %@"
+        }
+      }
+    }
+  },
+  "Life kept your manual value.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life kept your manual value."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life hat deinen manuell eingetragenen Wert beibehalten."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life conservó tu valor manual."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life a conservé votre saisie manuelle."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ha mantenuto il valore inserito manualmente."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "W Life zachowano wartość wpisaną ręcznie."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life manteve o valor que introduziu manualmente."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "В Life сохранено введённое вручную значение."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 保留了你手动输入的值。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 保留了你手動輸入的值。"
+        }
+      }
+    }
+  },
+  "Life cleared the previous automatic value.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life cleared the previous automatic value."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life hat den vorherigen automatischen Wert entfernt."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life borró el valor automático anterior."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life a effacé la valeur automatique précédente."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ha cancellato il precedente valore automatico."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "W Life usunięto poprzednią wartość automatyczną."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life apagou o valor automático anterior."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "В Life удалено предыдущее автоматическое значение."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 已清除之前自动导入的值。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 已清除先前自動匯入的值。"
+        }
+      }
+    }
+  },
+  "Life already has a newer revision.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life already has a newer revision."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life hat bereits eine neuere Version."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ya tiene una versión más reciente."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life dispose déjà d’une version plus récente."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ha già una versione più recente."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "W Life jest już nowsza wersja."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life já tem uma versão mais recente."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "В Life уже есть более новая версия."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 已有更新的版本。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 已有更新的版本。"
+        }
+      }
+    }
+  },
+  "Life already received this summary.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life already received this summary."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life hat diese Zusammenfassung bereits empfangen."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ya recibió este resumen."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life a déjà reçu ce récapitulatif."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ha già ricevuto questo riepilogo."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "To podsumowanie już dotarło do Life."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life já recebeu este resumo."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Эта сводка уже получена в Life."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 已接收此汇总。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 已接收此彙總。"
+        }
+      }
+    }
+  },
+  "Checking summaries…": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Checking summaries…"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zusammenfassungen werden geprüft…"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Comprobando resúmenes…"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Vérification des récapitulatifs…"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Verifica dei riepiloghi…"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sprawdzanie podsumowań…"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A verificar resumos…"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Проверка сводок…"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在检查汇总…"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在檢查彙總…"
+        }
+      }
+    }
+  },
+  "Queued on this phone": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Queued on this phone"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Auf diesem Telefon vorgemerkt"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "En cola en este teléfono"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "En attente sur ce téléphone"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "In coda su questo telefono"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "W kolejce na tym telefonie"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Em fila neste telefone"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "В очереди на этом телефоне"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已在此手机上排队等待发送"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已在此手機上排入傳送佇列"
+        }
+      }
+    }
+  },
+  "Needs attention": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Needs attention"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Aktion erforderlich"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Requiere revisión"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "À vérifier"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Richiede attenzione"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wymaga uwagi"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Requer atenção"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Требует внимания"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "需要处理"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "需要處理"
+        }
+      }
+    }
+  },
+  "Waiting for sleep processing": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Waiting for sleep processing"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Warten auf die Schlafverarbeitung"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Esperando el procesamiento del sueño"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "En attente du traitement du sommeil"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "In attesa dell’elaborazione del sonno"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Oczekiwanie na przetworzenie snu"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A aguardar o processamento do sono"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ожидание обработки сна"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "等待睡眠数据处理"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "等待睡眠資料處理"
+        }
+      }
+    }
+  },
+  "No new summaries ready": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No new summaries ready"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Keine neuen Zusammenfassungen bereit"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No hay resúmenes nuevos listos"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Aucun nouveau récapitulatif prêt"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nessun nuovo riepilogo pronto"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Brak nowych gotowych podsumowań"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sem novos resumos prontos"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Новых готовых сводок нет"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "暂无可发送的新汇总"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "暫無可傳送的新彙總"
+        }
+      }
+    }
+  },
+  "Last received summary": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Last received summary"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zuletzt empfangene Zusammenfassung"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Último resumen recibido"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Dernier récapitulatif reçu"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ultimo riepilogo ricevuto"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ostatnio otrzymane podsumowanie"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Último resumo recebido"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Последняя полученная сводка"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "上次接收的汇总"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "上次接收的彙總"
+        }
+      }
+    }
+  },
+  "Verified WHOOP sleep sends after processing. Protein sends after the logged day ends; no calories or weight are required. Life keeps manual values. Newer sleep analysis may still be pending. Opening Dhoop retries saved events; iOS controls background timing. Export pauses outside America/Los_Angeles.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Verified WHOOP sleep sends after processing. Protein sends after the logged day ends; no calories or weight are required. Life keeps manual values. Newer sleep analysis may still be pending. Opening Dhoop retries saved events; iOS controls background timing. Export pauses outside America/Los_Angeles."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Verifizierte WHOOP-Schlafdaten werden nach der Verarbeitung gesendet. Proteinwerte werden nach Ende des erfassten Tages gesendet; Kalorien oder Gewicht sind nicht erforderlich. Life behält manuelle Werte bei. Eine neuere Schlafanalyse kann noch ausstehen. Beim Öffnen von Dhoop werden gespeicherte Ereignisse erneut gesendet; iOS bestimmt den Zeitpunkt im Hintergrund. Außerhalb von America/Los_Angeles pausiert der Export."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Los datos de sueño verificados de WHOOP se envían tras procesarse. La proteína se envía al terminar el día registrado; no hacen falta calorías ni peso. Life conserva los valores manuales. Puede haber un análisis de sueño más reciente pendiente. Al abrir Dhoop se reintenta el envío de los eventos guardados; iOS controla cuándo se ejecuta en segundo plano. La exportación se pausa fuera de America/Los_Angeles."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Les données de sommeil WHOOP vérifiées sont envoyées après traitement. Les protéines sont envoyées après la fin du jour enregistré ; ni calories ni poids ne sont nécessaires. Life conserve les valeurs manuelles. Une analyse du sommeil plus récente peut être en attente. Ouvrir Dhoop relance l’envoi des événements enregistrés ; iOS décide du moment de l’exécution en arrière-plan. L’exportation est suspendue hors du fuseau America/Los_Angeles."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "I dati del sonno WHOOP verificati vengono inviati dopo l’elaborazione. Le proteine vengono inviate al termine del giorno registrato; non servono calorie o peso. Life mantiene i valori manuali. Un’analisi del sonno più recente potrebbe essere ancora in attesa. Aprire Dhoop ritenta l’invio degli eventi salvati; iOS decide quando eseguire le attività in background. L’esportazione viene sospesa fuori da America/Los_Angeles."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zweryfikowane dane snu WHOOP są wysyłane po przetworzeniu. Białko jest wysyłane po zakończeniu zapisanego dnia; kalorie ani masa ciała nie są wymagane. Life zachowuje wartości ręczne. Nowsza analiza snu może nadal oczekiwać. Otwarcie Dhoop ponawia wysyłanie zapisanych zdarzeń; iOS ustala czas działania w tle. Eksport jest wstrzymany poza strefą America/Los_Angeles."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Os dados de sono WHOOP verificados são enviados após o processamento. A proteína é enviada após o fim do dia registado; não são necessárias calorias nem peso. Life mantém os valores manuais. Uma análise de sono mais recente pode ainda estar pendente. Abrir Dhoop volta a tentar enviar os eventos guardados; o iOS controla o momento de execução em segundo plano. A exportação é suspensa fora de America/Los_Angeles."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Проверенные данные сна WHOOP отправляются после обработки. Белок отправляется после окончания дня записи; калории и вес не требуются. Life сохраняет значения, введённые вручную. Более новый анализ сна может ещё ожидать обработки. Открытие Dhoop повторяет отправку сохранённых событий; время работы в фоне определяет iOS. Экспорт приостанавливается вне часового пояса America/Los_Angeles."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "经过验证的 WHOOP 睡眠数据会在处理后发送。蛋白质数据会在记录日期结束后发送，无需填写热量或体重。Life 会保留手动输入的值。更新的睡眠分析可能仍在等待处理。打开 Dhoop 会重试发送已保存的事件；后台执行时间由 iOS 决定。不在 America/Los_Angeles 时区时，导出会暂停。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "經過驗證的 WHOOP 睡眠資料會在處理後傳送。蛋白質資料會在記錄日期結束後傳送，無須填寫熱量或體重。Life 會保留手動輸入的值。更新的睡眠分析可能仍在等待處理。開啟 Dhoop 會重試傳送已儲存的事件；背景執行時間由 iOS 決定。不在 America/Los_Angeles 時區時，匯出會暫停。"
+        }
+      }
+    }
+  },
+  "Choose or create a lifting program in Life.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Choose or create a lifting program in Life."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wähle oder erstelle einen Krafttrainingsplan in Life."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Elige o crea un programa de fuerza en Life."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Choisissez ou créez un programme de musculation dans Life."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Scegli o crea un programma di forza in Life."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wybierz lub utwórz plan treningu siłowego w Life."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Escolha ou crie um programa de musculação no Life."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Выберите или создайте программу силовых тренировок в Life."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "在 Life 中选择或创建力量训练计划。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "在 Life 中選擇或建立肌力訓練計畫。"
+        }
+      }
+    }
+  },
+  "Set logging available": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Set logging available"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Satzprotokollierung verfügbar"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registro de series disponible"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Saisie des séries disponible"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registrazione delle serie disponibile"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zapisywanie serii dostępne"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registo de séries disponível"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Запись подходов доступна"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可记录训练组"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可記錄訓練組"
+        }
+      }
+    }
+  },
+  "Set logging unavailable": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Set logging unavailable"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Satzprotokollierung nicht verfügbar"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registro de series no disponible"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Saisie des séries indisponible"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registrazione delle serie non disponibile"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zapisywanie serii niedostępne"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registo de séries indisponível"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Запись подходов недоступна"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "无法记录训练组"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "無法記錄訓練組"
+        }
+      }
+    }
+  },
+  "Manual workout completion available": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Manual workout completion available"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Manuelles Abschließen von Trainings verfügbar"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Finalización manual de entrenamientos disponible"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Validation manuelle des entraînements disponible"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Completamento manuale degli allenamenti disponibile"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ręczne kończenie treningów dostępne"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Conclusão manual de treinos disponível"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ручное завершение тренировок доступно"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可手动完成训练"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可手動完成訓練"
+        }
+      }
+    }
+  },
+  "Manual workout completion unavailable": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Manual workout completion unavailable"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Manuelles Abschließen von Trainings nicht verfügbar"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Finalización manual de entrenamientos no disponible"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Validation manuelle des entraînements indisponible"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Completamento manuale degli allenamenti non disponibile"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ręczne kończenie treningów niedostępne"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Conclusão manual de treinos indisponível"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ручное завершение тренировок недоступно"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "无法手动完成训练"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "無法手動完成訓練"
+        }
+      }
+    }
+  },
+  "Starting a WHOOP recording is available.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Starting a WHOOP recording is available."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Eine WHOOP-Aufzeichnung kann gestartet werden."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Se puede iniciar una grabación de WHOOP."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Le démarrage d’un enregistrement WHOOP est disponible."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "È possibile avviare una registrazione WHOOP."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Można rozpocząć rejestrowanie WHOOP."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "É possível iniciar uma gravação WHOOP."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Можно начать запись WHOOP."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可以开始 WHOOP 记录。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "可以開始 WHOOP 記錄。"
+        }
+      }
+    }
+  },
+  "Starting a WHOOP recording from Life is unavailable. Manual logging and completion are separate.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Starting a WHOOP recording from Life is unavailable. Manual logging and completion are separate."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Eine WHOOP-Aufzeichnung kann nicht über Life gestartet werden. Manuelle Protokollierung und Trainingsabschluss sind davon unabhängig."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No se puede iniciar una grabación de WHOOP desde Life. El registro y la finalización manuales son independientes."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Le démarrage d’un enregistrement WHOOP depuis Life est indisponible. La saisie et la validation manuelles sont indépendantes."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Non è possibile avviare una registrazione WHOOP da Life. La registrazione e il completamento manuali sono indipendenti."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nie można rozpocząć rejestrowania WHOOP z Life. Ręczne zapisywanie i kończenie treningów są niezależne."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Não é possível iniciar uma gravação WHOOP a partir do Life. O registo e a conclusão manuais são independentes."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Начать запись WHOOP из Life нельзя. Ручная запись данных и завершение тренировок — отдельные функции."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "无法从 Life 开始 WHOOP 记录。手动记录和完成训练属于独立功能。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "無法從 Life 開始 WHOOP 記錄。手動記錄與完成訓練屬於獨立功能。"
+        }
+      }
+    }
+  },
+  "No workouts in this range.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No workouts in this range."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Keine Trainings in diesem Zeitraum."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No hay entrenamientos en este intervalo."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Aucun entraînement dans cette période."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nessun allenamento in questo intervallo."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Brak treningów w tym zakresie."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sem treinos neste intervalo."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "В этом диапазоне нет тренировок."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此范围内没有训练。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此範圍內沒有訓練。"
+        }
+      }
+    }
+  },
+  "Discard unsaved workout changes?": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Discard unsaved workout changes?"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nicht gespeicherte Trainingsänderungen verwerfen?"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "¿Descartar los cambios del entrenamiento sin guardar?"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Abandonner les modifications non enregistrées de l’entraînement ?"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Scartare le modifiche non salvate all’allenamento?"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Odrzucić niezapisane zmiany treningu?"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Descartar as alterações não guardadas do treino?"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Отменить несохранённые изменения тренировки?"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "放弃未保存的训练修改？"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "放棄未儲存的訓練修改？"
+        }
+      }
+    }
+  },
+  "Discard changes": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Discard changes"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Änderungen verwerfen"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Descartar cambios"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Abandonner les modifications"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Scarta modifiche"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Odrzuć zmiany"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Descartar alterações"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Отменить изменения"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "放弃修改"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "放棄修改"
+        }
+      }
+    }
+  },
+  "Keep editing": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Keep editing"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Weiter bearbeiten"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Seguir editando"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Continuer à modifier"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Continua a modificare"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edytuj dalej"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Continuar a editar"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Продолжить редактирование"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "继续编辑"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "繼續編輯"
+        }
+      }
+    }
+  },
+  "Refreshing workouts…": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Refreshing workouts…"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Trainings werden aktualisiert…"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Actualizando entrenamientos…"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Actualisation des entraînements…"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Aggiornamento degli allenamenti…"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Odświeżanie treningów…"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A atualizar treinos…"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Обновление тренировок…"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在刷新训练…"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在重新整理訓練…"
+        }
+      }
+    }
+  },
+  "The connection changed. Close and reopen this workout before saving. Your edits are retained here.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The connection changed. Close and reopen this workout before saving. Your edits are retained here."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Die Verbindung hat sich geändert. Schließe und öffne dieses Training vor dem Speichern erneut. Deine Änderungen bleiben hier erhalten."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La conexión ha cambiado. Cierra y vuelve a abrir este entrenamiento antes de guardar. Tus cambios se conservan aquí."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La connexion a changé. Fermez puis rouvrez cet entraînement avant d’enregistrer. Vos modifications sont conservées ici."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La connessione è cambiata. Chiudi e riapri questo allenamento prima di salvare. Le modifiche vengono conservate qui."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Połączenie się zmieniło. Zamknij i otwórz ponownie ten trening przed zapisaniem. Twoje zmiany pozostają tutaj zachowane."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A ligação mudou. Feche e volte a abrir este treino antes de guardar. As suas alterações são mantidas aqui."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Подключение изменилось. Перед сохранением закройте и снова откройте эту тренировку. Ваши изменения сохранены здесь."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "连接已更改。保存前请关闭并重新打开此训练。你的修改仍保留在此处。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "連線已變更。儲存前請關閉並重新開啟此訓練。你的修改仍保留在此處。"
+        }
+      }
+    }
+  },
+  "Life has newer workout data. Your edits are retained.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life has newer workout data. Your edits are retained."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life hat neuere Trainingsdaten. Deine Änderungen bleiben erhalten."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life tiene datos de entrenamiento más recientes. Tus cambios se conservan."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life dispose de données d’entraînement plus récentes. Vos modifications sont conservées."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ha dati di allenamento più recenti. Le modifiche vengono conservate."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "W Life są nowsze dane treningu. Twoje zmiany zostały zachowane."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life tem dados de treino mais recentes. As suas alterações são mantidas."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "В Life есть более новые данные тренировки. Ваши изменения сохранены."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 有更新的训练数据。你的修改已保留。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 有更新的訓練資料。你的修改已保留。"
+        }
+      }
+    }
+  },
+  "Load latest workout": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Load latest workout"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Neueste Trainingsdaten laden"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Cargar los datos actualizados del entrenamiento"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Charger les données à jour de l’entraînement"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Carica i dati aggiornati dell’allenamento"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wczytaj najnowsze dane treningu"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Carregar os dados atualizados do treino"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Загрузить актуальные данные тренировки"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "加载最新训练数据"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "載入最新訓練資料"
+        }
+      }
+    }
+  },
+  "Discard unsaved changes and load the latest workout?": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Discard unsaved changes and load the latest workout?"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nicht gespeicherte Änderungen verwerfen und die neuesten Trainingsdaten laden?"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "¿Descartar los cambios sin guardar y cargar los datos actualizados del entrenamiento?"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Abandonner les modifications non enregistrées et charger les données à jour de l’entraînement ?"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Scartare le modifiche non salvate e caricare i dati aggiornati dell’allenamento?"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Odrzucić niezapisane zmiany i wczytać najnowsze dane treningu?"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Descartar as alterações não guardadas e carregar os dados atualizados do treino?"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Отменить несохранённые изменения и загрузить актуальные данные тренировки?"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "放弃未保存的修改并加载最新训练数据？"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "放棄未儲存的修改並載入最新訓練資料？"
+        }
+      }
+    }
+  },
   "Duration goal · %@": {
     "localizations": {
       "en": {
