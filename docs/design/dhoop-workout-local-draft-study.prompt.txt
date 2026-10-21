@@ -1,0 +1,5 @@
+ImageGen UI study, demo values only: black Dhoop screen, compact Hevy-like workout cards,
+aligned Set / lb / Reps / Done columns, local checkmarks without network spinners, concise
+Saved on this phone feedback and one Save workout / Finish workout action area. Use native
+StrandDesign tokens/components in implementation, not bitmap UI or demo data. Preserve the
+existing navigation, actual saved values, previous-week popup, Dynamic Type and VoiceOver.

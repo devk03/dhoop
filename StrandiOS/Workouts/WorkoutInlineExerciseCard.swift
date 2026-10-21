@@ -9,7 +9,8 @@ struct WorkoutInlineExerciseCard: View {
     let revision: Int?
     let system: UnitSystem
     let refresh: () async throws -> Void
-    let dirtyChanged: (Int, Bool) -> Void
+    @ObservedObject var drafts: WorkoutSessionDraftController
+    var editingEnabled = true
     var hasUnsavedEdits = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showingSwap = false
@@ -35,16 +36,17 @@ struct WorkoutInlineExerciseCard: View {
                             Toggle("Show RIR", isOn: $showRIR)
                             if let revision {
                                 ForEach(exercise.sets) { row in
-                                    NavigationLink("Set \(row.setNumber) · targets and details") {
-                                        WorkoutTrackerSetEditor(session: session, exercise: exercise, row: row, revision: revision, system: system)
-                                    }
+                                    NavigationLink("Set \(row.setNumber) · targets") {
+                                        WorkoutTrackerSetEditor(session: session, exercise: exercise, row: row,
+                                            revision: revision, system: system, targetsOnly: true)
+                                    }.disabled(hasUnsavedEdits)
                                 }
                                 NavigationLink("Targets and program options") {
                                     WorkoutTrackerExerciseEditor(session: session, exercise: exercise, library: library, revision: revision)
-                                }
+                                }.disabled(hasUnsavedEdits)
                             }
                         } label: { Image(systemName: "ellipsis").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
-                        .buttonStyle(NoopFeedbackButtonStyle()).disabled(hasUnsavedEdits).accessibilityLabel("Options for \(exercise.name)")
+                        .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Options for \(exercise.name)")
                     }
                 }
                 if let mode {
@@ -79,13 +81,13 @@ struct WorkoutInlineExerciseCard: View {
                         Text("Set").frame(minWidth: NoopMetrics.minimumTouchTarget, alignment: .leading)
                         if mode?.hasMass == true { Text(system == .imperial ? "lb" : "kg").frame(maxWidth: .infinity, alignment: .leading) }
                         if mode != .duration { Text("Reps").frame(maxWidth: .infinity, alignment: .leading) }
-                        Text("Save").frame(minWidth: NoopMetrics.minimumTouchTarget, alignment: .center)
+                        Text("Done").frame(minWidth: NoopMetrics.minimumTouchTarget, alignment: .center)
                     }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
                 ForEach(exercise.sets) { row in
                     if let revision {
-                        WorkoutInlineSetRow(session: session, exercise: exercise, row: row, revision: revision,
-                            system: system, showRIR: showRIR, refresh: refresh, dirtyChanged: { dirtyChanged(row.id, $0) },
+                        WorkoutInlineSetRow(session: session, exercise: exercise, row: row,
+                            system: system, showRIR: showRIR, drafts: drafts, editingEnabled: editingEnabled,
                             showHistory: { historySet = row })
                             .id("\(row.id)-\(system.rawValue)")
                     } else {

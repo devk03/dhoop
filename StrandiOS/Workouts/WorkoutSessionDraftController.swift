@@ -4,17 +4,21 @@ import Combine
 /// Immediate local edits and finite delivery attempts share one durable draft per Life workout.
 @MainActor
 final class WorkoutSessionDraftController: ObservableObject {
-    private static var opened: [String: WorkoutSessionDraftController] = [:]
+    private final class Reference {
+        weak var value: WorkoutSessionDraftController?
+        init(_ value: WorkoutSessionDraftController) { self.value = value }
+    }
+    private static var opened: [String: Reference] = [:]
     static func open(session: WorkoutTrackerDashboard.Session, revision: Int, origin: String,
                      installationId: UUID, massScale: Double) -> WorkoutSessionDraftController {
         let key = "\(installationId.uuidString.lowercased())-\(session.mesocycleId)-\(session.id)"
-        if let existing = opened[key], existing.state.origin == origin { return existing }
+        if let existing = opened[key]?.value, existing.state.origin == origin { return existing }
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let initial = WorkoutSessionDraft(origin: origin, installationId: installationId, baseline: session,
             revision: revision, massScale: massScale, localeIdentifier: Locale.current.identifier)
         let value = WorkoutSessionDraftController(initial: initial,
             store: .init(url: root.appendingPathComponent("Dhoop/WorkoutDrafts/\(key).json")), frontend: .shared)
-        opened[key] = value; return value
+        opened[key] = Reference(value); return value
     }
     private static var restoringPending = false
     /// Foreground/relaunch recovery is finite and uses only explicitly saved pending intentions.
@@ -37,22 +41,32 @@ final class WorkoutSessionDraftController: ObservableObject {
             guard frontend.state.enabled, frontend.state.origin == origin, frontend.state.installationId == installation else { break }
             let key = "\(installation.uuidString.lowercased())-\(initial.baseline.mesocycleId)-\(initial.baseline.id)"
             let controller: WorkoutSessionDraftController
-            if let existing = opened[key], existing.state.origin == origin { controller = existing }
+            if let existing = opened[key]?.value, existing.state.origin == origin { controller = existing }
             else {
                 controller = WorkoutSessionDraftController(initial: initial, store: .init(url: url), frontend: frontend)
-                opened[key] = controller
+                opened[key] = Reference(controller)
             }
-            controller.setRefresh {
-                if let read { return try await read(controller.state) }
-                let tracker = WorkoutTrackerClient.shared
-                guard tracker.state.origin == origin, tracker.state.installationId == installation, tracker.state.enabled else { throw WorkoutSyncTransportError.configuration }
-                try await tracker.refreshDashboard(mesocycleId: initial.baseline.mesocycleId, sessionId: initial.baseline.id)
-                guard tracker.state.origin == origin, tracker.state.installationId == installation,
-                      let page = tracker.state.frontendPage,
-                      let session = page.dashboard.sessions.first(where: { $0.id == initial.baseline.id && $0.mesocycleId == initial.baseline.mesocycleId }) else { throw WorkoutTrackerContractError.invalidSnapshot }
-                return .init(session: session, revision: page.lifeRevision)
-            }
+            if let read {
+                controller.setRefresh { [weak controller] in
+                    guard let controller else { throw CancellationError() }
+                    return try await read(controller.state)
+                }
+            } else { controller.setRefresh(reader(for: initial)) }
             controller.resume(); await controller.waitForDelivery()
+        }
+    }
+    /// Capture only source identity, not a SwiftUI screen or its retained draft controller.
+    static func reader(for draft: WorkoutSessionDraft) -> () async throws -> WorkoutSessionDraft.Remote {
+        let origin = draft.origin, installation = draft.installationId
+        let cycleId = draft.baseline.mesocycleId, sessionId = draft.baseline.id
+        return {
+            let tracker = WorkoutTrackerClient.shared
+            guard tracker.state.origin == origin, tracker.state.installationId == installation, tracker.state.enabled else { throw WorkoutSyncTransportError.configuration }
+            try await tracker.refreshDashboard(mesocycleId: cycleId, sessionId: sessionId)
+            guard tracker.state.origin == origin, tracker.state.installationId == installation,
+                  let page = tracker.state.frontendPage,
+                  let session = page.dashboard.sessions.first(where: { $0.id == sessionId && $0.mesocycleId == cycleId }) else { throw WorkoutTrackerContractError.invalidSnapshot }
+            return .init(session: session, revision: page.lifeRevision)
         }
     }
     @Published private(set) var state: WorkoutSessionDraft
@@ -79,7 +93,8 @@ final class WorkoutSessionDraftController: ObservableObject {
     }
     var canEdit: Bool { !storageUnavailable && !state.finishQueued && state.pending?.finishing != true }
     private var connectionCanSend: Bool {
-        !storageUnavailable && frontend.state.enabled &&
+        !storageUnavailable && !frontend.storageUnavailable && frontend.state.enabled &&
+        frontend.state.capabilities?.manualCommands == true && frontend.state.capabilities?.actions.contains("update_session") == true &&
         frontend.state.origin == state.origin && frontend.state.installationId == state.installationId &&
         frontend.state.capabilities?.sessionBatchSave == true
     }

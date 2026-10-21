@@ -2,7 +2,7 @@
 import SwiftUI
 import StrandDesign
 
-/// Shared row presentation; actions still use Life's immutable command receipts.
+/// Shared row presentation with immediate local checkmarks and visible touch feedback.
 struct WorkoutSetEntryRow: View {
     let number: Int
     let kind: String
@@ -18,6 +18,7 @@ struct WorkoutSetEntryRow: View {
     let save: () async throws -> Void
     var editingEnabled = true
     var showHistory: (() -> Void)? = nil
+    var savedLocally = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @StateObject private var operation = NoopActionController()
 
@@ -42,11 +43,11 @@ struct WorkoutSetEntryRow: View {
                 Button { operation.submit(save) } label: {
                     Group {
                         if operation.state.isWorking { ProgressView().progressViewStyle(.circular) }
-                        else { Image(systemName: completed && !dirty ? "checkmark.circle.fill" : "checkmark.circle") }
+                        else { Image(systemName: completed && !dirty ? "checkmark.circle.fill" : "circle") }
                     }.foregroundStyle(completed && !dirty ? StrandPalette.metricCyan : StrandPalette.textSecondary)
                 }.buttonStyle(NoopIconButtonStyle()).disabled(!editingEnabled || operation.state.isWorking)
                     .accessibilityLabel(dirty ? "Save set \(number)" : completed ? "Mark set \(number) incomplete" : "Complete set \(number)")
-                    .accessibilityValue(dirty ? "Unsaved changes" : completed ? "Saved in Life" : "Not completed")
+                    .accessibilityValue(dirty ? "Unsaved changes" : completed ? (savedLocally ? "Saved on this phone" : "Saved in Life") : "Not completed")
             }
             if showRIR && repsHint != nil {
                 field("RIR · optional", hint: "0–5", text: $rir, label: "Set \(number) repetitions in reserve", integer: true)

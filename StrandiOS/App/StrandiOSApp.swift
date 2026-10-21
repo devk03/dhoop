@@ -231,9 +231,18 @@ struct StrandiOSApp: App {
         }
     }
 
+    @ViewBuilder private var rootContent: some View {
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.arguments.contains("--workout-draft-ui-proof") { WorkoutDraftVerificationView() }
+        else { iOSRootView() }
+        #else
+        iOSRootView()
+        #endif
+    }
+
     var body: some Scene {
         WindowGroup {
-            iOSRootView()
+            rootContent
                 .environmentObject(model)
                 .environmentObject(model.ble)   // #334: Today pull-to-sync reads BLEManager (no HR churn)
                 .environmentObject(model.live)
@@ -364,6 +373,7 @@ struct StrandiOSApp: App {
                     meditation.attach(model: model, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.meditation, $0) })
                     watch.activate()
                     await watch.pushLatest(from: model)
+                    await WorkoutSessionDraftController.resumePendingWorkouts()
                 }
         }
         // HealthKit authorization is intentionally NOT requested on launch. The system permission
@@ -378,6 +388,7 @@ struct StrandiOSApp: App {
             RemoteBuzzClient.shared.setForeground(phase == .active)
             meditation.setForeground(phase == .active)
             if phase == .active {
+                Task { await WorkoutSessionDraftController.resumePendingWorkouts() }
                 model.drainPendingIntents(router: router)
                 SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.anyEnabled)
                 SleepWebhookClient.shared.enqueue(model: model)

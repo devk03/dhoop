@@ -8,6 +8,7 @@ struct WorkoutTrackerSetEditor: View {
     let row: WorkoutTrackerDashboard.SetLog
     let revision: Int
     let system: UnitSystem
+    let targetsOnly: Bool
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
     @State private var plannedLoad: String
     @State private var plannedReps: String
@@ -20,8 +21,8 @@ struct WorkoutTrackerSetEditor: View {
     private var massUnit: String { system == .imperial ? "lb" : "kg" }
 
     init(session: WorkoutTrackerDashboard.Session, exercise: WorkoutTrackerDashboard.Exercise,
-         row: WorkoutTrackerDashboard.SetLog, revision: Int, system: UnitSystem) {
-        self.session = session; self.exercise = exercise; self.row = row; self.revision = revision; self.system = system
+         row: WorkoutTrackerDashboard.SetLog, revision: Int, system: UnitSystem, targetsOnly: Bool = false) {
+        self.session = session; self.exercise = exercise; self.row = row; self.revision = revision; self.system = system; self.targetsOnly = targetsOnly
         let scale = system == .imperial ? 1 : UnitFormatter.poundsPerKilogram
         func text(_ n: Double?) -> String { n.map { WorkoutFrontendInput.text(.number($0)) } ?? "" }
         let values = [text(row.plannedLoad / scale), String(row.plannedReps), text(row.actualLoad.map { $0 / scale }),
@@ -32,9 +33,9 @@ struct WorkoutTrackerSetEditor: View {
         _rir = State(initialValue: values[4]); _completed = State(initialValue: row.completed)
     }
     var body: some View {
-        ScreenScaffold(title: "Log set", subtitle: LocalizedStringKey("\(exercise.name) · set \(row.setNumber)")) {
+        ScreenScaffold(title: targetsOnly ? "Set targets" : "Log set", subtitle: LocalizedStringKey("\(exercise.name) · set \(row.setNumber)")) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
-                NoopCard {
+                if !targetsOnly { NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Text("Performed").font(StrandFont.headline)
                         Text(WorkoutTrackerLoadMode(rawValue: exercise.loadMode)?.explanation ?? exercise.loadMode)
@@ -51,6 +52,7 @@ struct WorkoutTrackerSetEditor: View {
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
+                }
                 if exercise.loadMode != "duration" { DisclosureGroup("Edit prescribed targets") {
                     VStack(spacing: NoopMetrics.space3) {
                         if WorkoutTrackerLoadMode(rawValue: exercise.loadMode)?.hasMass == true {
@@ -59,7 +61,7 @@ struct WorkoutTrackerSetEditor: View {
                         WorkoutFrontendTextField(title: "Planned repetitions", text: $plannedReps, numeric: true)
                     }
                 }.font(StrandFont.subhead) }
-                WorkoutFrontendSubmitSection(title: "Save set in Life", action: "update_set", revision: revision, command: build) {
+                WorkoutFrontendSubmitSection(title: targetsOnly ? "Save targets in Life" : "Save set in Life", action: "update_set", revision: revision, command: build) {
                     try await tracker.refreshDashboard(mesocycleId: session.mesocycleId, sessionId: session.id)
                 }
             }
