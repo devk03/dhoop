@@ -83,6 +83,17 @@ final class WorkoutFrontendClientTests: XCTestCase {
         }
     }
 
+    func testBatchSaveRequiresSeparateCapabilityWithoutEnablingPhysicalStart() async throws {
+        let client = WorkoutFrontendClient(store: store(), send: { _, _, _ in
+            try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true,
+                "frontendStart": false, "sessionCompletion": true, "lifeRevision": 4, "actions": ["update_session"]])
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(client)
+        let batch: [String: WorkoutTrackerValue] = ["action": .string("update_session"), "mesocycleId": .number(1),
+            "sessionId": .number(10), "sets": .array([.object(["setId": .number(20), "actualReps": .number(8)])])]
+        XCTAssertThrowsError(try client.prepare(command: batch, revision: 4))
+    }
+
     func testDefaultOffAndCapabilitiesAreReadOnly() async throws {
         var writes = 0, requests = 0
         let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in

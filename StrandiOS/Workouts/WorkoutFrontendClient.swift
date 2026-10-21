@@ -70,9 +70,18 @@ final class WorkoutFrontendClient: ObservableObject {
         var next=state;next.capabilities=result;next.checkedAt=Date();try commit(next)
     }
     @discardableResult
-    func prepare(command:[String:WorkoutTrackerValue],revision:Int) throws -> UUID {
+    func prepare(command:[String:WorkoutTrackerValue],revision:Int,operationId:UUID = UUID()) throws -> UUID {
+        if let existing = state.operations.first(where: { $0.id == operationId }) {
+            let config = try credentials()
+            guard !storageUnavailable, existing.origin == config.origin, existing.installationId == config.installationId,
+                  existing.intent.expectedLifeRevision == revision, existing.intent.command == command else { throw Failure.unresolved }
+            return operationId
+        }
         guard !storageUnavailable,!busy,unresolved==nil else { throw Failure.unresolved }
         guard case .string(let action)=command["action"], revision >= 0 else { throw Failure.disabled }
+        if command["sets"] != nil {
+            guard action == "update_session", state.capabilities?.sessionBatchSave == true else { throw Failure.disabled }
+        }
         let manualCompletion = action == "update_session" && state.capabilities?.sessionCompletion == true &&
             [WorkoutTrackerValue.string("completed"), .string("planned")].contains(command["status"] ?? .null)
         if manualCompletion && command["date"] != nil { throw Failure.disabled }
@@ -86,7 +95,7 @@ final class WorkoutFrontendClient: ObservableObject {
            case .string(let name) = normalized["name"] {
             normalized["name"] = .string(name.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        let intent=WorkoutFrontendIntent(operationId:UUID(),expectedLifeRevision:revision,command:normalized)
+        let intent=WorkoutFrontendIntent(operationId:operationId,expectedLifeRevision:revision,command:normalized)
         let encoder=JSONEncoder();encoder.outputFormatting=[.sortedKeys]
         let bytes=try encoder.encode(intent)
         var next=state

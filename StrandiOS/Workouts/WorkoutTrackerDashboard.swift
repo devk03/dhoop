@@ -29,10 +29,10 @@ struct WorkoutTrackerDashboard: Codable, Equatable {
         let setType: String
         let plannedLoad: Double
         let plannedReps: Int
-        let actualLoad: Double?
-        let actualReps: Int?
-        let rir: Double?
-        let completed: Bool
+        var actualLoad: Double?
+        var actualReps: Int?
+        var rir: Double?
+        var completed: Bool
     }
     struct Exercise: Codable, Equatable, Identifiable {
         let id: Int
@@ -51,7 +51,7 @@ struct WorkoutTrackerDashboard: Codable, Equatable {
         let originalExerciseKey: String
         let originalExerciseName: String
         let isPriming: Bool
-        let sets: [SetLog]
+        var sets: [SetLog]
     }
     struct Finisher: Codable, Equatable {
         let id: Int
@@ -69,7 +69,7 @@ struct WorkoutTrackerDashboard: Codable, Equatable {
         let title: String
         let scheduledDate: String
         let orderIndex: Int
-        let status: String
+        var status: String
         let readiness: String
         let rating: String
         let notes: String
@@ -77,7 +77,7 @@ struct WorkoutTrackerDashboard: Codable, Equatable {
         let sheetItemId: String
         let linkedSessionId: Int?
         let completedAt: String
-        let exercises: [Exercise]
+        var exercises: [Exercise]
         let finisher: Finisher?
     }
     struct Benchmark: Codable, Equatable, Identifiable {
