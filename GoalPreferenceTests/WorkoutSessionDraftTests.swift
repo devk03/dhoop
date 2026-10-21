@@ -273,4 +273,38 @@ final class WorkoutSessionDraftTests: XCTestCase {
         XCTAssertTrue(controller.message?.contains("newer edits") == true)
     }
 
+    func testStaleHTTPConflictRecoversTerminalReceiptThenRequiresExplicitReview() async throws {
+        var posts: [WorkoutFrontendIntent] = [], lookups = 0
+        let frontend = WorkoutFrontendClient(store: .init(url: file("commands.json")), send: { endpoint, body, _ in
+            if endpoint == .frontendCapabilities { return try self.capabilities() }
+            if case .frontendReceipt(let id) = endpoint {
+                lookups += 1; XCTAssertEqual(id, posts.first?.operationId)
+                return try self.receipt(XCTUnwrap(posts.first), revision: 5, state: "rejected")
+            }
+            let intent = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body)); posts.append(intent)
+            if posts.count == 1 { throw WorkoutSyncTransportError.http(409) }
+            return try self.receipt(intent, revision: 6)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(frontend)
+        let controller = WorkoutSessionDraftController(initial: initial(session(load: 135, reps: 8)), store: .init(url: file("draft.json")), frontend: frontend)
+        var edit = try XCTUnwrap(controller.state.entry(1)); edit.reps = "9"; controller.edit(edit)
+        try controller.requestSave(finishing: false, refresh: { throw URLError(.notConnectedToInternet) })
+        await controller.waitForDelivery()
+        let id = try XCTUnwrap(controller.state.pending?.id)
+        XCTAssertEqual(frontend.unresolved?.state, .uncertain)
+        controller.resume(); await controller.waitForDelivery()
+        XCTAssertEqual(posts.count, 1); XCTAssertEqual(lookups, 1)
+        XCTAssertEqual(frontend.state.operations.first?.state, .rejected)
+        XCTAssertEqual(controller.state.pending?.id, id); XCTAssertEqual(controller.state.entry(1)?.reps, "9")
+        try controller.receive(.init(session: session(load: 140, reps: 8), revision: 5)); try controller.reviewRejected()
+        XCTAssertNil(controller.state.pending); XCTAssertNotNil(controller.state.remote); XCTAssertFalse(controller.canSend)
+        try controller.resolveRemote(keepEdits: true)
+        XCTAssertEqual(controller.state.entry(1)?.load, "140"); XCTAssertEqual(controller.state.entry(1)?.reps, "9")
+        try controller.requestSave(finishing: false, refresh: { .init(session: controller.state.baseline, revision: controller.state.revision) })
+        await controller.waitForDelivery()
+        XCTAssertEqual(posts.count, 2); XCTAssertNotEqual(posts[1].operationId, id); XCTAssertEqual(posts[1].expectedLifeRevision, 5)
+        XCTAssertEqual(posts[1].command["sets"], .array([.object(["setId": .number(1), "actualReps": .number(9)])]))
+        XCTAssertNil(controller.state.pending); XCTAssertFalse(controller.state.hasChanges)
+    }
+
 }
