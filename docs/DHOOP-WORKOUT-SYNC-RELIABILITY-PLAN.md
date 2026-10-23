@@ -53,9 +53,9 @@ Builds require disk headroom; the audit does not authorize erasing owner data to
   with five edited sets and a frozen submission absent from the frontend queue. No database or
   credential was copied, and no production workout was changed for verification.
 - Before the fix, the production-shaped regression observed zero receipt lookups and zero POSTs
-  for the blocked workout. It failed. After the fix, 29 existing/new model and frontend tests pass.
+  for the blocked workout. It failed. After the fix, 30 existing/new model and frontend tests pass.
   These include terminal receipt recovery, a running fence, offline/auth/malformed/wrong-identity
-  lookups, removed permission, standalone legacy recovery without a draft, unchanged-target
+  lookups, removed permission, direct terminal rejection, standalone legacy recovery without a draft, unchanged-target
   preflight, real target conflict, offline preflight, and a rejected newer frozen save that advances
   only after review and an explicit new Save.
 - The lightweight harness uses symlinks to production model/client/controller files and the real
