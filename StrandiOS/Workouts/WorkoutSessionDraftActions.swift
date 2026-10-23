@@ -17,7 +17,7 @@ struct WorkoutSessionDraftActions: View {
         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
             if let message = drafts.message {
                 HStack(spacing: NoopMetrics.space2) {
-                    if drafts.working { ProgressView().controlSize(.small) }
+                    if drafts.working || drafts.checkingLatest { ProgressView().controlSize(.small) }
                     Text(LocalizedStringKey(message)).font(StrandFont.caption).fixedSize(horizontal: false, vertical: true)
                 }.foregroundStyle(StrandPalette.textSecondary).accessibilityAddTraits(.updatesFrequently)
             } else if drafts.state.hasChanges {
@@ -44,14 +44,14 @@ struct WorkoutSessionDraftActions: View {
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
                 : AnyLayout(HStackLayout(spacing: NoopMetrics.space2))
             layout {
-                Button("Save workout") { perform { try drafts.requestSave(finishing: false, refresh: refresh) } }
+                Button("Save workout") { save(finishing: false) }
                     .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
-                    .disabled(!enabled || !drafts.canSend || !drafts.state.hasChanges || drafts.state.pending != nil)
+                    .disabled(!enabled || drafts.checkingLatest || !drafts.canSend || !drafts.state.hasChanges || drafts.state.pending != nil)
                 if drafts.state.baseline.status != "completed" {
                     Button(drafts.state.finishQueued ? "Finish queued" : "Finish workout") {
-                        perform { try drafts.requestSave(finishing: true, refresh: refresh) }
+                        save(finishing: true)
                     }.buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
-                        .disabled(!enabled || !drafts.canSend || !canFinish || drafts.state.finishQueued || drafts.state.pending?.finishing == true || frontend.state.capabilities?.sessionCompletion != true)
+                        .disabled(!enabled || drafts.checkingLatest || !drafts.canSend || !canFinish || drafts.state.finishQueued || drafts.state.pending?.finishing == true || frontend.state.capabilities?.sessionCompletion != true)
                 }
             }
             if frontend.state.capabilities?.sessionBatchSave != true {
@@ -67,6 +67,12 @@ struct WorkoutSessionDraftActions: View {
     private func perform(_ action: () throws -> Void) {
         do { try action() }
         catch { self.error = error.localizedDescription }
+    }
+    private func save(finishing: Bool) {
+        Task { @MainActor in
+            do { try await drafts.requestSaveAfterRefreshing(finishing: finishing, refresh: refresh) }
+            catch { self.error = error.localizedDescription }
+        }
     }
 }
 

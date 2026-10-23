@@ -35,6 +35,19 @@ struct StrengthDashboardView: View {
                     .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
             }
             WorkoutRefreshFeedback(state: refreshState, retry: load)
+            if frontend.unresolved != nil {
+                NoopCard {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                        NavigationLink("A workout change needs attention") { WorkoutFrontendSettingsView() }
+                            .font(StrandFont.subhead)
+                        Text("Your workout edits are retained on this phone.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        NoopAsyncButton("Retry sync", systemImage: "arrow.clockwise", kind: .secondary) {
+                            await WorkoutSessionDraftController.resumePendingWorkouts()
+                        }.disabled(frontend.busy || !frontend.state.enabled)
+                    }
+                }
+            }
             if !tracker.state.enabled {
                 NavigationLink("Connect Life workouts") { WorkoutTrackerSettingsView() }.buttonStyle(NoopButtonStyle(.secondary))
             }
@@ -64,9 +77,6 @@ struct StrengthDashboardView: View {
                     NavigationLink("All planned lifting workouts") { PlannedLiftingWorkoutsView(programID: page.program?.id) }
                         .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
                 }
-            }
-            if frontend.unresolved != nil {
-                NavigationLink("A workout change needs attention") { WorkoutFrontendSettingsView() }.buttonStyle(NoopButtonStyle(.secondary))
             }
         }
         .task(id: connectionIdentity) { if tracker.state.enabled { try? await load() } }
