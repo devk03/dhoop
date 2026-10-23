@@ -109,6 +109,63 @@ final class WorkoutFrontendClientTests: XCTestCase {
         XCTAssertTrue(client.state.operations.isEmpty)
     }
 
+    func testRetainedDeliveryNeverReplaysAfterUnverifiableLookupOrRemovedPermission() async throws {
+        for scenario in ["offline", "unauthorized", "malformed", "wrong_identity", "permission_removed"] {
+            let file = store()
+            var original: WorkoutFrontendIntent?
+            let first = WorkoutFrontendClient(store: file, send: { endpoint, body, _ in
+                if endpoint == .frontendCapabilities { return try self.capabilities() }
+                original = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body))
+                throw URLError(.timedOut)
+            }, readCredential: { self.config }, saveCredential: { _ in })
+            try await enable(first)
+            let id = try first.prepare(command: change, revision: 4)
+            do { try await first.submit(id) } catch { }
+            let savedBytes = try XCTUnwrap(first.unresolved?.bytes)
+            if scenario == "permission_removed" {
+                var state = first.state
+                state.capabilities = .init(schemaVersion: 1, manualCommands: false, frontendStart: false, actions: [], lifeRevision: 7)
+                try file.save(state)
+            }
+            var posts = 0, reads = 0
+            let restored = WorkoutFrontendClient(store: file, send: { endpoint, body, _ in
+                guard case .frontendReceipt(let operationId) = endpoint else { posts += 1; throw WorkoutSyncTransportError.invalidResponse }
+                reads += 1; XCTAssertEqual(operationId, id); XCTAssertNil(body)
+                switch scenario {
+                case "offline": throw URLError(.notConnectedToInternet)
+                case "unauthorized": throw WorkoutSyncTransportError.http(401)
+                case "malformed": return Data("{\"state\":\"committed\"}".utf8)
+                case "wrong_identity":
+                    return try self.receipt(.init(operationId: UUID(), expectedLifeRevision: 4, command: self.change))
+                default: return try self.receipt(XCTUnwrap(original), state: "not_observed")
+                }
+            }, readCredential: { self.config }, saveCredential: { _ in })
+            do { _ = try await restored.deliverRetained(id); XCTFail("Unverified or unauthorized replay must stop") } catch { }
+            XCTAssertEqual(reads, 1); XCTAssertEqual(posts, 0)
+            XCTAssertEqual(restored.unresolved?.id, id); XCTAssertEqual(restored.unresolved?.bytes, savedBytes)
+        }
+    }
+
+    func testForegroundRecoversStandaloneLegacyReceiptWithoutAnyWorkoutDraft() async throws {
+        let file = store()
+        let intent = WorkoutFrontendIntent(operationId: UUID(), expectedLifeRevision: 4, command: change)
+        let bytes = try JSONEncoder().encode(intent)
+        var state = WorkoutFrontendState(); state.enabled = true; state.origin = config.origin; state.installationId = config.installationId
+        state.operations = [.init(intent: intent, bytes: bytes, origin: config.origin, installationId: config.installationId,
+            createdAt: Date(), state: .uncertain, receipt: nil, attemptedAt: Date())]
+        try file.save(state)
+        var reads = 0
+        let client = WorkoutFrontendClient(store: file, send: { endpoint, body, _ in
+            XCTAssertEqual(endpoint, .frontendReceipt(intent.operationId)); XCTAssertNil(body); reads += 1
+            return try self.receipt(intent)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        await WorkoutSessionDraftController.resumePendingWorkouts(frontend: client,
+            directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        XCTAssertEqual(reads, 1); XCTAssertNil(client.unresolved)
+        XCTAssertEqual(client.state.operations.first?.state, .committed)
+        XCTAssertEqual(client.state.operations.first?.bytes, bytes)
+    }
+
     func testTimeoutRetainsExactIntentAcrossRelaunchAndRecoveryNeverRepeatsWrite() async throws {
         let file = store()
         var posts: [Data] = []

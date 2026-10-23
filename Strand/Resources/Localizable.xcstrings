@@ -1,6 +1,326 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "Recovering an earlier Life change. This workout stays on your phone.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recovering an earlier Life change. This workout stays on your phone."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Eine frühere Life-Änderung wird wiederhergestellt. Dieses Training bleibt auf deinem iPhone."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recuperando un cambio anterior de Life. Este entrenamiento permanece en tu teléfono."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Récupération d’une modification Life précédente. Cet entraînement reste sur votre téléphone."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recupero di una modifica precedente di Life. Questo allenamento resta sul telefono."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Odzyskiwanie wcześniejszej zmiany w Life. Ten trening pozostaje na telefonie."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A recuperar uma alteração anterior do Life. Este treino fica no telemóvel."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Восстанавливается предыдущее изменение Life. Эта тренировка остаётся на телефоне."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在恢复之前的 Life 更改。本次训练保留在手机上。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在復原先前的 Life 更改。本次訓練保留在手機上。"
+        }
+      }
+    }
+  },
+  "An earlier Life change is unresolved. Your workout is saved on this phone; retry sync when connected.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "An earlier Life change is unresolved. Your workout is saved on this phone; retry sync when connected."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Eine frühere Life-Änderung ist noch ungeklärt. Dein Training ist auf diesem iPhone gespeichert. Versuche die Synchronisierung erneut, sobald eine Verbindung besteht."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Un cambio anterior de Life sigue sin resolverse. Tu entrenamiento está guardado en este teléfono; vuelve a sincronizar cuando tengas conexión."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Une modification Life précédente reste non résolue. Votre entraînement est enregistré sur ce téléphone ; réessayez la synchronisation une fois connecté."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Una modifica precedente di Life non è ancora risolta. L’allenamento è salvato su questo telefono; riprova la sincronizzazione quando sei connesso."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wcześniejsza zmiana w Life pozostaje nierozstrzygnięta. Trening jest zapisany na tym telefonie; ponów synchronizację po połączeniu."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Uma alteração anterior do Life continua por resolver. O treino está guardado neste telemóvel; tente sincronizar novamente quando tiver ligação."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Предыдущее изменение Life ещё не разрешено. Тренировка сохранена на этом телефоне; повторите синхронизацию после подключения."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "之前的 Life 更改尚未解决。训练已保存在本机；连接后请重试同步。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "先前的 Life 更改尚未解決。訓練已儲存在本機；連線後請重試同步。"
+        }
+      }
+    }
+  },
+  "Life rejected this save. Your edits are retained; review the latest workout.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life rejected this save. Your edits are retained; review the latest workout."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life hat diesen Speichervorgang abgelehnt. Deine Änderungen bleiben erhalten. Prüfe das aktuelle Training."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life rechazó este guardado. Tus cambios se conservan; revisa el entrenamiento más reciente."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life a refusé cet enregistrement. Vos modifications sont conservées ; vérifiez la dernière version de l’entraînement."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ha rifiutato questo salvataggio. Le modifiche sono conservate; controlla l’allenamento aggiornato."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life odrzucił ten zapis. Zmiany zostały zachowane; sprawdź aktualny trening."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O Life rejeitou esta gravação. As alterações foram mantidas; reveja o treino atualizado."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life отклонил сохранение. Изменения сохранены локально; проверьте последнюю версию тренировки."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 拒绝了本次保存。更改仍然保留；请查看最新训练。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 拒絕了本次儲存。更改仍然保留；請檢視最新訓練。"
+        }
+      }
+    }
+  },
+  "Checking the latest workout. Your edits stay on this phone.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Checking the latest workout. Your edits stay on this phone."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Das aktuelle Training wird geprüft. Deine Änderungen bleiben auf diesem iPhone."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Comprobando el entrenamiento más reciente. Tus cambios permanecen en este teléfono."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Vérification de la dernière version de l’entraînement. Vos modifications restent sur ce téléphone."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Verifica dell’allenamento aggiornato. Le modifiche restano su questo telefono."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Sprawdzanie aktualnego treningu. Zmiany pozostają na tym telefonie."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A verificar o treino atualizado. As alterações ficam neste telemóvel."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Проверяется последняя версия тренировки. Изменения остаются на этом телефоне."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在检查最新训练。更改保留在本机。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正在檢查最新訓練。更改保留在本機。"
+        }
+      }
+    }
+  },
+  "Your workout edits are retained on this phone.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your workout edits are retained on this phone."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Deine Trainingsänderungen bleiben auf diesem iPhone erhalten."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Los cambios de tu entrenamiento se conservan en este teléfono."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Les modifications de votre entraînement sont conservées sur ce téléphone."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Le modifiche all’allenamento sono conservate su questo telefono."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zmiany treningu są zachowane na tym telefonie."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "As alterações ao treino são mantidas neste telemóvel."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Изменения тренировки сохранены на этом телефоне."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "训练更改保留在本机。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "訓練更改保留在本機。"
+        }
+      }
+    }
+  },
   "Not completed": {
     "localizations": {
       "en": {

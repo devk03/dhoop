@@ -25,9 +25,13 @@ final class WorkoutSessionDraftController: ObservableObject {
     /// Draft typing never enters this path, and a changed connection cannot redirect a retained save.
     static func resumePendingWorkouts(frontend: WorkoutFrontendClient = .shared, directory: URL? = nil,
         read: ((WorkoutSessionDraft) async throws -> WorkoutSessionDraft.Remote)? = nil) async {
-        guard !restoringPending, frontend.state.enabled, frontend.state.capabilities?.sessionBatchSave == true,
+        guard !restoringPending, frontend.state.enabled,
               let origin = frontend.state.origin, let installation = frontend.state.installationId else { return }
         restoringPending = true; defer { restoringPending = false }
+        // Older app versions saved standalone set operations without a whole-workout draft.
+        // They share the same queue and must be resolved before a new draft can enter it.
+        if let earlier = frontend.unresolved { _ = try? await frontend.deliverRetained(earlier.id) }
+        guard frontend.state.capabilities?.sessionBatchSave == true else { return }
         let root = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Dhoop/WorkoutDrafts")
         let retained = await Task.detached(priority: .utility) { () -> [(URL, WorkoutSessionDraft)] in
             let urls = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
@@ -73,6 +77,7 @@ final class WorkoutSessionDraftController: ObservableObject {
     @Published private(set) var message: String?
     @Published private(set) var storageUnavailable = false
     @Published private(set) var working = false
+    @Published private(set) var checkingLatest = false
     private var loadFailed = false
     var canRetryLocalStorage: Bool { storageUnavailable && !loadFailed }
     private let store: WorkoutSessionDraftFileStore
@@ -131,6 +136,25 @@ final class WorkoutSessionDraftController: ObservableObject {
         message = state.finishQueued ? "Finish queued after the current save" : "Workout saved on this phone · sending to Life"
         resume()
     }
+    /// Refresh before creating a NEW immutable submission. Offline reads do not prevent a durable
+    /// save; a retained submission or queued Finish always keeps its existing identity and bytes.
+    func requestSaveAfterRefreshing(finishing: Bool, refresh: @escaping () async throws -> WorkoutSessionDraft.Remote) async throws {
+        guard !checkingLatest else { throw WorkoutFrontendClient.Failure.unresolved }
+        if state.pending == nil {
+            checkingLatest = true
+            defer { checkingLatest = false }
+            message = "Checking the latest workout. Your edits stay on this phone."
+            if let earlier = frontend.unresolved { _ = try? await frontend.deliverRetained(earlier.id) }
+            let latest: WorkoutSessionDraft.Remote?
+            do { latest = try await refresh() }
+            catch { latest = nil }
+            try Task.checkCancellation()
+            if let latest { try receive(latest) }
+            try requestSave(finishing: finishing, refresh: refresh)
+        } else {
+            try requestSave(finishing: finishing, refresh: refresh)
+        }
+    }
     func setRefresh(_ value: @escaping () async throws -> WorkoutSessionDraft.Remote) { refresh = value }
     /// At most the saved batch and an explicitly queued Finish. No polling or per-set sender exists.
     func resume() {
@@ -141,6 +165,10 @@ final class WorkoutSessionDraftController: ObservableObject {
             for _ in 0..<2 {
                 guard let submission = state.pending else { break }
                 do {
+                    if let earlier = frontend.unresolved, earlier.id != submission.id {
+                        message = "Recovering an earlier Life change. This workout stays on your phone."
+                        _ = try await frontend.deliverRetained(earlier.id)
+                    }
                     let id = try frontend.prepare(command: submission.command, revision: submission.revision, operationId: submission.id)
                     guard let operation = frontend.state.operations.first(where: { $0.id == id }) else { throw WorkoutFrontendClient.Failure.unavailable }
                     if operation.state == .cancelled {
@@ -148,10 +176,7 @@ final class WorkoutSessionDraftController: ObservableObject {
                         message = "Queued sync cancelled. Your local edits are retained."
                         break
                     }
-                    if [.sending, .uncertain].contains(operation.state) { try await frontend.recover(id) }
-                    if let item = frontend.state.operations.first(where: { $0.id == id }), [.prepared, .notObserved].contains(item.state) {
-                        try await frontend.submit(id)
-                    }
+                    _ = try await frontend.deliverRetained(id)
                     guard let accepted = frontend.state.operations.first(where: { $0.id == id }),
                           accepted.state == .committed, let receipt = accepted.receipt,
                           let revision = receipt.receiptLifeRevision else { throw WorkoutFrontendClient.Failure.needsRecovery }
@@ -177,7 +202,13 @@ final class WorkoutSessionDraftController: ObservableObject {
                 } catch {
                     // Retain both frozen operation and newer local edits. The next attempt recovers the
                     // SAME receipt/bytes; it never manufactures a new ID after an unknown result.
-                    message = "Workout retained on this phone. Retry sync to recover the same save."
+                    if let earlier = frontend.unresolved, earlier.id != submission.id {
+                        message = "An earlier Life change is unresolved. Your workout is saved on this phone; retry sync when connected."
+                    } else if frontend.state.operations.first(where: { $0.id == submission.id })?.state == .rejected {
+                        message = "Life rejected this save. Your edits are retained; review the latest workout."
+                    } else {
+                        message = "Workout retained on this phone. Retry sync to recover the same save."
+                    }
                     break
                 }
             }

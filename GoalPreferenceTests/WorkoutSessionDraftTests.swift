@@ -15,7 +15,7 @@ final class WorkoutSessionDraftTests: XCTestCase {
     }
     private func capabilities() throws -> Data {
         try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true, "frontendStart": false,
-            "sessionCompletion": true, "sessionBatchSave": true, "lifeRevision": 4, "actions": ["update_session"]])
+            "sessionCompletion": true, "sessionBatchSave": true, "lifeRevision": 4, "actions": ["update_session", "update_set"]])
     }
     private func receipt(_ intent: WorkoutFrontendIntent, revision: Int = 5, state: String = "committed") throws -> Data {
         var value: [String: Any] = ["schemaVersion": 1, "operationId": intent.operationId.uuidString.lowercased(), "state": state, "lifeRevision": revision]
@@ -291,8 +291,7 @@ final class WorkoutSessionDraftTests: XCTestCase {
         try controller.requestSave(finishing: false, refresh: { throw URLError(.notConnectedToInternet) })
         await controller.waitForDelivery()
         let id = try XCTUnwrap(controller.state.pending?.id)
-        XCTAssertEqual(frontend.unresolved?.state, .uncertain)
-        controller.resume(); await controller.waitForDelivery()
+        // A conflict response is immediately followed by an exact receipt lookup.
         XCTAssertEqual(posts.count, 1); XCTAssertEqual(lookups, 1)
         XCTAssertEqual(frontend.state.operations.first?.state, .rejected)
         XCTAssertEqual(controller.state.pending?.id, id); XCTAssertEqual(controller.state.entry(1)?.reps, "9")
@@ -304,6 +303,164 @@ final class WorkoutSessionDraftTests: XCTestCase {
         await controller.waitForDelivery()
         XCTAssertEqual(posts.count, 2); XCTAssertNotEqual(posts[1].operationId, id); XCTAssertEqual(posts[1].expectedLifeRevision, 5)
         XCTAssertEqual(posts[1].command["sets"], .array([.object(["setId": .number(1), "actualReps": .number(9)])]))
+        XCTAssertNil(controller.state.pending); XCTAssertFalse(controller.state.hasChanges)
+    }
+
+    func testLegacyUncertainChangeRecoversBeforeNewerWorkoutSave() async throws {
+        let commands = WorkoutFrontendFileStore(url: file("commands.json"))
+        let legacy = WorkoutFrontendIntent(operationId: UUID(), expectedLifeRevision: 1,
+            command: ["action": .string("update_set"), "sessionId": .number(9), "setId": .number(90), "completed": .bool(true)])
+        let bytes = try JSONEncoder().encode(legacy)
+        var retained = WorkoutFrontendState(); retained.enabled = true; retained.origin = config.origin
+        retained.installationId = config.installationId
+        retained.capabilities = try JSONDecoder().decode(WorkoutFrontendCapabilities.self, from: capabilities())
+        retained.operations = [.init(intent: legacy, bytes: bytes, origin: config.origin, installationId: config.installationId,
+            createdAt: Date(), state: .uncertain, receipt: nil, attemptedAt: Date())]
+        try commands.save(retained)
+        var lookups = 0, legacyPosts = 0, newPosts = 0
+        let frontend = WorkoutFrontendClient(store: commands, send: { endpoint, body, _ in
+            if case .frontendReceipt(let id) = endpoint {
+                XCTAssertEqual(id, legacy.operationId); lookups += 1
+                return try self.receipt(legacy, revision: 4, state: lookups == 1 ? "not_observed" : "rejected")
+            }
+            let intent = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body))
+            if intent.operationId == legacy.operationId {
+                legacyPosts += 1; XCTAssertEqual(body, bytes); throw WorkoutSyncTransportError.http(409)
+            }
+            newPosts += 1; return try self.receipt(intent)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        let controller = WorkoutSessionDraftController(initial: initial(), store: .init(url: file("draft.json")), frontend: frontend)
+        var edit = try XCTUnwrap(controller.state.entry(1)); edit.reps = "8"; edit.completed = true; controller.edit(edit)
+        try controller.requestSave(finishing: false, refresh: { .init(session: controller.state.baseline, revision: controller.state.revision) })
+        let savedID = try XCTUnwrap(controller.state.pending?.id)
+        await controller.waitForDelivery()
+        XCTAssertEqual(lookups, 2); XCTAssertEqual(legacyPosts, 1); XCTAssertEqual(newPosts, 1)
+        XCTAssertEqual(frontend.state.operations.first?.state, .rejected)
+        XCTAssertEqual(frontend.state.operations.first?.bytes, bytes)
+        XCTAssertEqual(frontend.state.operations.last?.id, savedID)
+        XCTAssertEqual(frontend.state.operations.last?.state, .committed)
+        XCTAssertNil(controller.state.pending); XCTAssertFalse(controller.state.hasChanges)
+    }
+
+    func testRunningLegacyChangeCannotBeBypassedByAnotherWorkout() async throws {
+        let commands = WorkoutFrontendFileStore(url: file("commands.json"))
+        let legacy = WorkoutFrontendIntent(operationId: UUID(), expectedLifeRevision: 1,
+            command: ["action": .string("update_set"), "sessionId": .number(9), "setId": .number(90), "completed": .bool(true)])
+        var retained = WorkoutFrontendState(); retained.enabled = true; retained.origin = config.origin
+        retained.installationId = config.installationId
+        retained.capabilities = try JSONDecoder().decode(WorkoutFrontendCapabilities.self, from: capabilities())
+        retained.operations = [.init(intent: legacy, bytes: try JSONEncoder().encode(legacy), origin: config.origin,
+            installationId: config.installationId, createdAt: Date(), state: .uncertain, receipt: nil, attemptedAt: Date())]
+        try commands.save(retained)
+        var lookups = 0, posts = 0
+        let frontend = WorkoutFrontendClient(store: commands, send: { endpoint, body, _ in
+            if case .frontendReceipt(let id) = endpoint {
+                XCTAssertEqual(id, legacy.operationId); lookups += 1
+                return try self.receipt(legacy, revision: 4, state: "running")
+            }
+            posts += 1; throw URLError(.notConnectedToInternet)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        let store = WorkoutSessionDraftFileStore(url: file("draft.json"))
+        let controller = WorkoutSessionDraftController(initial: initial(), store: store, frontend: frontend)
+        var edit = try XCTUnwrap(controller.state.entry(1)); edit.reps = "8"; edit.completed = true; controller.edit(edit)
+        try controller.requestSave(finishing: false, refresh: { throw URLError(.notConnectedToInternet) })
+        let saved = try XCTUnwrap(controller.state.pending)
+        await controller.waitForDelivery()
+        XCTAssertEqual(lookups, 1); XCTAssertEqual(posts, 0)
+        XCTAssertEqual(frontend.state.operations.count, 1)
+        XCTAssertEqual(frontend.unresolved?.id, legacy.operationId)
+        XCTAssertEqual(try store.load()?.pending, saved)
+        XCTAssertEqual(controller.state.entry(1)?.reps, "8")
+    }
+
+    func testNewSavePreflightAdvancesOnlyUnchangedTargetAndOfflineKeepsIntent() async throws {
+        for scenario in ["unchanged", "conflict", "offline"] {
+            var posts: [WorkoutFrontendIntent] = [], reads = 0
+            let frontend = WorkoutFrontendClient(store: .init(url: file("commands.json")), send: { endpoint, body, _ in
+                if endpoint == .frontendCapabilities { return try self.capabilities() }
+                let intent = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body)); posts.append(intent)
+                return try self.receipt(intent, revision: 21)
+            }, readCredential: { self.config }, saveCredential: { _ in })
+            try await enable(frontend)
+            let controller = WorkoutSessionDraftController(initial: initial(session(load: 135, reps: 8)), store: .init(url: file("draft.json")), frontend: frontend)
+            var edit = try XCTUnwrap(controller.state.entry(1)); edit.reps = "9"; controller.edit(edit)
+            let read: () async throws -> WorkoutSessionDraft.Remote = {
+                reads += 1
+                if scenario == "offline" { throw URLError(.notConnectedToInternet) }
+                return .init(session: self.session(load: scenario == "conflict" ? 140 : 135, reps: 8), revision: 20)
+            }
+            if scenario == "conflict" {
+                do { try await controller.requestSaveAfterRefreshing(finishing: false, refresh: read); XCTFail("Changed target needs review") } catch { }
+                XCTAssertTrue(posts.isEmpty); XCTAssertNotNil(controller.state.remote)
+                XCTAssertEqual(controller.state.entry(1)?.load, "135"); XCTAssertEqual(controller.state.entry(1)?.reps, "9")
+            } else {
+                try await controller.requestSaveAfterRefreshing(finishing: false, refresh: read)
+                await controller.waitForDelivery()
+                XCTAssertEqual(posts.count, 1)
+                XCTAssertEqual(posts.first?.expectedLifeRevision, scenario == "offline" ? 4 : 20)
+                XCTAssertNil(controller.state.pending)
+            }
+            XCTAssertFalse(controller.checkingLatest)
+        }
+    }
+
+    func testPreflightNeverReplacesExistingFrozenSaveOrReadsBeforeQueuedFinish() async throws {
+        let frontend = WorkoutFrontendClient(store: .init(url: file("commands.json")), send: { endpoint, _, _ in
+            if endpoint == .frontendCapabilities { return try self.capabilities() }
+            throw URLError(.notConnectedToInternet)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(frontend)
+        let controller = WorkoutSessionDraftController(initial: initial(), store: .init(url: file("draft.json")), frontend: frontend)
+        var edit = try XCTUnwrap(controller.state.entry(1)); edit.reps = "8"; edit.completed = true; controller.edit(edit)
+        try controller.requestSave(finishing: false, refresh: { throw URLError(.notConnectedToInternet) })
+        await controller.waitForDelivery()
+        let saved = controller.state.pending
+        try await controller.requestSaveAfterRefreshing(finishing: true, refresh: { XCTFail("Existing pending must bypass preflight"); throw URLError(.notConnectedToInternet) })
+        await controller.waitForDelivery()
+        XCTAssertEqual(controller.state.pending, saved); XCTAssertTrue(controller.state.finishQueued)
+    }
+
+    func testLegacyRejectionRevisionLeavesNewerFrozenSaveForExplicitReview() async throws {
+        let commands = WorkoutFrontendFileStore(url: file("commands.json"))
+        let legacy = WorkoutFrontendIntent(operationId: UUID(), expectedLifeRevision: 1,
+            command: ["action": .string("update_set"), "sessionId": .number(9), "setId": .number(90), "completed": .bool(true)])
+        var retained = WorkoutFrontendState(); retained.enabled = true; retained.origin = config.origin
+        retained.installationId = config.installationId
+        retained.capabilities = try JSONDecoder().decode(WorkoutFrontendCapabilities.self, from: capabilities())
+        retained.operations = [.init(intent: legacy, bytes: try JSONEncoder().encode(legacy), origin: config.origin,
+            installationId: config.installationId, createdAt: Date(), state: .uncertain, receipt: nil, attemptedAt: Date())]
+        try commands.save(retained)
+        var posts: [WorkoutFrontendIntent] = [], receipts: [UUID: Data] = [:]
+        let frontend = WorkoutFrontendClient(store: commands, send: { endpoint, body, _ in
+            if case .frontendReceipt(let id) = endpoint {
+                if let receipt = receipts[id] { return receipt }
+                return try self.receipt(legacy, state: "not_observed")
+            }
+            let intent = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body)); posts.append(intent)
+            if intent.expectedLifeRevision < 6 {
+                receipts[intent.operationId] = try self.receipt(intent, revision: intent.operationId == legacy.operationId ? 5 : 6, state: "rejected")
+                throw WorkoutSyncTransportError.http(409)
+            }
+            return try self.receipt(intent, revision: 7)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        let controller = WorkoutSessionDraftController(initial: initial(session(load: 135, reps: 8)), store: .init(url: file("draft.json")), frontend: frontend)
+        var edit = try XCTUnwrap(controller.state.entry(1)); edit.reps = "9"; controller.edit(edit)
+        try controller.requestSave(finishing: false, refresh: { throw URLError(.notConnectedToInternet) })
+        let frozen = try XCTUnwrap(controller.state.pending)
+        await controller.waitForDelivery()
+        XCTAssertEqual(posts.count, 2); XCTAssertEqual(posts.last?.operationId, frozen.id)
+        XCTAssertEqual(posts.last?.expectedLifeRevision, 4)
+        XCTAssertEqual(controller.state.pending, frozen); XCTAssertEqual(controller.state.entry(1)?.reps, "9")
+        XCTAssertEqual(frontend.state.operations.last?.state, .rejected)
+        try controller.receive(.init(session: session(load: 135, reps: 8), revision: 6))
+        try controller.reviewRejected()
+        XCTAssertNil(controller.state.pending); XCTAssertTrue(controller.state.hasChanges)
+        XCTAssertEqual(controller.state.revision, 6)
+        XCTAssertEqual(posts.count, 2, "Review alone cannot send a replacement")
+        try controller.requestSave(finishing: false, refresh: { .init(session: controller.state.baseline, revision: controller.state.revision) })
+        await controller.waitForDelivery()
+        XCTAssertEqual(posts.count, 3); XCTAssertNotEqual(posts.last?.operationId, frozen.id)
+        XCTAssertEqual(posts.last?.expectedLifeRevision, 6)
         XCTAssertNil(controller.state.pending); XCTAssertFalse(controller.state.hasChanges)
     }
 

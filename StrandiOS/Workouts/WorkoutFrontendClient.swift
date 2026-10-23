@@ -136,6 +136,42 @@ final class WorkoutFrontendClient: ObservableObject {
         let data=try await send(.frontendReceipt(id),nil,config)
         try accept(data,for:id)
     }
+    /// One finite delivery attempt for an already authorized immutable operation. Lookup precedes
+    /// replay after an interruption; a conflict is resolved through its receipt, never a new ID.
+    @discardableResult
+    func deliverRetained(_ id: UUID) async throws -> WorkoutFrontendOperation.State {
+        guard !busy, !storageUnavailable, state.enabled,
+              let original = state.operations.first(where: { $0.id == id }) else { throw Failure.disabled }
+        if !original.unresolved { return original.state }
+        if original.attemptedAt != nil { try await recover(id) }
+        guard let recovered = state.operations.first(where: { $0.id == id }) else { throw Failure.unavailable }
+        if [.prepared, .notObserved].contains(recovered.state) {
+            guard case .string(let action) = recovered.intent.command["action"],
+                  state.capabilities?.manualCommands == true,
+                  state.capabilities?.actions.contains(action) == true,
+                  recovered.intent.command["sets"] == nil || state.capabilities?.sessionBatchSave == true else { throw Failure.disabled }
+            let status = recovered.intent.command["status"]
+            let manualCompletion = action == "update_session" && state.capabilities?.sessionCompletion == true &&
+                [WorkoutTrackerValue.string("completed"), .string("planned")].contains(status ?? .null)
+            if action == "start_session" || (action == "update_session" && status != nil && !manualCompletion) {
+                guard state.capabilities?.frontendStart == true else { throw Failure.disabled }
+            }
+            if action == "update_session", recovered.intent.command["date"] != nil,
+               state.capabilities?.sessionDateScheduling != true { throw Failure.disabled }
+            do { try await submit(id) }
+            catch {
+                let conflict: Bool
+                switch error {
+                case WorkoutSyncTransportError.http(409), WorkoutSyncTransportError.rejected: conflict = true
+                default: conflict = false
+                }
+                if conflict { try await recover(id) } else { throw error }
+            }
+        }
+        guard let result = state.operations.first(where: { $0.id == id }) else { throw Failure.unavailable }
+        guard !result.unresolved else { throw Failure.needsRecovery }
+        return result.state
+    }
     private func accept(_ data:Data,for id:UUID) throws {
         guard let index=state.operations.firstIndex(where:{$0.id==id}) else { throw Failure.unavailable }
         let item=state.operations[index]
