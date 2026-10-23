@@ -32,6 +32,7 @@ struct WorkoutHistoryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
             Text(plannedProgramID == nil ? "Life workouts" : "Planned lifting workouts").font(StrandFont.headline)
+            if plannedProgramID == nil { Text("Tap a workout to edit its sets.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
             MetricRangeControl(selection: $range, now: capturedAt).disabled(busy)
             HStack {
                 if !strengthOnly { Picker("Activity", selection: $kind) {
@@ -104,7 +105,10 @@ struct WorkoutHistoryView: View {
 }
 
 struct WorkoutHistorySessionSheet: View {
-    let row: WorkoutHistoryPage.Session
+    let mesocycleId: Int
+    let sessionId: Int
+    init(row: WorkoutHistoryPage.Session) { self.mesocycleId = row.mesocycleId; self.sessionId = row.id }
+    init(mesocycleId: Int, sessionId: Int) { self.mesocycleId = mesocycleId; self.sessionId = sessionId }
     @State private var page: WorkoutTrackerDashboard?
     @State private var error: String?
     @State private var readAt: Date?
@@ -127,17 +131,17 @@ struct WorkoutHistorySessionSheet: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) {
                 Button("Done") { if protectedEdits { confirmDiscard = true } else { dismiss() } }
             } }
-            .task(id: row.id) { try? await load() }
+            .task(id: "\(mesocycleId)-\(sessionId)") { try? await load() }
             .interactiveDismissDisabled(protectedEdits)
-            .confirmationDialog("Discard unsaved workout changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
-                Button("Discard changes", role: .destructive) { dismiss() }
+            .confirmationDialog("Close workout with local changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                Button("Keep changes and close") { dismiss() }
                 Button("Keep editing", role: .cancel) { }
             }
         }
     }
     private func load() async throws {
         do {
-            let result = try await WorkoutTrackerClient.shared.readHistorySession(row)
+            let result = try await WorkoutTrackerClient.shared.readHistorySession(mesocycleId: mesocycleId, sessionId: sessionId)
             try Task.checkCancellation()
             page = result; readAt = Date(); error = nil
         }

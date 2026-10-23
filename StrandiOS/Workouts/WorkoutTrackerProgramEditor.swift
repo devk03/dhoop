@@ -22,6 +22,22 @@ struct WorkoutTrackerProgramEditor: View {
     private var scale: Double { imperial ? 1 : UnitFormatter.poundsPerKilogram }
     private var unit: String { imperial ? "lb" : "kg" }
     private var primary: [WorkoutTrackerDashboard.Benchmark] { page.dashboard.benchmarks.filter(\.isPrimary) }
+    private struct ProgressionEntry: Identifiable {
+        let session: WorkoutTrackerDashboard.Session
+        let exercise: WorkoutTrackerDashboard.Exercise
+        var id: String { "\(session.sessionKey)|\(exercise.slotKey.isEmpty ? String(exercise.id) : exercise.slotKey)" }
+    }
+    private var progressionEntries: [ProgressionEntry] {
+        var seen = Set<String>()
+        return page.dashboard.sessions.flatMap { session -> [ProgressionEntry] in
+            session.exercises.compactMap { exercise -> ProgressionEntry? in
+                guard let mode = WorkoutTrackerLoadMode(rawValue: exercise.loadMode), mode != .duration,
+                      !exercise.isPriming, exercise.progressionPreference != nil else { return nil }
+                let entry = ProgressionEntry(session: session, exercise: exercise)
+                return seen.insert(entry.id).inserted ? entry : nil
+            }
+        }
+    }
     private var actions: [(String, String)] {
         let all: [(String, String)] = [
         ("update_athlete_profile", "Athlete profile"), ("update_benchmarks", "Strength benchmarks"),
@@ -34,6 +50,27 @@ struct WorkoutTrackerProgramEditor: View {
     var body: some View {
         ScreenScaffold(title: "Program settings", subtitle: LocalizedStringKey(page.dashboard.activeMesocycle?.name ?? "Life workout tracker")) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
+                if !progressionEntries.isEmpty {
+                    NoopCard {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                            Text("Progression and rep ranges").font(StrandFont.headline)
+                            ForEach(progressionEntries) { entry in
+                                NavigationLink {
+                                    WorkoutProgressionPreferencesView(session: entry.session, exercise: entry.exercise, revision: page.lifeRevision)
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                                            Text(entry.exercise.name).font(StrandFont.body)
+                                            Text(entry.session.title).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                                        }
+                                        Spacer(minLength: NoopMetrics.space2)
+                                        Image(systemName: "chevron.right").font(StrandFont.caption)
+                                    }.frame(minHeight: NoopMetrics.minimumTouchTarget)
+                                }.buttonStyle(NoopFeedbackButtonStyle())
+                            }
+                        }
+                    }
+                }
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Picker("Change", selection: $action) {

@@ -11,12 +11,23 @@ struct WorkoutPreviousSetSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var report: WorkoutPreviousSetReport?
     @State private var failed = false
+    @State private var previous: WorkoutPreviousSetPage.Previous?
+    @State private var editingPrevious = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: NoopMetrics.space4) {
-                    if let report { WorkoutPreviousSetContent(report: report) }
+                    if let report {
+                        WorkoutPreviousSetContent(report: report)
+                        if previous != nil {
+                            Button("Open workout to edit") { editingPrevious = true }
+                                .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
+                        } else {
+                            NavigationLink("Lifting history") { ScreenScaffold(title: "Lifting history") { WorkoutHistoryView(strengthOnly: true) } }
+                                .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                        }
+                    }
                     else if failed {
                         Text("Last week's results could not be loaded. Your current set is unchanged.")
                             .font(StrandFont.body)
@@ -35,6 +46,9 @@ struct WorkoutPreviousSetSheet: View {
                 }
         }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
             .task { try? await load() }
+            .sheet(isPresented: $editingPrevious) {
+                if let previous { WorkoutHistorySessionSheet(mesocycleId: previous.mesocycleId, sessionId: previous.sessionId) }
+            }
     }
 
     private func load() async throws {
@@ -43,6 +57,7 @@ struct WorkoutPreviousSetSheet: View {
             let page = try await WorkoutTrackerClient.shared.readPreviousSet(session: session, exercise: exercise, set: row, minimumRevision: revision)
             try Task.checkCancellation()
             report = page.report(exerciseName: exercise.name, system: system)
+            previous = page.previous
         } catch {
             if !Task.isCancelled { failed = true }
             throw error

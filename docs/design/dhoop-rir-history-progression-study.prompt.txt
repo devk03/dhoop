@@ -1,0 +1,2 @@
+Built-in imagegen · ui-mockup
+Three native iPhone screens for Dhoop strength logging: visible compact set/weight/reps/RIR/check rows; completed historical workout corrections preserving completed state with Save corrections and exact prior-workout edit link; progression settings with automatic/manual rep range, target RIR, explicit Save preferences, nightly Life recomputation note. Black canvas, restrained violet/cyan, existing rounded surfaces, readable touch targets, no dense copy or unrelated programs. All illustrated numbers are fictional demo values, never app data.

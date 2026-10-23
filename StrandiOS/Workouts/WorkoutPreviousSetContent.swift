@@ -19,6 +19,7 @@ struct WorkoutPreviousSetContent: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let detail = report.loadDetail { Text(detail).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary) }
+                    if let rir = report.rirLabel { Text(rir).font(StrandFont.subhead).foregroundStyle(StrandPalette.metricPurple) }
                     if let unavailable = report.unavailable { Text(unavailable).font(StrandFont.body) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -29,7 +30,7 @@ struct WorkoutPreviousSetContent: View {
                     if let completed = report.completionLabel { Text(completed).font(StrandFont.caption) }
                 }.foregroundStyle(StrandPalette.textSecondary)
             }
-            Label("Recorded in Life · Read only", systemImage: "lock")
+            Label("Recorded in Life", systemImage: "checkmark.shield")
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
         }.frame(maxWidth: .infinity, alignment: .leading)
             .foregroundStyle(StrandPalette.textPrimary)

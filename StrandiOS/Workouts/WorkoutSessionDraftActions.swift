@@ -44,7 +44,7 @@ struct WorkoutSessionDraftActions: View {
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
                 : AnyLayout(HStackLayout(spacing: NoopMetrics.space2))
             layout {
-                Button("Save workout") { save(finishing: false) }
+                Button(drafts.state.baseline.status == "completed" ? "Save corrections" : "Save workout") { save(finishing: false) }
                     .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
                     .disabled(!enabled || drafts.checkingLatest || !drafts.canSend || !drafts.state.hasChanges || drafts.state.pending != nil)
                 if drafts.state.baseline.status != "completed" {
@@ -56,6 +56,10 @@ struct WorkoutSessionDraftActions: View {
             }
             if frontend.state.capabilities?.sessionBatchSave != true {
                 Text("Workout batch saving needs an updated Life connection. Your edits remain on this phone.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
+            if drafts.state.baseline.status == "completed", frontend.state.capabilities?.historicalSessionEditing != true {
+                Text("Historical editing needs an updated Life connection. Your changes stay on this phone.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
         }
@@ -109,7 +113,8 @@ struct WorkoutDraftConflictView: View {
     }
     private func summary(_ edit: WorkoutInlineSetDraft) -> String {
         [edit.load.isEmpty ? "—" : "\(edit.load) \(drafts.state.massScale == 1 ? "lb" : "kg")",
-         edit.reps.isEmpty ? "—" : "\(edit.reps) reps", edit.completed ? String(localized: "Done") : String(localized: "Not completed")].joined(separator: " · ")
+         edit.reps.isEmpty ? "—" : "\(edit.reps) reps", edit.rir.isEmpty ? "RIR —" : "RIR \(edit.rir)",
+         edit.completed ? String(localized: "Done") : String(localized: "Not completed")].joined(separator: " · ")
     }
     private func resolve(_ keep: Bool) {
         do { try drafts.resolveRemote(keepEdits: keep); dismiss() }

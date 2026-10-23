@@ -1,6 +1,1030 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "Tap a workout to edit its sets.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tap a workout to edit its sets."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tippe auf ein Training, um seine Sätze zu bearbeiten."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Toca un entrenamiento para editar sus series."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Touchez un entraînement pour modifier ses séries."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tocca un allenamento per modificarne le serie."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Dotknij treningu, aby edytować serie."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Toque num treino para editar as séries."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Нажмите на тренировку, чтобы изменить подходы."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "轻点训练以编辑组数记录。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "輕點訓練以編輯組數紀錄。"
+        }
+      }
+    }
+  },
+  "Close workout with local changes?": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Close workout with local changes?"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Training mit lokalen Änderungen schließen?"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "¿Cerrar el entrenamiento con cambios locales?"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Fermer l’entraînement avec des modifications locales ?"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Chiudere l’allenamento con modifiche locali?"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zamknąć trening z lokalnymi zmianami?"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Fechar o treino com alterações locais?"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Закрыть тренировку с локальными изменениями?"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "关闭含本地更改的训练？"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "關閉含本機更改的訓練？"
+        }
+      }
+    }
+  },
+  "Keep changes and close": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Keep changes and close"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Änderungen behalten und schließen"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Conservar cambios y cerrar"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Conserver les modifications et fermer"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Mantieni modifiche e chiudi"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zachowaj zmiany i zamknij"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Manter alterações e fechar"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Сохранить изменения и закрыть"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "保留更改并关闭"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "保留更改並關閉"
+        }
+      }
+    }
+  },
+  "Reps in reserve · optional": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reps in reserve · optional"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wiederholungen in Reserve · optional"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Repeticiones en reserva · opcional"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Répétitions en réserve · facultatif"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ripetizioni in riserva · facoltativo"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Powtórzenia w zapasie · opcjonalnie"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Repetições em reserva · opcional"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Повторения в запасе · необязательно"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "剩余可完成次数 · 可选"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "剩餘可完成次數 · 選填"
+        }
+      }
+    }
+  },
+  "Recorded in Life": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Recorded in Life"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "In Life aufgezeichnet"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registrado en Life"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Enregistré dans Life"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registrato in Life"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zapisano w Life"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Registado no Life"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Записано в Life"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已记录到 Life"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "已記錄到 Life"
+        }
+      }
+    }
+  },
+  "Open workout to edit": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Open workout to edit"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Training zum Bearbeiten öffnen"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Abrir entrenamiento para editar"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ouvrir l’entraînement pour le modifier"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Apri allenamento da modificare"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Otwórz trening do edycji"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Abrir treino para editar"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Открыть тренировку для редактирования"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "打开训练以编辑"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "開啟訓練以編輯"
+        }
+      }
+    }
+  },
+  "Automatic rep range": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Automatic rep range"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Automatischer Wiederholungsbereich"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Rango de repeticiones automático"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Plage de répétitions automatique"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Intervallo ripetizioni automatico"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Automatyczny zakres powtórzeń"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Intervalo automático de repetições"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Автоматический диапазон повторений"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "自动次数范围"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "自動次數範圍"
+        }
+      }
+    }
+  },
+  "RIR is the number of extra reps you could have completed. Leave set RIR blank when unknown.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR is the number of extra reps you could have completed. Leave set RIR blank when unknown."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR gibt an, wie viele weitere Wiederholungen möglich gewesen wären. Bei unbekanntem RIR das Feld leer lassen."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR indica cuántas repeticiones más podrías haber hecho. Déjalo en blanco si no lo sabes."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Le RIR indique combien de répétitions supplémentaires vous auriez pu faire. Laissez ce champ vide si vous ne le savez pas."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Il RIR indica quante ripetizioni aggiuntive avresti potuto fare. Lascia il campo vuoto se non lo sai."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR to liczba dodatkowych powtórzeń, które można było wykonać. Jeśli nie wiesz, zostaw pole puste."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR é o número de repetições adicionais que poderia ter feito. Deixe em branco se não souber."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR — число дополнительных повторений, которые вы могли бы сделать. Если оно неизвестно, оставьте поле пустым."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR 表示当时还能完成的额外次数。不确定时，请将该组的 RIR 留空。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "RIR 表示當時還能完成的額外次數。不確定時，請將該組的 RIR 留空。"
+        }
+      }
+    }
+  },
+  "Life chooses the rep range from your recent logged work. Missing RIR stays unknown.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life chooses the rep range from your recent logged work. Missing RIR stays unknown."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life bestimmt den Wiederholungsbereich anhand deiner letzten Aufzeichnungen. Fehlender RIR bleibt unbekannt."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life elige el rango según tus registros recientes. El RIR que falta sigue siendo desconocido."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life choisit la plage selon vos entraînements récents enregistrés. Un RIR manquant reste inconnu."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life sceglie l’intervallo dai tuoi allenamenti recenti registrati. Il RIR mancante resta sconosciuto."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life wybiera zakres na podstawie ostatnich zapisanych treningów. Brak RIR oznacza wartość nieznaną."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O Life escolhe o intervalo com base nos treinos recentes registados. O RIR em falta permanece desconhecido."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life выбирает диапазон по недавним записям. Отсутствующий RIR остаётся неизвестным."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 根据近期训练记录选择次数范围。未填写的 RIR 会保持未知。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 根據近期訓練紀錄選擇次數範圍。未填寫的 RIR 會保持未知。"
+        }
+      }
+    }
+  },
+  "Your chosen rep range stays pinned until you turn automatic back on.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your chosen rep range stays pinned until you turn automatic back on."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Dein Wiederholungsbereich bleibt festgelegt, bis du die Automatik wieder einschaltest."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "El rango elegido se mantiene fijo hasta que vuelvas a activar el modo automático."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La plage choisie reste fixe jusqu’à la réactivation du mode automatique."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "L’intervallo scelto resta fisso finché non riattivi la modalità automatica."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Wybrany zakres pozostaje stały do ponownego włączenia trybu automatycznego."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O intervalo escolhido mantém-se fixo até reativar o modo automático."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Выбранный диапазон закреплён, пока вы не включите автоматический режим."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "所选次数范围会保持固定，直到重新开启自动模式。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "所選次數範圍會保持固定，直到重新開啟自動模式。"
+        }
+      }
+    }
+  },
+  "Upcoming targets update in Life. Past results stay unchanged.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Upcoming targets update in Life. Past results stay unchanged."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Künftige Ziele werden in Life aktualisiert. Frühere Ergebnisse bleiben unverändert."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Los próximos objetivos se actualizan en Life. Los resultados anteriores no cambian."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Les prochains objectifs sont mis à jour dans Life. Les résultats passés restent inchangés."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Gli obiettivi futuri si aggiornano in Life. I risultati passati restano invariati."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Przyszłe cele aktualizują się w Life. Poprzednie wyniki pozostają bez zmian."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Os próximos objetivos são atualizados no Life. Os resultados anteriores não mudam."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Будущие цели обновляются в Life. Прошлые результаты не меняются."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "未来目标会在 Life 中更新。过去的结果保持不变。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "未來目標會在 Life 中更新。過去的結果保持不變。"
+        }
+      }
+    }
+  },
+  "Life recomputes upcoming targets nightly from your saved workout history.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life recomputes upcoming targets nightly from your saved workout history."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life berechnet künftige Ziele jede Nacht anhand deiner gespeicherten Trainings neu."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life recalcula cada noche los próximos objetivos a partir de tu historial guardado."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life recalcule chaque nuit les prochains objectifs à partir de votre historique enregistré."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life ricalcola ogni notte gli obiettivi futuri dalla cronologia salvata."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life co noc przelicza przyszłe cele na podstawie zapisanej historii treningów."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "O Life recalcula todas as noites os próximos objetivos a partir do histórico guardado."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life каждую ночь пересчитывает будущие цели по сохранённой истории тренировок."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 每晚根据已保存的训练记录重新计算未来目标。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Life 每晚根據已儲存的訓練紀錄重新計算未來目標。"
+        }
+      }
+    }
+  },
+  "Save corrections": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Save corrections"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Korrekturen speichern"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Guardar correcciones"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Enregistrer les corrections"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Salva correzioni"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zapisz poprawki"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Guardar correções"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Сохранить исправления"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "保存修正"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "儲存修正"
+        }
+      }
+    }
+  },
+  "Historical editing needs an updated Life connection. Your changes stay on this phone.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Historical editing needs an updated Life connection. Your changes stay on this phone."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Zum Bearbeiten früherer Trainings ist eine aktualisierte Life-Verbindung nötig. Deine Änderungen bleiben auf diesem iPhone."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Editar el historial requiere una conexión Life actualizada. Tus cambios permanecen en este teléfono."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La modification de l’historique nécessite une connexion Life à jour. Vos modifications restent sur ce téléphone."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "La modifica della cronologia richiede una connessione Life aggiornata. Le modifiche restano su questo telefono."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edycja historii wymaga aktualnego połączenia z Life. Zmiany pozostają na tym telefonie."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Editar o histórico requer uma ligação Life atualizada. As alterações ficam neste telefone."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Для редактирования истории нужно обновлённое подключение Life. Изменения остаются на этом телефоне."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "编辑历史记录需要更新 Life 连接。您的更改会保留在此手机上。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "編輯歷史紀錄需要更新 Life 連線。您的更改會保留在此手機上。"
+        }
+      }
+    }
+  },
+  "Progression and rep ranges": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Progression and rep ranges"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Steigerung und Wiederholungsbereiche"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Progresión y rangos de repeticiones"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Progression et plages de répétitions"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Progressione e intervalli ripetizioni"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Progresja i zakresy powtórzeń"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Progressão e intervalos de repetições"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Прогрессия и диапазоны повторений"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "进阶和次数范围"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "進階和次數範圍"
+        }
+      }
+    }
+  },
+  "Edit weight, reps or RIR below. Saving keeps this workout completed.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edit weight, reps or RIR below. Saving keeps this workout completed."
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Gewicht, Wiederholungen oder RIR unten bearbeiten. Das Training bleibt nach dem Speichern abgeschlossen."
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edita el peso, las repeticiones o el RIR abajo. El entrenamiento seguirá completado al guardar."
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Modifiez ci-dessous le poids, les répétitions ou le RIR. L’entraînement reste terminé après enregistrement."
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Modifica peso, ripetizioni o RIR sotto. Dopo il salvataggio l’allenamento resta completato."
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edytuj poniżej ciężar, powtórzenia lub RIR. Zapisanie nie zmieni ukończonego statusu treningu."
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Edite abaixo o peso, as repetições ou o RIR. O treino mantém-se concluído ao guardar."
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Измените ниже вес, повторения или RIR. После сохранения тренировка останется завершённой."
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "在下方编辑重量、次数或 RIR。保存后训练仍保持已完成状态。"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "在下方編輯重量、次數或 RIR。儲存後訓練仍保持已完成狀態。"
+        }
+      }
+    }
+  },
   "Recovering an earlier Life change. This workout stays on your phone.": {
     "localizations": {
       "en": {

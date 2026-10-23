@@ -67,6 +67,10 @@ struct WorkoutTrackerSessionView: View {
                         if !current.notes.isEmpty { Text(current.notes).font(StrandFont.body) }
                         if !current.readiness.isEmpty { Text("Readiness: \(current.readiness)").font(StrandFont.subhead) }
                         if !current.rating.isEmpty { Text("Rating: \(current.rating)").font(StrandFont.subhead) }
+                        if current.status == "completed" {
+                            Text("Edit weight, reps or RIR below. Saving keeps this workout completed.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
                     }
                 }
                 ForEach(current.exercises) { exercise in

@@ -14,7 +14,6 @@ struct WorkoutInlineExerciseCard: View {
     var hasUnsavedEdits = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showingSwap = false
-    @State private var showRIR = false
     @State private var replacement = ""
     @State private var historySet: WorkoutTrackerDashboard.SetLog?
     private var mode: WorkoutTrackerLoadMode? { .init(rawValue: exercise.loadMode) }
@@ -33,8 +32,12 @@ struct WorkoutInlineExerciseCard: View {
                         Button { showingSwap.toggle() } label: { Label("Swap", systemImage: "arrow.triangle.2.circlepath") }
                             .buttonStyle(NoopButtonStyle(.secondary)).disabled(hasUnsavedEdits)
                         Menu {
-                            Toggle("Show RIR", isOn: $showRIR)
                             if let revision {
+                                if let mode, mode != .duration, !exercise.isPriming, exercise.progressionPreference != nil {
+                                    NavigationLink("Progression and rep range") {
+                                        WorkoutProgressionPreferencesView(session: session, exercise: exercise, revision: revision)
+                                    }.disabled(hasUnsavedEdits)
+                                }
                                 ForEach(exercise.sets) { row in
                                     NavigationLink("Set \(row.setNumber) · targets") {
                                         WorkoutTrackerSetEditor(session: session, exercise: exercise, row: row,
@@ -52,6 +55,7 @@ struct WorkoutInlineExerciseCard: View {
                 if let mode {
                     Text(mode.explanation).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
+                if mode != .duration { Text("Reps in reserve · optional").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                 if !exercise.notes.isEmpty { Text(exercise.notes).font(StrandFont.subhead).fixedSize(horizontal: false, vertical: true) }
                 if !exercise.originalExerciseName.isEmpty && exercise.originalExerciseName != exercise.name {
                     Text("Replaces \(exercise.originalExerciseName)").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -76,18 +80,10 @@ struct WorkoutInlineExerciseCard: View {
                         .id("replace-\(exercise.exerciseKey)-\(revision)")
                     }
                 }
-                if !typeSize.isAccessibilitySize {
-                    HStack(spacing: NoopMetrics.space2) {
-                        Text("Set").frame(minWidth: NoopMetrics.minimumTouchTarget, alignment: .leading)
-                        if mode?.hasMass == true { Text(system == .imperial ? "lb" : "kg").frame(maxWidth: .infinity, alignment: .leading) }
-                        if mode != .duration { Text("Reps").frame(maxWidth: .infinity, alignment: .leading) }
-                        Text("Done").frame(minWidth: NoopMetrics.minimumTouchTarget, alignment: .center)
-                    }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
                 ForEach(exercise.sets) { row in
                     if let revision {
                         WorkoutInlineSetRow(session: session, exercise: exercise, row: row,
-                            system: system, showRIR: showRIR, drafts: drafts, editingEnabled: editingEnabled,
+                            system: system, showRIR: mode != .duration, drafts: drafts, editingEnabled: editingEnabled,
                             showHistory: { historySet = row })
                             .id("\(row.id)-\(system.rawValue)")
                     } else {
