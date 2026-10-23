@@ -68,7 +68,7 @@ struct WorkoutPreviousSetPage: Codable, Equatable {
               previous.exerciseKey == current.exerciseKey, previous.loadMode == current.loadMode,
               previous.setType == current.setType, previous.setNumber == current.setNumber,
               previous.actualReps >= 0, previous.scheduledDate.count == 10,
-              previous.rir.map({ $0.isFinite && (0...5).contains($0) && $0.rounded() == $0 }) ?? true,
+              previous.rir.map({ $0.isFinite && (0...5).contains($0) }) ?? true,
               previous.loadBasis == mode.loadBasis,
               previous.measurementKind == (mode.hasMass ? "mass_reps" : mode == .duration ? "duration" : "bodyweight_reps"),
               mode.hasMass ? (previous.loadUnit == "lb" && previous.actualLoad.map { $0.isFinite && $0 >= 0 } == true)
@@ -105,7 +105,7 @@ struct WorkoutPreviousSetPage: Codable, Equatable {
             dateLabel: "Scheduled \(previous.scheduledDate)",
             completionLabel: completed.map { "Completed \($0.formatted(date: .abbreviated, time: .shortened))" },
             result: result, loadDetail: detail, unavailable: nil,
-            rirLabel: previous.rir.map { "RIR \($0.formatted(.number.precision(.fractionLength(0))))" })
+            rirLabel: previous.rir.map { "RIR \($0.formatted(.number.precision(.fractionLength(0...1))))" })
     }
 
     private var unavailableExplanation: String {

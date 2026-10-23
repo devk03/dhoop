@@ -66,14 +66,16 @@ final class WorkoutPreviousSetTests: XCTestCase {
     func testPriorRIRIsOptionalStoredEvidenceAndNeverDefaultsToZeroOrTarget() throws {
         let old = try decode(response())
         XCTAssertNil(old.previous?.rir); XCTAssertNil(old.report(exerciseName: "Bench", system: .imperial).rirLabel)
-        for rir in [0, 2, 5] {
+        for rir in [0.0, 2.0, 2.5, 5.0] {
             let page = try decode(response { object in
                 var previous = object["previous"] as! [String: Any]; previous["rir"] = rir; object["previous"] = previous
             })
             try page.validate(session: session(), exercise: exercise(), set: row)
-            XCTAssertEqual(page.report(exerciseName: "Bench", system: .imperial).rirLabel, "RIR \(rir)")
+            XCTAssertEqual(page.previous?.rir, rir)
+            XCTAssertEqual(page.report(exerciseName: "Bench", system: .imperial).rirLabel,
+                "RIR \(rir.formatted(.number.precision(.fractionLength(0...1))))")
         }
-        for rir in [-1.0, 6.0, 2.5] {
+        for rir in [-1.0, 6.0] {
             let page = try decode(response { object in
                 var previous = object["previous"] as! [String: Any]; previous["rir"] = rir; object["previous"] = previous
             })
