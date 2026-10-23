@@ -166,6 +166,21 @@ final class WorkoutFrontendClientTests: XCTestCase {
         XCTAssertEqual(client.state.operations.first?.bytes, bytes)
     }
 
+    func testDirectRejectedReceiptIsTerminalForRetainedQueueDelivery() async throws {
+        let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in
+            if endpoint == .frontendCapabilities { return try self.capabilities() }
+            XCTAssertEqual(endpoint, .frontendCommand)
+            let intent = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body))
+            return try self.receipt(intent, state: "rejected")
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(client)
+        let id = try client.prepare(command: change, revision: 4)
+        let result = try await client.deliverRetained(id)
+        XCTAssertEqual(result, .rejected); XCTAssertNil(client.unresolved)
+        XCTAssertEqual(client.state.operations.first?.id, id)
+        XCTAssertEqual(client.state.operations.first?.receipt?.state, .rejected)
+    }
+
     func testTimeoutRetainsExactIntentAcrossRelaunchAndRecoveryNeverRepeatsWrite() async throws {
         let file = store()
         var posts: [Data] = []

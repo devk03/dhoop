@@ -160,6 +160,9 @@ final class WorkoutFrontendClient: ObservableObject {
                state.capabilities?.sessionDateScheduling != true { throw Failure.disabled }
             do { try await submit(id) }
             catch {
+                // A valid rejected envelope can also be returned directly (including a replay).
+                // It is terminal queue evidence even though submit reports rejection to its caller.
+                if state.operations.first(where: { $0.id == id })?.state == .rejected { return .rejected }
                 let conflict: Bool
                 switch error {
                 case WorkoutSyncTransportError.http(409), WorkoutSyncTransportError.rejected: conflict = true
