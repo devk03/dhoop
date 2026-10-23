@@ -72,12 +72,55 @@ Builds require disk headroom; the audit does not authorize erasing owner data to
   `8db4a4f2-b043-465b-86e7-cb71b7507765`. Its rejected legacy operation is retained as an immutable
   no-effect receipt. No new API or database migration is required by the native change.
 - Native UI regressions now cover legacy recovery, offline save/relaunch with the same operation,
-  and rejected-save review before an explicit replacement. They are **not yet run**. Fixtures are
-  DEBUG/simulator-only and do not access production credentials or create real workouts.
-- Build 510 is the next source build number. It is **not built or installed**. The physical phone
-  still has build 509; no claim is made that the user's pending save has recovered on that phone.
+  and rejected-save review before an explicit replacement. They are **not run**: the user's later
+  direct instruction waived simulator checks and requested building/installing on the phone.
+  Fixtures are DEBUG/simulator-only and do not access production credentials or create real workouts.
+- Release build **510 is built, signed, installed in place, and launched on the physical iPhone**
+  “0A-Homeboy.” Fresh device inventory confirms version 11.8.0/build 510. Source: `b76d6a4`.
+  Strict deep signature verification passed, with unchanged bundle, team, APNs development,
+  Keychain and App Group identities. The actual app compiler command uses `-O`.
+- Executable SHA-256:
+  `a726b859a920a4e5365641b951107c6540ddfdf5efac1617908ae47892eb25da`.
+  Artifact: `/private/tmp/dhoop-510-products/Release-iphoneos/NOOP Staging.app`.
+  Build log: `/private/tmp/dhoop-510-direct-device-build-final.log`.
+  Signing/install/launch/inventory evidence: `/private/tmp/dhoop-510-signature-proof.json`,
+  `/private/tmp/dhoop-510-physical-install.json`, `/private/tmp/dhoop-510-physical-launch.json`,
+  and `/private/tmp/dhoop-510-installed-inventory.json`.
+- A bounded physical read before and after launch verifies actual startup queue recovery:
+  29 committed plus one uncertain operation became 29 committed plus two terminal rejected
+  operations, with zero unresolved operations. The legacy operation and the newer stale frozen
+  submission both have verified rejected receipts. Every previous operation's immutable bytes
+  remain unchanged. The five edited sets and the frozen pending draft remain exactly unchanged.
+  Evidence: `/private/tmp/dhoop-510-queue-comparison.json`.
+- This verifies installation, retention and terminal receipt recovery; it **does not prove the
+  newer workout values were accepted**. The retained stale submission requires review of the
+  current Life workout and another explicit Save. No synthetic production workout was created,
+  no new Save was clicked, and no replacement operation ID was manufactured.
 
-After at least 10–20 GB of disk headroom is available, run these gates sequentially:
+## Direct build and optional broader checks
+
+Disk headroom increased enough to attempt the existing cached device build. Xcode initially
+blocked in macOS file coordination while opening the generated project inside Documents. A
+temporary project outside Documents, referring to the same current source and package lock,
+resolved that block. Signing then rejected Finder/resource-fork metadata on generated products
+inside Documents. Moving only generated products outside Documents resolved signing. No files,
+databases or app data were erased, and no entitlements or signing identifiers were weakened.
+
+The successful direct build reused the existing device and package caches:
+
+```bash
+xcodebuild -project /private/tmp/dhoop-510-project/Strand.xcodeproj \
+  -scheme NOOPiOS -configuration Release -destination 'generic/platform=iOS' \
+  -derivedDataPath /Users/devkunjadia/Documents/ChatGPT/Zhoop/build/DhoopDevice \
+  -clonedSourcePackagesDirPath /Users/devkunjadia/Documents/ChatGPT/Zhoop/build/DerivedData/SourcePackages \
+  -disableAutomaticPackageResolution -parallelizeTargets -jobs 2 \
+  CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=8MSX699Z2T \
+  BUILD_DIR=/private/tmp/dhoop-510-products build
+```
+
+The full app-hosted model tests and simulator UI checks below remain available for broader QA;
+the user explicitly waived simulator checks for this installation. They have not been reported
+as passing:
 
 ```bash
 xcodegen generate
