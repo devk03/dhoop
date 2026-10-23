@@ -49,4 +49,18 @@ final class WorkoutInlineSetDraftTests: XCTestCase {
         XCTAssertFalse(draft.conflicts(with: row()))
         XCTAssertEqual(draft.load, "190")
     }
+    func testRIRZeroIsRecordedAndBlankExplicitlyClearsRatherThanBecomingZero() throws {
+        var source = row(load: 190, reps: 6, completed: true); source.rir = 2
+        var draft = WorkoutInlineSetDraft(row: source, massScale: 1)
+        draft.rir = "0"
+        let zero = try draft.command(sessionID: 10, programID: 1, mode: .barbell, completed: true)
+        XCTAssertEqual(zero["rir"], .number(0)); XCTAssertNil(zero["actualLoad"]); XCTAssertNil(zero["actualReps"])
+        draft.rir = ""
+        XCTAssertEqual(try draft.command(sessionID: 10, programID: 1, mode: .barbell, completed: true)["rir"], .null)
+        for invalid in ["-1", "6", "2.5", "NaN"] {
+            draft.rir = invalid
+            XCTAssertThrowsError(try draft.command(sessionID: 10, programID: 1, mode: .barbell, completed: true))
+        }
+        XCTAssertEqual(WorkoutInlineSetDraft(row: row(), massScale: 1).rir, "")
+    }
 }

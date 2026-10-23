@@ -52,6 +52,9 @@ struct WorkoutTrackerDashboard: Codable, Equatable {
         let originalExerciseName: String
         let isPriming: Bool
         var sets: [SetLog]
+        var repMin: Int? = nil
+        var repMax: Int? = nil
+        var progressionPreference: WorkoutProgressionPreference? = nil
     }
     struct Finisher: Codable, Equatable {
         let id: Int

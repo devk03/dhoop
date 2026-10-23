@@ -54,6 +54,8 @@ struct WorkoutFrontendCapabilities: Codable, Equatable {
     var sessionCompletion: Bool? = nil
     var sessionDateScheduling: Bool? = nil
     var sessionBatchSave: Bool? = nil
+    var historicalSessionEditing: Bool? = nil
+    var progressionPreferences: Bool? = nil
     func validate() throws {
         guard schemaVersion == 1, lifeRevision >= 0, actions.count <= 30,
               Set(actions).count == actions.count, Set(actions).isSubset(of: Self.supportedActions)
@@ -61,7 +63,7 @@ struct WorkoutFrontendCapabilities: Codable, Equatable {
     }
     static let supportedActions: Set<String> = ["create_mesocycle", "restart_half_marathon_program", "create_four_lift_program",
         "update_athlete_profile", "recalculate_half_marathon_weights", "substitute_exercise", "update_set", "reset_mesocycle",
-        "start_session", "update_session", "update_benchmarks", "tune_exercise"]
+        "start_session", "update_session", "update_benchmarks", "tune_exercise", "update_progression_preferences"]
 }
 
 struct WorkoutFrontendOperation: Codable, Equatable, Identifiable {

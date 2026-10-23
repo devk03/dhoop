@@ -181,6 +181,36 @@ final class WorkoutFrontendClientTests: XCTestCase {
         XCTAssertEqual(client.state.operations.first?.receipt?.state, .rejected)
     }
 
+    func testProgressionPreferenceWritesAndReplayRequireExplicitCapability() async throws {
+        var allowed = false, posts = 0, lookups = 0
+        var original: WorkoutFrontendIntent?
+        let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in
+            if endpoint == .frontendCapabilities {
+                return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true,
+                    "frontendStart": false, "progressionPreferences": allowed, "lifeRevision": 4,
+                    "actions": ["update_progression_preferences"]])
+            }
+            if case .frontendReceipt = endpoint {
+                lookups += 1; return try self.receipt(XCTUnwrap(original), state: "not_observed")
+            }
+            posts += 1; original = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body))
+            throw URLError(.timedOut)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(client)
+        let command: [String: WorkoutTrackerValue] = ["action": .string("update_progression_preferences"),
+            "mesocycleId": .number(1), "sessionExerciseId": .number(11), "mode": .string("manual"),
+            "repMin": .number(6), "repMax": .number(10), "targetRir": .number(2)]
+        XCTAssertThrowsError(try client.prepare(command: command, revision: 4)); XCTAssertEqual(posts, 0)
+        allowed = true; try await client.checkCapabilities()
+        let id = try client.prepare(command: command, revision: 4)
+        do { try await client.submit(id) } catch { }
+        let frozen = client.unresolved?.bytes
+        allowed = false; try await client.checkCapabilities()
+        do { _ = try await client.deliverRetained(id); XCTFail("Removed permission must stop retained replay") } catch { }
+        XCTAssertEqual(posts, 1); XCTAssertEqual(lookups, 1)
+        XCTAssertEqual(client.unresolved?.id, id); XCTAssertEqual(client.unresolved?.bytes, frozen)
+    }
+
     func testTimeoutRetainsExactIntentAcrossRelaunchAndRecoveryNeverRepeatsWrite() async throws {
         let file = store()
         var posts: [Data] = []

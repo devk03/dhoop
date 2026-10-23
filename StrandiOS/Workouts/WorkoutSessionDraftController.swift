@@ -99,6 +99,7 @@ final class WorkoutSessionDraftController: ObservableObject {
     var canEdit: Bool { !storageUnavailable && !state.finishQueued && state.pending?.finishing != true }
     private var connectionCanSend: Bool {
         !storageUnavailable && !frontend.storageUnavailable && frontend.state.enabled &&
+        (state.baseline.status != "completed" || frontend.state.capabilities?.historicalSessionEditing == true) &&
         frontend.state.capabilities?.manualCommands == true && frontend.state.capabilities?.actions.contains("update_session") == true &&
         frontend.state.origin == state.origin && frontend.state.installationId == state.installationId &&
         frontend.state.capabilities?.sessionBatchSave == true

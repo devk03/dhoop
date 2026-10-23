@@ -82,6 +82,7 @@ final class WorkoutFrontendClient: ObservableObject {
         if command["sets"] != nil {
             guard action == "update_session", state.capabilities?.sessionBatchSave == true else { throw Failure.disabled }
         }
+        if action == "update_progression_preferences", state.capabilities?.progressionPreferences != true { throw Failure.disabled }
         let manualCompletion = action == "update_session" && state.capabilities?.sessionCompletion == true &&
             [WorkoutTrackerValue.string("completed"), .string("planned")].contains(command["status"] ?? .null)
         if manualCompletion && command["date"] != nil { throw Failure.disabled }
@@ -158,6 +159,7 @@ final class WorkoutFrontendClient: ObservableObject {
             }
             if action == "update_session", recovered.intent.command["date"] != nil,
                state.capabilities?.sessionDateScheduling != true { throw Failure.disabled }
+            if action == "update_progression_preferences", state.capabilities?.progressionPreferences != true { throw Failure.disabled }
             do { try await submit(id) }
             catch {
                 // A valid rejected envelope can also be returned directly (including a replay).

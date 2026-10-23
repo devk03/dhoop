@@ -223,13 +223,17 @@ final class WorkoutTrackerClient: ObservableObject {
         return page
     }
     func readHistorySession(_ row: WorkoutHistoryPage.Session) async throws -> WorkoutTrackerDashboard {
+        try await readHistorySession(mesocycleId: row.mesocycleId, sessionId: row.id)
+    }
+    func readHistorySession(mesocycleId: Int, sessionId: Int) async throws -> WorkoutTrackerDashboard {
+        guard mesocycleId > 0, sessionId > 0 else { throw WorkoutTrackerContractError.invalidSnapshot }
         let ticket = generation, config = try credentials()
         guard config.enabled else { throw WorkoutSyncTransportError.disabled }
-        let data = try await send(.dashboard(mesocycleId: row.mesocycleId, sessionId: row.id, cursor: 0, limit: 1), nil, config)
+        let data = try await send(.dashboard(mesocycleId: mesocycleId, sessionId: sessionId, cursor: 0, limit: 1), nil, config)
         let page = try JSONDecoder().decode(WorkoutTrackerDashboard.self, from: data)
         try page.validate()
-        guard generation == ticket, state.enabled, page.dashboard.activeMesocycle?.id == row.mesocycleId,
-              page.dashboard.sessions.count == 1, page.dashboard.sessions.first?.id == row.id else { throw WorkoutTrackerContractError.invalidSnapshot }
+        guard generation == ticket, state.enabled, page.dashboard.activeMesocycle?.id == mesocycleId,
+              page.dashboard.sessions.count == 1, page.dashboard.sessions.first?.id == sessionId else { throw WorkoutTrackerContractError.invalidSnapshot }
         return page
     }
 

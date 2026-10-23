@@ -63,6 +63,23 @@ final class WorkoutPreviousSetTests: XCTestCase {
         })
         XCTAssertThrowsError(try changedCurrent.validate(session: session(), exercise: exercise(), set: row))
     }
+    func testPriorRIRIsOptionalStoredEvidenceAndNeverDefaultsToZeroOrTarget() throws {
+        let old = try decode(response())
+        XCTAssertNil(old.previous?.rir); XCTAssertNil(old.report(exerciseName: "Bench", system: .imperial).rirLabel)
+        for rir in [0, 2, 5] {
+            let page = try decode(response { object in
+                var previous = object["previous"] as! [String: Any]; previous["rir"] = rir; object["previous"] = previous
+            })
+            try page.validate(session: session(), exercise: exercise(), set: row)
+            XCTAssertEqual(page.report(exerciseName: "Bench", system: .imperial).rirLabel, "RIR \(rir)")
+        }
+        for rir in [-1.0, 6.0, 2.5] {
+            let page = try decode(response { object in
+                var previous = object["previous"] as! [String: Any]; previous["rir"] = rir; object["previous"] = previous
+            })
+            XCTAssertThrowsError(try page.validate(session: session(), exercise: exercise(), set: row))
+        }
+    }
     func testMissingActualsAndUnknownReasonsDoNotTurnTargetsIntoResults() throws {
         for reason in ["actuals_missing", "exercise_changed", "new_server_reason"] {
             let page = try decode(response { $0["availability"] = "unavailable"; $0["previous"] = NSNull(); $0["unavailableReason"] = reason })

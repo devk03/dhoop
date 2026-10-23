@@ -34,6 +34,7 @@ struct WorkoutPreviousSetPage: Codable, Equatable {
         let loadUnit: String?
         let loadBasis: String
         let measurementKind: String
+        var rir: Double? = nil
     }
     let schemaVersion: Int
     let lifeRevision: Int
@@ -67,6 +68,7 @@ struct WorkoutPreviousSetPage: Codable, Equatable {
               previous.exerciseKey == current.exerciseKey, previous.loadMode == current.loadMode,
               previous.setType == current.setType, previous.setNumber == current.setNumber,
               previous.actualReps >= 0, previous.scheduledDate.count == 10,
+              previous.rir.map({ $0.isFinite && (0...5).contains($0) && $0.rounded() == $0 }) ?? true,
               previous.loadBasis == mode.loadBasis,
               previous.measurementKind == (mode.hasMass ? "mass_reps" : mode == .duration ? "duration" : "bodyweight_reps"),
               mode.hasMass ? (previous.loadUnit == "lb" && previous.actualLoad.map { $0.isFinite && $0 >= 0 } == true)
@@ -102,7 +104,8 @@ struct WorkoutPreviousSetPage: Codable, Equatable {
             weekLabel: "Program week \(previous.weekNumber)", workoutTitle: previous.title,
             dateLabel: "Scheduled \(previous.scheduledDate)",
             completionLabel: completed.map { "Completed \($0.formatted(date: .abbreviated, time: .shortened))" },
-            result: result, loadDetail: detail, unavailable: nil)
+            result: result, loadDetail: detail, unavailable: nil,
+            rirLabel: previous.rir.map { "RIR \($0.formatted(.number.precision(.fractionLength(0))))" })
     }
 
     private var unavailableExplanation: String {

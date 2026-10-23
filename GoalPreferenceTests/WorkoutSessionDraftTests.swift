@@ -15,7 +15,7 @@ final class WorkoutSessionDraftTests: XCTestCase {
     }
     private func capabilities() throws -> Data {
         try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true, "frontendStart": false,
-            "sessionCompletion": true, "sessionBatchSave": true, "lifeRevision": 4, "actions": ["update_session", "update_set"]])
+            "sessionCompletion": true, "sessionBatchSave": true, "historicalSessionEditing": true, "lifeRevision": 4, "actions": ["update_session", "update_set"]])
     }
     private func receipt(_ intent: WorkoutFrontendIntent, revision: Int = 5, state: String = "committed") throws -> Data {
         var value: [String: Any] = ["schemaVersion": 1, "operationId": intent.operationId.uuidString.lowercased(), "state": state, "lifeRevision": revision]
@@ -462,6 +462,33 @@ final class WorkoutSessionDraftTests: XCTestCase {
         XCTAssertEqual(posts.count, 3); XCTAssertNotEqual(posts.last?.operationId, frozen.id)
         XCTAssertEqual(posts.last?.expectedLifeRevision, 6)
         XCTAssertNil(controller.state.pending); XCTAssertFalse(controller.state.hasChanges)
+    }
+
+    func testHistoricalRIRCorrectionUsesWholeWorkoutSaveWithoutReopeningOrChangingCompletionDate() async throws {
+        var value = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(session(load: 135, reps: 8, status: "completed"))) as? [String: Any])
+        value["scheduledDate"] = "2024-03-11"; value["completedAt"] = "2024-03-12T01:30:00Z"
+        let historical = try JSONDecoder().decode(WorkoutTrackerDashboard.Session.self, from: JSONSerialization.data(withJSONObject: value))
+        var posts: [WorkoutFrontendIntent] = []
+        let frontend = WorkoutFrontendClient(store: .init(url: file("commands.json")), send: { endpoint, body, _ in
+            if endpoint == .frontendCapabilities { return try self.capabilities() }
+            let intent = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body)); posts.append(intent)
+            return try self.receipt(intent)
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(frontend)
+        let store = WorkoutSessionDraftFileStore(url: file("draft.json"))
+        let controller = WorkoutSessionDraftController(initial: initial(historical), store: store, frontend: frontend)
+        var edit = try XCTUnwrap(controller.state.entry(1)); edit.rir = "1"; controller.edit(edit)
+        XCTAssertTrue(posts.isEmpty); XCTAssertEqual(try store.load()?.entry(1)?.rir, "1")
+        try controller.requestSave(finishing: false, refresh: { throw URLError(.notConnectedToInternet) })
+        await controller.waitForDelivery()
+        XCTAssertEqual(posts.count, 1)
+        XCTAssertEqual(posts[0].command["sets"], .array([.object(["setId": .number(1), "rir": .number(1)])]))
+        XCTAssertNil(posts[0].command["status"]); XCTAssertNil(posts[0].command["date"])
+        XCTAssertEqual(controller.state.baseline.status, "completed")
+        XCTAssertEqual(controller.state.baseline.completedAt, "2024-03-12T01:30:00Z")
+        XCTAssertEqual(controller.state.baseline.scheduledDate, "2024-03-11")
+        XCTAssertEqual(controller.state.row(1)?.actualLoad, 135); XCTAssertEqual(controller.state.row(1)?.actualReps, 8)
+        XCTAssertEqual(controller.state.row(1)?.rir, 1); XCTAssertNil(controller.state.row(2)?.rir)
     }
 
 }

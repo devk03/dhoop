@@ -11,4 +11,5 @@ struct WorkoutPreviousSetReport: Equatable {
     let result: String?
     let loadDetail: String?
     let unavailable: String?
+    var rirLabel: String? = nil
 }
