@@ -41,10 +41,10 @@ struct CalendarDayTimelineView<Footer: View>: View {
                 .refreshable { await onRefresh() }
                 .task {
                     await Task.yield()
-                    proxy.scrollTo(timeline.initialHour(now: captureNow ?? Date(), placements: placements), anchor: .top)
+                    proxy.scrollTo(timeline.initialHour(now: captureNow ?? Date(), placements: placements), anchor: .topLeading)
                 }
                 .onChange(of: focusRevision) { _, _ in
-                    proxy.scrollTo(timeline.initialHour(now: captureNow ?? Date(), placements: placements), anchor: .top)
+                    proxy.scrollTo(timeline.initialHour(now: captureNow ?? Date(), placements: placements), anchor: .topLeading)
                 }
             }
             }
