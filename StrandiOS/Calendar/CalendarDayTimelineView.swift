@@ -12,6 +12,7 @@ struct CalendarDayTimelineView<Footer: View>: View {
     @ViewBuilder var footer: () -> Footer
     @ScaledMetric(relativeTo: .body) private var hourHeight = NoopMetrics.calendarHourHeight
     @ScaledMetric(relativeTo: .caption) private var gutter = NoopMetrics.calendarTimeGutter
+    @ScaledMetric(relativeTo: .body) private var eventMinimumWidth = NoopMetrics.calendarEventMinimumWidth
     private var placements: [CalendarDayTimeline.Placement] {
         timeline.placements(events, minimumDuration: Double(NoopMetrics.minimumTouchTarget / hourHeight) * 3600)
     }
@@ -19,7 +20,7 @@ struct CalendarDayTimelineView<Footer: View>: View {
         GeometryReader { viewport in
             let columns = placements.map(\.columnCount).max() ?? 1
             let width = max(viewport.size.width - NoopMetrics.screenHPadding * 2,
-                gutter + CGFloat(columns) * NoopMetrics.calendarEventMinimumWidth)
+                gutter + CGFloat(columns) * eventMinimumWidth)
             VStack(alignment: .leading, spacing: NoopMetrics.space2) {
             allDayStrip.padding(.horizontal, NoopMetrics.screenHPadding)
             ScrollViewReader { proxy in
