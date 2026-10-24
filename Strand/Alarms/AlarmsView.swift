@@ -20,7 +20,7 @@ struct AlarmsView: View {
     }
 }
 
-private enum AlarmRoute: Hashable { case detail(String), slots, history }
+enum AlarmRoute: Hashable { case detail(String), slots, history }
 
 private struct AlarmsContent: View, Equatable {
     @ObservedObject var manager: DhoopAlarmManager

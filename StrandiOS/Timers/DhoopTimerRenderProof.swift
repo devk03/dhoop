@@ -86,14 +86,14 @@ enum DhoopTimerRenderProof {
         if let data = try? JSONSerialization.data(withJSONObject: result) { try? data.write(to: folder.appendingPathComponent("result.json"), options: .atomic) }
     }
     private static func overview(rows: [AlarmOverviewRow], buzz: BuzzDeliveryCoordinator) -> some View {
-        ScreenScaffold(title: nil) {
+        NavigationStack { ScreenScaffold(title: nil) {
             VStack(spacing: NoopMetrics.space4) {
                 AlarmHomeHeader(section: .constant("Alarms"), showSettings: {}, add: {})
                 AlarmConnectionBadge(connected: true, battery: 78)
                 AlarmOverviewRows(rows: rows, add: {}, toggle: { _, _ in }, edit: { _ in }, skip: { _ in }, remove: { _ in })
                 AlarmTestBuzzButton(coordinator: buzz, deviceID: "synthetic-strap", ready: true)
             }
-        }
+        }.navigationDestination(for: AlarmRoute.self) { _ in EmptyView() }.toolbar(.hidden, for: .navigationBar) }
     }
     private static func timerScreen(_ timer: DhoopTimerController) -> some View {
         ScreenScaffold(title: nil) {

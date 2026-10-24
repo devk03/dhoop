@@ -56,7 +56,7 @@ enum CalendarReaderRenderProof {
             }
         })
     }
-    private static func capture<V: View>(_ view: V, name: String, width: CGFloat, height: CGFloat = 844,
+    static func capture<V: View>(_ view: V, name: String, width: CGFloat, height: CGFloat = 844,
                                          scheme: ColorScheme = .dark, type: DynamicTypeSize = .large, folder: URL) async throws {
         let caption = ["IMPLEMENTATION", "SYNTHETIC DATA", "\(Int(width)) PT"].joined(separator: " · ")
         let content = VStack(spacing: 0) {
@@ -96,21 +96,22 @@ enum CalendarReaderRenderProof {
         var success = false
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let rsvp = CalendarRSVPClient(read: { nil }, save: { _ in }, send: { _, _ in throw CalendarRSVPFailure.configuration })
             let dayClient = client(); await dayClient.loadDay(date)
-            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-390-dark", width: 390, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-320-dark", width: 320, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-390-light", width: 390, scheme: .light, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-768-dark", width: 768, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-390-accessibility", width: 390, height: 1200, type: .accessibility3, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z"), navigation: CalendarNavigation()), name: "day-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z"), navigation: CalendarNavigation()), name: "day-320-dark", width: 320, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z"), navigation: CalendarNavigation()), name: "day-390-light", width: 390, scheme: .light, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z"), navigation: CalendarNavigation()), name: "day-768-dark", width: 768, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z"), navigation: CalendarNavigation()), name: "day-390-accessibility", width: 390, height: 1200, type: .accessibility3, folder: folder)
             let empty = client(empty: true); await empty.loadDay(date)
-            try await capture(CalendarReaderView(client: empty, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "empty-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: empty, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z"), navigation: CalendarNavigation()), name: "empty-390-dark", width: 390, folder: folder)
             let detail = try await dayClient.readEvent(date: date, id: "demo-event")
-            try await capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, initialDetail: detail, expandedAgent: true),
+            try await capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, rsvp: rsvp, initialDetail: detail, expandedAgent: true),
                         name: "detail-390-dark", width: 390, height: 2100, folder: folder)
-            try await capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, initialDetail: detail, expandedAgent: true),
+            try await capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, rsvp: rsvp, initialDetail: detail, expandedAgent: true),
                         name: "detail-320-dark", width: 320, height: 2300, folder: folder)
             let denied = client(unavailable: true), unavailable = try await denied.readEvent(date: date, id: "demo-event")
-            try await capture(CalendarEventDetailView(day: date, event: unavailable.event, client: denied, initialDetail: unavailable),
+            try await capture(CalendarEventDetailView(day: date, event: unavailable.event, client: denied, rsvp: rsvp, initialDetail: unavailable),
                         name: "unavailable-390-dark", width: 390, folder: folder)
             var offline = false
             let configuration = demoConfiguration()
@@ -118,16 +119,16 @@ enum CalendarReaderRenderProof {
                 if offline { throw CalendarReaderFailure.http(502) }; return try payload(detail: false)
             })
             await failed.loadDay(date); offline = true; await failed.loadDay(date)
-            try await capture(CalendarReaderView(client: failed, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "error-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: failed, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z"), navigation: CalendarNavigation()), name: "error-390-dark", width: 390, folder: folder)
             let loading = CalendarReaderClient(read: { configuration }, save: { _ in }, send: { _, _ in
                 try await Task.sleep(nanoseconds: 5_000_000_000); return try payload(detail: false)
             })
             let pending = Task { await loading.loadDay(date) }
             for _ in 0..<100 { if loading.busy { break }; await Task.yield() }
-            try await capture(CalendarReaderView(client: loading, date: date), name: "loading-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: loading, date: date, navigation: CalendarNavigation()), name: "loading-390-dark", width: 390, folder: folder)
             pending.cancel(); await pending.value
             let unset = CalendarReaderClient(read: { nil }, save: { _ in }, send: { _, _ in throw CalendarReaderFailure.disabled })
-            try await capture(CalendarReaderSettingsView(client: unset), name: "connection-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderSettingsView(client: unset, rsvp: rsvp, widgetSharing: .constant(true)), name: "connection-390-dark", width: 390, folder: folder)
             success = true
         } catch { }
         let report: [String: Any] = ["schemaVersion": 1, "rendered": success, "syntheticOnly": true, "fixtureNetworkUsed": false,

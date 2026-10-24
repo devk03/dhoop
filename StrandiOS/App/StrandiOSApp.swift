@@ -373,6 +373,8 @@ struct StrandiOSApp: App {
                     await CalendarReaderReadProof.runIfRequested()
                     await CalendarReaderRenderProof.runIfRequested()
                     await DhoopTimerRenderProof.runIfRequested()
+                    await CalendarInvitationRenderProof.runIfRequested()
+                    await SleepComparisonRenderProof.runIfRequested()
                     #if DEBUG
                     await LifeSyncReadinessProof.runIfRequested(model: model)
                     await OwnerDataSnapshotProof.runIfRequested(model: model)
