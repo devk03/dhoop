@@ -347,6 +347,7 @@ struct StrandiOSApp: App {
                 // HealthKit-free payload. Filter on the host so other future schemes don't trip the
                 // importer; macOS never registers the scheme so this stays iOS-only.
                 .onOpenURL { url in
+                    if CalendarNavigation.shared.open(url) { return }
                     if url.scheme == "dhoop", url.host == "remote-buzz" {
                         RemoteBuzzClient.shared.importPairingURL(url)
                         return
@@ -368,6 +369,7 @@ struct StrandiOSApp: App {
                     await WorkoutConnectionProvisioner.runLocalLaunchImport()
                     await WorkoutHistoryReadProof.runIfRequested()
                     await CalendarReaderProvisioner.runIfRequested()
+                    await CalendarRSVPProvisioner.runIfRequested()
                     await CalendarReaderReadProof.runIfRequested()
                     await CalendarReaderRenderProof.runIfRequested()
                     await DhoopTimerRenderProof.runIfRequested()
@@ -379,6 +381,7 @@ struct StrandiOSApp: App {
                     DhoopTimerPhoneBackup.attach(alarmTimer)
                     alarmTimer.attach(coordinator: model.ble.buzzDelivery, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.alarmTimer, $0) })
                     meditation.attach(model: model, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.meditation, $0) })
+                    CalendarWidgetPublisher.shared.refreshIfNeeded()
                     watch.activate()
                     await watch.pushLatest(from: model)
                     await WorkoutSessionDraftController.resumePendingWorkouts()
@@ -397,6 +400,8 @@ struct StrandiOSApp: App {
             meditation.setForeground(phase == .active)
             alarmTimer.setForeground(phase == .active)
             if phase == .active {
+                CalendarRSVPClient.shared.reload()
+                CalendarWidgetPublisher.shared.refreshIfNeeded()
                 Task { await WorkoutSessionDraftController.resumePendingWorkouts() }
                 model.drainPendingIntents(router: router)
                 SleepWebhookScheduler.update(enabled: SleepWebhookClient.shared.checkpoint.anyEnabled)

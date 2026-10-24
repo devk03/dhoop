@@ -6,6 +6,9 @@ struct CalendarEventDetailView: View {
     let day: String
     let event: CalendarReaderEvent
     @ObservedObject private var client: CalendarReaderClient
+    @ObservedObject private var rsvp: CalendarRSVPClient
+    @State private var acceptError: String?
+    @State private var requiresRefresh = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var detail: CalendarReaderDetail?
@@ -14,9 +17,9 @@ struct CalendarEventDetailView: View {
     @State private var busy = false
     @State private var refresh = 0
     @State private var agentExpanded = false
-    init(day: String, event: CalendarReaderEvent, client: CalendarReaderClient = .shared,
+    init(day: String, event: CalendarReaderEvent, client: CalendarReaderClient = .shared, rsvp: CalendarRSVPClient = .shared,
          initialDetail: CalendarReaderDetail? = nil, expandedAgent: Bool = false) {
-        self.day = day; self.event = event; _client = ObservedObject(wrappedValue: client)
+        self.day = day; self.event = event; _client = ObservedObject(wrappedValue: client); _rsvp = ObservedObject(wrappedValue: rsvp)
         _detail = State(initialValue: initialDetail); _agentExpanded = State(initialValue: expandedAgent)
     }
     private var identity: String { "\(day)|\(event.id)|\(client.identity)|\(refresh)" }
@@ -28,6 +31,9 @@ struct CalendarEventDetailView: View {
                 CalendarEventTime(event: detail?.event ?? event).font(StrandFont.title2)
                 Label((detail?.event.source ?? event.source) == "local_projection" ? "Pending sync" : "Google Calendar", systemImage: "calendar")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                CalendarInvitationCard(event: detail?.event ?? event, connected: rsvp.enabled && client.enabled,
+                    accepting: rsvp.busyEventID != nil || busy || detail == nil, requiresRefresh: requiresRefresh, accept: acceptInvitation)
+                CalendarAcceptanceStatus(error: acceptError, requiresRefresh: requiresRefresh, refresh: load)
                 if let error {
                     Text(LocalizedStringKey(error)).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusWarning)
                     NoopAsyncButton("Refresh", systemImage: "arrow.clockwise", kind: .secondary) { await load() }.disabled(busy)
@@ -114,9 +120,27 @@ struct CalendarEventDetailView: View {
         do {
             let value = try await client.readEvent(date: day, id: event.id)
             guard ticket == identity, !Task.isCancelled else { return }
-            detail = value; progress = [:]; error = nil
+            detail = value; progress = [:]; error = nil; requiresRefresh = false; acceptError = nil
         } catch is CancellationError { }
         catch { if !Task.isCancelled && ticket == identity { self.error = CalendarReaderClient.message(error) } }
+    }
+    private func acceptInvitation() async {
+        guard let value = detail?.event, !requiresRefresh else { return }
+        let ticket = identity
+        do {
+            let accepted = try await rsvp.accept(date: day, event: value)
+            guard ticket == identity, !Task.isCancelled else { return }
+            if let prior = detail {
+                detail = CalendarReaderDetail(schemaVersion: prior.schemaVersion, date: prior.date, timeZone: prior.timeZone,
+                    readAt: prior.readAt, readOnly: prior.readOnly, event: accepted, tasks: prior.tasks)
+            }
+            acceptError = nil; await client.loadDay(day)
+        } catch {
+            guard ticket == identity, !Task.isCancelled else { return }
+            acceptError = CalendarRSVPClient.message(error); requiresRefresh = true
+            // Only a GET follows a failed/uncertain POST; acceptance is never automatically resubmitted.
+            await load()
+        }
     }
     private func more(ref: String, before: Int) async {
         let ticket = identity; busy = true

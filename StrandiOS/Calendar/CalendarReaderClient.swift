@@ -4,12 +4,13 @@ import Combine
 /// One in-memory day. Configuration changes invalidate every in-flight day and event response.
 @MainActor
 final class CalendarReaderClient: ObservableObject {
-    static let shared = CalendarReaderClient()
+    static let shared = CalendarReaderClient(publishToWidget: true)
     @Published private(set) var configuration: CalendarReaderConfiguration?
     @Published private(set) var day = CalendarReaderDayChain()
     @Published private(set) var busy = false
     @Published private(set) var error: String?
     @Published private(set) var stale = false
+    private let publishToWidget: Bool
     private var generation = 0
     private var dayTicket = UUID()
     private let send: (CalendarReaderEndpoint, CalendarReaderConfiguration) async throws -> Data
@@ -19,8 +20,9 @@ final class CalendarReaderClient: ObservableObject {
     var identity: String { "\(generation)|\(configuration?.installationId.uuidString ?? "")|\(enabled)" }
     init(read: @escaping () throws -> CalendarReaderConfiguration? = CalendarReaderKeychain.read,
          save: @escaping (CalendarReaderConfiguration) throws -> Void = CalendarReaderKeychain.save,
+         publishToWidget: Bool = false,
          send: @escaping (CalendarReaderEndpoint, CalendarReaderConfiguration) async throws -> Data = { try await CalendarReaderTransport().send($0, configuration: $1) }) {
-        self.read = read; self.save = save; self.send = send
+        self.read = read; self.save = save; self.send = send; self.publishToWidget = publishToWidget
         do {
             let candidate = try read()
             guard candidate?.valid != false else { throw CalendarReaderFailure.configuration }
@@ -35,6 +37,9 @@ final class CalendarReaderClient: ObservableObject {
             let next = try read()
             guard next?.valid != false else { throw CalendarReaderFailure.configuration }
             if next != configuration {
+                #if os(iOS)
+                if publishToWidget { CalendarWidgetPublisher.shared.clear() }
+                #endif
                 generation += 1; dayTicket = UUID(); configuration = next; day = .init(); busy = false; stale = false; error = nil
             }
             return true
@@ -43,6 +48,9 @@ final class CalendarReaderClient: ObservableObject {
     func setEnabled(_ enabled: Bool) throws {
         guard var next = configuration else { throw CalendarReaderFailure.configuration }
         next.enabled = enabled; try save(next); replace(next)
+        #if os(iOS)
+        if publishToWidget { if enabled { CalendarWidgetPublisher.shared.refreshIfNeeded(force: true) } else { CalendarWidgetPublisher.shared.clear() } }
+        #endif
     }
     private func replace(_ next: CalendarReaderConfiguration) {
         generation += 1; dayTicket = UUID(); configuration = next; day = .init(); busy = false; error = nil; stale = false
@@ -84,6 +92,9 @@ final class CalendarReaderClient: ObservableObject {
                 try day.accept(first, date: date, requestedCursor: nil)
             }
             stale = false
+            #if os(iOS)
+            if publishToWidget { CalendarWidgetPublisher.shared.record(day) }
+            #endif
         } catch is CancellationError { }
         catch {
             guard !Task.isCancelled, generation == version, dayTicket == ticket else { return }

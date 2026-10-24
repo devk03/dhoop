@@ -6,6 +6,10 @@ struct CalendarReaderView: View {
     @ObservedObject private var client: CalendarReaderClient
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
+    @ObservedObject private var navigation: CalendarNavigation
+    @State private var navigationTask: Task<Void, Never>?
+    @State private var navigationError: String?
+    @State private var initialEventDetail: CalendarReaderDetail?
     @State private var visible = false
     @State private var selectedDay = CalendarReaderDates.key(Date())
     @State private var refresh = 0
@@ -14,7 +18,8 @@ struct CalendarReaderView: View {
     @State private var settings = false
     private var current: CalendarReaderDay? { client.snapshot(for: selectedDay)?.first }
     private let captureNow: Date?
-    init(client: CalendarReaderClient = .shared, date: String? = nil, captureNow: Date? = nil) {
+    init(client: CalendarReaderClient = .shared, date: String? = nil, captureNow: Date? = nil, navigation: CalendarNavigation = .shared) {
+        _navigation = ObservedObject(wrappedValue: navigation)
         self.captureNow = captureNow
         _client = ObservedObject(wrappedValue: client)
         _selectedDay = State(initialValue: date ?? CalendarReaderDates.key(Date()))
@@ -69,7 +74,7 @@ struct CalendarReaderView: View {
                     }.disabled(client.busy)
                 }
                 CalendarDayTimelineView(timeline: timeline, events: client.day.events, captureNow: captureNow, focusRevision: focusRevision,
-                    onSelect: { selected = $0 }, onRefresh: { await client.loadDay(selectedDay) }) {
+                    onSelect: { initialEventDetail = nil; selected = $0 }, onRefresh: { await client.loadDay(selectedDay) }) {
                     if client.busy { ProgressView("Reading calendar…").font(StrandFont.subhead) }
                     if let date = CalendarReaderDates.instant(current.readAt) {
                         Text("Updated \(CalendarReaderDates.display(date))").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
@@ -99,12 +104,28 @@ struct CalendarReaderView: View {
         .padding(.top, NoopMetrics.space3)
         .background(StrandPalette.surfaceBase.ignoresSafeArea())
         .task(id: "\(selectedDay)|\(client.identity)|\(refresh)") { await client.loadDay(selectedDay) }
-        .onAppear { visible = true }
-        .onDisappear { visible = false }
+        .onAppear { visible = true; if let request = navigation.request { open(request) } }
+        .onDisappear { visible = false; navigationTask?.cancel() }
+        .onReceive(navigation.$request) { if visible, let request = $0 { open(request) } }
+        .alert("Calendar", isPresented: Binding(get: { navigationError != nil }, set: { if !$0 { navigationError = nil } })) {
+            Button("Done") { navigationError = nil }
+        } message: { Text(LocalizedStringKey(navigationError ?? "")) }
         .onChange(of: scenePhase) { _, phase in if phase == .active && visible { refresh += 1 } }
         .sheet(isPresented: $settings) { NavigationStack { CalendarReaderSettingsView(client: client) } }
         .sheet(item: $selected) { event in
-            NavigationStack { CalendarEventDetailView(day: selectedDay, event: event, client: client) }
+            NavigationStack { CalendarEventDetailView(day: selectedDay, event: event, client: client, initialDetail: initialEventDetail?.event.id == event.id ? initialEventDetail : nil) }
+        }
+    }
+    private func open(_ request: CalendarNavigationRequest) {
+        navigation.consume(request.id); navigationTask?.cancel(); selectedDay = request.day
+        guard let id = request.eventID else { return }
+        navigationTask = Task {
+            do {
+                let detail = try await client.readEvent(date: request.day, id: id)
+                guard !Task.isCancelled, selectedDay == request.day else { return }
+                initialEventDetail = detail; selected = detail.event
+            } catch is CancellationError { }
+            catch { if !Task.isCancelled { navigationError = CalendarReaderClient.message(error) } }
         }
     }
 }
@@ -124,7 +145,13 @@ struct CalendarReaderSettingsView: View {
     @ObservedObject private var client: CalendarReaderClient
     @Environment(\.dismiss) private var dismiss
     @State private var error: String?
-    init(client: CalendarReaderClient = .shared) { _client = ObservedObject(wrappedValue: client) }
+    @State private var widgetEnabled: Bool
+    @ObservedObject private var rsvp: CalendarRSVPClient
+    private let widgetSharing: Binding<Bool>?
+    init(client: CalendarReaderClient = .shared, rsvp: CalendarRSVPClient = .shared, widgetSharing: Binding<Bool>? = nil) {
+        _client = ObservedObject(wrappedValue: client); _rsvp = ObservedObject(wrappedValue: rsvp)
+        self.widgetSharing = widgetSharing; _widgetEnabled = State(initialValue: widgetSharing?.wrappedValue ?? CalendarWidgetPublisher.shared.enabled)
+    }
     var body: some View {
         ScreenScaffold(title: "Calendar connection") {
             NoopCard {
@@ -137,6 +164,13 @@ struct CalendarReaderSettingsView: View {
                             do { try client.setEnabled($0) } catch { self.error = CalendarReaderClient.message(error) }
                         })).toggleStyle(NoopSwitchStyle())
                     } else { Text("This phone needs its dedicated calendar connection.").font(StrandFont.body) }
+                    Toggle("Home Screen Calendar widget", isOn: $widgetEnabled).toggleStyle(NoopSwitchStyle())
+                        .onChange(of: widgetEnabled) { _, value in if let widgetSharing { widgetSharing.wrappedValue = value } else { CalendarWidgetPublisher.shared.enabled = value } }
+                    if rsvp.configuration != nil {
+                        Toggle("Accept invitations", isOn: Binding(get: { rsvp.enabled }, set: {
+                            do { try rsvp.setEnabled($0) } catch { self.error = CalendarRSVPClient.message(error) }
+                        })).toggleStyle(NoopSwitchStyle())
+                    } else { Text("Accept setup pending").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                     if let error { Text(LocalizedStringKey(error)).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning) }
                 }
             }

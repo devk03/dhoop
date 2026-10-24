@@ -48,6 +48,7 @@ struct RootTabView: View {
     /// between tab roots, calm easing). Defaults to Today.
     @State private var selectedTab: Int = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var calendarNavigation = CalendarNavigation.shared
     @ObservedObject private var motion = NoopMotionState.shared
     private var poseStill: Bool { motion.poseStill(reduceMotion) }
     @State private var runningSession: RunningSessionController?
@@ -132,6 +133,7 @@ struct RootTabView: View {
             if CommandLine.arguments.contains("--alarm-diagnostics") { selectedTab = 6 }
             #endif
         }
+        .onReceive(calendarNavigation.$request) { request in if request != nil { selectedTab = 7 } }
         // Switching Coach off while STANDING on it leaves `selectedTab` pointing at a tag no tab claims
         // any more, which renders as an empty tab rather than as an error. Send that wearer to Today, and
         // only in that case, so a flip made from anywhere else does not move them.
