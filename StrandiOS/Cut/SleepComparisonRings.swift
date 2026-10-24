@@ -65,8 +65,12 @@ struct SleepComparisonRings: View {
                 .rotationEffect(.degrees(-90))
         }.padding(NoopMetrics.sleepComparisonStroke / 2).accessibilityHidden(true)
     }
+    private func provenanceLabel(_ name: String, detail: String) -> Text {
+        let label = name + " · " + NSLocalizedString(detail, comment: "Sleep duration provenance")
+        return Text(verbatim: label)
+    }
     @ViewBuilder private var provenance: some View {
-        if let whoopDetail { Text(verbatim: "WHOOP · ") + Text(LocalizedStringKey(whoopDetail)) }
-        if let comparisonDetail { Text(verbatim: "\(comparisonName) · ") + Text(LocalizedStringKey(comparisonDetail)) }
+        if let whoopDetail { provenanceLabel("WHOOP", detail: whoopDetail) }
+        if let comparisonDetail { provenanceLabel(comparisonName, detail: comparisonDetail) }
     }
 }

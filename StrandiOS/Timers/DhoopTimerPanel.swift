@@ -102,7 +102,10 @@ struct DhoopTimerPanel: View {
     }
     private func wheel(_ title: LocalizedStringKey, value: Binding<Int>, range: ClosedRange<Int>, suffix: String) -> some View {
         Picker(title, selection: value) {
-            ForEach(Array(range), id: \.self) { number in Text(verbatim: "\(number) " + suffix).tag(number) }
+            ForEach(Array(range), id: \.self) { number in
+                let label = String(number) + " " + suffix
+                Text(verbatim: label).tag(number)
+            }
         }.pickerStyle(.wheel).labelsHidden().frame(maxWidth: .infinity).clipped().accessibilityLabel(title)
     }
     private func time(_ remaining: TimeInterval) -> String {
