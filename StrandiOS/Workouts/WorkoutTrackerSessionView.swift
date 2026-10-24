@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 import StrandDesign
 
 /// Life owns the workout; this screen edits a durable, scoped pending version until Save/Finish.
@@ -96,6 +97,19 @@ struct WorkoutTrackerSessionView: View {
         }
         .safeAreaInset(edge: .bottom) {
             WorkoutSessionDraftActions(drafts: drafts, frontend: frontend, enabled: sameConnection, refresh: WorkoutSessionDraftController.reader(for: drafts.state))
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                } label: {
+                    Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down")
+                        .font(StrandFont.body).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                }.buttonStyle(NoopFeedbackButtonStyle())
+                    .accessibilityIdentifier("workout-hide-keyboard")
+            }
         }
         .task(id: connectionIdentity) {
             if openedContext == nil { openedContext = connectionIdentity }

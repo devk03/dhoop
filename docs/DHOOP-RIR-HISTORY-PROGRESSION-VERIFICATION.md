@@ -39,3 +39,10 @@ A post-install read-only comparison confirms all 31 prior immutable operation pa
 The initial post-install launch was denied by iOS because the phone was locked. Installation is verified; a fresh authenticated in-app history/capability read and current physical UI interaction are not yet verified. The owner was asked only to unlock briefly, with no manual test steps.
 
 Evidence: `/private/tmp/dhoop-511-device-build.log`, `/private/tmp/dhoop-511-signature-proof.json`, `/private/tmp/dhoop-511-install.json`, `/private/tmp/dhoop-511-installed-inventory.json`, `/private/tmp/dhoop-511-launch.log`, and `/private/tmp/dhoop-511-queue-comparison.json`.
+
+
+## Keyboard dismissal follow-up — build 512
+
+The workout screen adds one localized **Hide keyboard** accessory button above the numeric pad and enables interactive keyboard dismissal while scrolling. Resigning the current text-field responder does not submit, finish, clear or replace the durable workout draft. No other screens, save logic, server contract or stored values change. Existing StrandDesign typography, touch-target and press-feedback tokens are used.
+
+The actual optimized iOS Release build passes, as do strict deep signing/identity/entitlement verification, the existing workout metadata type declaration, localization in all ten locales, detached-comment lint and whitespace checks. Evidence: `/private/tmp/dhoop-512-device-build.log`, `/private/tmp/dhoop-512-signature-proof.json`, `/private/tmp/dhoop-512-i18n.log`. No simulator or physical keyboard interaction is claimed as verified. The Mac currently reports the iPhone unavailable, so build 512 installation is pending reconnection; build 511 remains the last confirmed physical installation.

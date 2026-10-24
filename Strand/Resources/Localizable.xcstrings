@@ -1,6 +1,70 @@
 {
   "sourceLanguage": "en",
   "strings": {
+  "Hide keyboard": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Hide keyboard"
+        }
+      },
+      "de": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tastatur ausblenden"
+        }
+      },
+      "es": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ocultar teclado"
+        }
+      },
+      "fr": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Masquer le clavier"
+        }
+      },
+      "it": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Nascondi tastiera"
+        }
+      },
+      "pl": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ukryj klawiaturę"
+        }
+      },
+      "pt-PT": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Ocultar teclado"
+        }
+      },
+      "ru": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Скрыть клавиатуру"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "收起键盘"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "收起鍵盤"
+        }
+      }
+    }
+  },
   "Tap a workout to edit its sets.": {
     "localizations": {
       "en": {
