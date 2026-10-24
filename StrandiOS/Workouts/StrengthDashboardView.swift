@@ -13,6 +13,11 @@ struct StrengthDashboardView: View {
     private var busy: Bool { refreshState.busy }
     @State private var selected: WorkoutHistoryPage.Session?
     @State private var scheduling: WorkoutHistoryPage.Session?
+    @AppStorage(WorkoutLastOpened.storageKey) private var lastOpenedValue = ""
+    @State private var returningTo: WorkoutLastOpened?
+    private var lastOpened: WorkoutLastOpened? {
+        .resolve(lastOpenedValue, origin: tracker.state.origin, installationId: tracker.state.installationId, enabled: tracker.state.enabled)
+    }
     private var connectionIdentity: String { "\(tracker.state.origin ?? "")|\(tracker.state.installationId?.uuidString ?? "")|\(tracker.state.enabled)" }
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space4) {
@@ -33,6 +38,17 @@ struct StrengthDashboardView: View {
             if recording.isActive {
                 Button { recording.isPresented = true } label: { Label("Resume WHOOP recording", systemImage: "play.fill") }
                     .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+            }
+            if let lastOpened {
+                Button { returningTo = lastOpened } label: {
+                    Label("Return to last workout", systemImage: "arrow.uturn.backward")
+                }.buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+            } else {
+                NavigationLink {
+                    ScreenScaffold(title: "Lifting history") { WorkoutHistoryView(strengthOnly: true) }
+                } label: {
+                    Label("Lifting history", systemImage: "clock.arrow.circlepath")
+                }.buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
             }
             WorkoutRefreshFeedback(state: refreshState, retry: load)
             if frontend.unresolved != nil {
@@ -86,6 +102,9 @@ struct StrengthDashboardView: View {
             if phase == .active && visible && tracker.state.enabled { Task { try? await load() } }
         }
         .sheet(item: $selected, onDismiss: { Task { try? await load() } }) { row in WorkoutHistorySessionSheet(row: row) }
+        .sheet(item: $returningTo, onDismiss: { Task { try? await load() } }) { target in
+            WorkoutHistorySessionSheet(mesocycleId: target.mesocycleId, sessionId: target.sessionId)
+        }
         .sheet(item: $scheduling) { row in
             if let page { WorkoutDateScheduleSheet(row: row, revision: page.lifeRevision, refresh: load) }
         }

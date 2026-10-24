@@ -21,6 +21,7 @@ struct WorkoutTrackerSessionView: View {
     @State private var showingSchedule = false
     @State private var showingConflict = false
     @State private var openedContext: String?
+    @AppStorage(WorkoutLastOpened.storageKey) private var lastOpenedValue = ""
     private var current: WorkoutTrackerDashboard.Session { drafts.state.baseline }
     private var system: UnitSystem { drafts.state.massScale == 1 ? .imperial : .metric }
     private var connectionIdentity: String { "\(tracker.state.origin ?? "")|\(tracker.state.installationId?.uuidString ?? "")|\(tracker.state.enabled)" }
@@ -71,6 +72,10 @@ struct WorkoutTrackerSessionView: View {
                         if current.status == "completed" {
                             Text("Edit weight, reps or RIR below. Saving keeps this workout completed.")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            WorkoutFrontendSubmitSection(title: "Reopen workout", action: "update_session", revision: drafts.state.revision, command: {
+                                ["action": .string("update_session"), "mesocycleId": .number(Double(current.mesocycleId)),
+                                 "sessionId": .number(Double(current.id)), "status": .string("planned")]
+                            }, refresh: refresh).disabled(drafts.state.isProtected || !sameConnection)
                         }
                     }
                 }
@@ -87,10 +92,6 @@ struct WorkoutTrackerSessionView: View {
                 if current.status == "completed" {
                     Button { showingShare = true } label: { Label("Share workout", systemImage: "square.and.arrow.up") }
                         .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
-                    WorkoutFrontendSubmitSection(title: "Reopen workout", action: "update_session", revision: drafts.state.revision, command: {
-                        ["action": .string("update_session"), "mesocycleId": .number(Double(current.mesocycleId)),
-                         "sessionId": .number(Double(current.id)), "status": .string("planned")]
-                    }, refresh: refresh).disabled(drafts.state.isProtected || !sameConnection)
                 }
                 Text("Edits stay on your phone until you save the workout.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
@@ -119,7 +120,15 @@ struct WorkoutTrackerSessionView: View {
             if refreshOnAppear { try? await refresh() }
             drafts.resume()
         }
-        .onAppear { visible = true; protectionChanged(drafts.state.isProtected); if sameConnection { drafts.resume() } }
+        .onAppear {
+            visible = true; protectionChanged(drafts.state.isProtected)
+            if sameConnection {
+                if tracker.state.enabled, current.kind == "strength", let origin = tracker.state.origin, let installation = tracker.state.installationId,
+                   let value = WorkoutLastOpened(origin: origin, installationId: installation,
+                       mesocycleId: current.mesocycleId, sessionId: current.id).storageValue { lastOpenedValue = value }
+                drafts.resume()
+            }
+        }
         .onDisappear { visible = false; refreshState.cancel(); protectionChanged(false) }
         .onChange(of: drafts.state.isProtected) { _, protected in protectionChanged(protected) }
         .onChange(of: scenePhase) { _, phase in
