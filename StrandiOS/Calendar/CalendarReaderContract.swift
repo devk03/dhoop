@@ -113,6 +113,8 @@ struct CalendarReaderEvent: Decodable, Equatable, Identifiable {
     let entityKey: String?
     let linkedTaskRefs: [String]
     let description: String?
+    var etag: String? = nil
+    var invitation: CalendarInvitation? = nil
     var id: String { eventId }
     func validate() throws {
         guard !id.isEmpty, id.utf8.count <= 1024, ["google", "local_projection"].contains(source), status != "cancelled",
