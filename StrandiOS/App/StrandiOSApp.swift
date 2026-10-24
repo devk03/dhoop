@@ -37,6 +37,7 @@ struct StrandiOSApp: App {
     /// double-tap handler. See `LiftSessionController`.
     @StateObject private var liftSession: LiftSessionController
     @StateObject private var meditation = MeditationController()
+    @StateObject private var alarmTimer = DhoopTimerController()
     @Environment(\.scenePhase) private var scenePhase
     /// Appearance preference (System/Light/Dark). Default follows the OS; the Settings picker writes it.
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.system.rawValue
@@ -249,6 +250,7 @@ struct StrandiOSApp: App {
                 .environmentObject(model.repo)
                 .environmentObject(model.profile)
                 .environmentObject(meditation)
+                .environmentObject(alarmTimer)
                 .environmentObject(model.behavior)
                 .environmentObject(model.intelligence)
                 .environmentObject(model.coach)
@@ -368,11 +370,14 @@ struct StrandiOSApp: App {
                     await CalendarReaderProvisioner.runIfRequested()
                     await CalendarReaderReadProof.runIfRequested()
                     await CalendarReaderRenderProof.runIfRequested()
+                    await DhoopTimerRenderProof.runIfRequested()
                     #if DEBUG
                     await LifeSyncReadinessProof.runIfRequested(model: model)
                     await OwnerDataSnapshotProof.runIfRequested(model: model)
                     #endif
                     RemoteBuzzClient.shared.setForeground(scenePhase == .active)
+                    DhoopTimerPhoneBackup.attach(alarmTimer)
+                    alarmTimer.attach(coordinator: model.ble.buzzDelivery, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.alarmTimer, $0) })
                     meditation.attach(model: model, foreground: scenePhase == .active, keepAwake: { ScreenIdle.hold(.meditation, $0) })
                     watch.activate()
                     await watch.pushLatest(from: model)
@@ -390,6 +395,7 @@ struct StrandiOSApp: App {
         .onChange(of: scenePhase) { _, phase in
             RemoteBuzzClient.shared.setForeground(phase == .active)
             meditation.setForeground(phase == .active)
+            alarmTimer.setForeground(phase == .active)
             if phase == .active {
                 Task { await WorkoutSessionDraftController.resumePendingWorkouts() }
                 model.drainPendingIntents(router: router)

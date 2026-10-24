@@ -25,46 +25,34 @@ private enum AlarmRoute: Hashable { case detail(String), slots, history }
 private struct AlarmsContent: View, Equatable {
     @ObservedObject var manager: DhoopAlarmManager
     @EnvironmentObject private var app: AppModel
+    #if os(iOS)
+    @EnvironmentObject private var alarmTimer: DhoopTimerController
+    #endif
+    @State private var section = CommandLine.arguments.contains("--alarm-timer-open") ? "Timers" : "Alarms"
+    @State private var showSettings = false
     @State private var editor: DhoopAlarmDefinition?
     @State private var remove: DhoopAlarmDefinition?
     @State private var capturedAt = Date()
     @State private var localActionError: String?
-    @ScaledMetric(relativeTo: .largeTitle) private var timeSize = NoopMetrics.alarmTimeNumber
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.manager === rhs.manager }
 
     var body: some View {
         ScreenScaffold(title: nil, onRefresh: { capturedAt = Date(); await manager.refresh() }) {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
-                HStack {
-                    Text("Alarms").font(StrandFont.title1)
-                    Spacer()
-                    Button { editor = DhoopAlarmDefinition() } label: {
-                        Image(systemName: "plus").font(StrandFont.title2)
-                            .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
-                    }.buttonStyle(NoopFeedbackButtonStyle()).foregroundStyle(StrandPalette.alarmAccent).accessibilityLabel("Add alarm")
-                }
-                NavigationLink(value: AlarmRoute.slots) {
-                    NoopCard(padding: NoopMetrics.space4) {
-                        HStack(spacing: NoopMetrics.space3) {
-                            Image(systemName: "applewatch").foregroundStyle(StrandPalette.alarmAccent)
-                            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                Text(manager.context.whoop5 ? "WHOOP 5" : "WHOOP alarms").font(StrandFont.headline)
-                                Text(manager.context.ready ? "Connected · \(manager.context.deviceID)" : "Connect your WHOOP 5")
-                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            }
-                            Spacer(minLength: 0)
-                            if let battery = manager.context.battery { Text("\(Int(battery.rounded()))%").font(StrandFont.captionNumber) }
-                            Image(systemName: "chevron.right").foregroundStyle(StrandPalette.textTertiary)
-                        }
-                    }
-                }.buttonStyle(NoopFeedbackButtonStyle())
+                AlarmHomeHeader(section: $section, showSettings: { showSettings = true }, add: { editor = DhoopAlarmDefinition() })
+                if section == "Timers" {
+                    #if os(iOS)
+                    DhoopTimerPanel(timer: alarmTimer)
+                    #endif
+                } else {
+                    AlarmConnectionBadge(connected: manager.context.ready, battery: manager.context.battery)
                 let removalRisks = manager.pendingRemovalRisks(now: capturedAt)
                 if !removalRisks.isEmpty {
                     NoopCard(padding: NoopMetrics.space4) {
                         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
                             Label("WHOOP removal unresolved", systemImage: "exclamationmark.triangle")
                                 .font(StrandFont.headline).foregroundStyle(StrandPalette.statusWarning)
-                            Text("These previously scheduled times may still fire, including alarms deleted in Dhoop.")
+                            Text("An old alarm may still ring until removal is verified.")
                                 .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                             ForEach(removalRisks) { risk in
                                 Text("Slot \(risk.slot) · \(risk.epochs.map { Date(timeIntervalSince1970: Double($0)).formatted(date: .abbreviated, time: .shortened) }.joined(separator: "; "))")
@@ -78,83 +66,20 @@ private struct AlarmsContent: View, Equatable {
                         }
                     }
                 }
-                if let alarm = nextDefinition {
-                    NoopCard(padding: NoopMetrics.space5) {
-                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                            Text("Next alarm").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            Text(manager.nextEpoch(alarm, now: capturedAt).map {
-                                Date(timeIntervalSince1970: Double($0)).formatted(date: .omitted, time: .shortened)
-                            } ?? timeLabel(alarm.rule.minute)).font(StrandFont.number(timeSize)).monospacedDigit()
-                            Text(nextStamp(alarm)).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                            Text(manager.status(alarm, now: capturedAt)).font(StrandFont.caption)
-                                .foregroundStyle(StrandPalette.alarmAccent).fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    AlarmOverviewRows(rows: sortedDefinitions.map { alarm in
+                        AlarmOverviewRow(id: alarm.id, time: timeLabel(alarm.rule.minute), label: alarm.label,
+                            repeatText: repeatDescription(alarm.rule.weekdays), status: manager.status(alarm, now: capturedAt), enabled: alarm.enabled)
+                    }, add: { editor = DhoopAlarmDefinition() }, toggle: { id, on in if !manager.toggle(id, enabled: on) { localActionError = alarmChangeError(manager) } },
+                        edit: { id in editor = manager.definitions.first { $0.id == id } },
+                        skip: { id in if !manager.skipNext(id) { localActionError = alarmChangeError(manager) } },
+                        remove: { id in remove = manager.definitions.first { $0.id == id } })
+                    AlarmTestBuzzButton(coordinator: app.ble.buzzDelivery, deviceID: app.repo.deviceId, ready: manager.context.ready)
                 }
-                if manager.definitions.isEmpty {
-                    NoopCard(padding: NoopMetrics.space5) {
-                        VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                            Text("Your next wake, on your wrist").font(StrandFont.title2)
-                            Text("Add an alarm, then choose which WHOOP slot Dhoop may use. Existing strap alarms stay protected.")
-                                .font(StrandFont.body).foregroundStyle(StrandPalette.textSecondary)
-                            Button("Add alarm") { editor = DhoopAlarmDefinition() }
-                                .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
-                        }
-                    }
-                } else {
-                    NoopCard(padding: NoopMetrics.space4) {
-                        VStack(spacing: NoopMetrics.space4) {
-                            ForEach(sortedDefinitions) { alarm in
-                                HStack(alignment: .center, spacing: NoopMetrics.space4) {
-                                    NavigationLink(value: AlarmRoute.detail(alarm.id)) {
-                                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                            Text(timeLabel(alarm.rule.minute)).font(StrandFont.number(timeSize))
-                                                .monospacedDigit().foregroundStyle(alarm.enabled ? StrandPalette.textPrimary : StrandPalette.textSecondary)
-                                            Text("\(alarm.label) · \(repeatDescription(alarm.rule.weekdays))")
-                                                .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                                            Text(manager.status(alarm, now: capturedAt)).font(StrandFont.caption)
-                                                .foregroundStyle(StrandPalette.alarmAccent).fixedSize(horizontal: false, vertical: true)
-                                        }.frame(maxWidth: .infinity, alignment: .leading)
-                                    }.buttonStyle(NoopFeedbackButtonStyle())
-                                    Toggle("Enable \(alarm.label)", isOn: Binding(get: { alarm.enabled }, set: { manager.toggle(alarm.id, enabled: $0) }))
-                                        .labelsHidden().toggleStyle(NoopSwitchStyle())
-                                }
-                                .contextMenu {
-                                    Button("Edit alarm") { editor = alarm }
-                                    Button("Skip next alarm") {
-                                        if !manager.skipNext(alarm.id) { localActionError = alarmChangeError(manager) }
-                                    }
-                                    Button("Delete alarm", role: .destructive) { remove = alarm }
-                                }
-                                if alarm.id != sortedDefinitions.last?.id { Divider().overlay(StrandPalette.hairline) }
-                            }
-                        }
-                    }
-                }
-                coverage
-                if let alarm = nextDefinition, let epoch = manager.nextEpoch(alarm, now: capturedAt) {
-                    NoopCard(padding: NoopMetrics.space4) {
-                        HStack(alignment: .top, spacing: NoopMetrics.space4) {
-                            Image(systemName: "moon.fill").foregroundStyle(StrandPalette.alarmAccent)
-                            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                Text("Sleep goal · 8h 15m").font(StrandFont.subhead)
-                                Text("Plan to be in bed by \(Date(timeIntervalSince1970: Double(epoch - DhoopSleepGoal.minutes * 60)).formatted(date: .omitted, time: .shortened))")
-                                    .font(StrandFont.bodyNumber)
-                                Text("Planned sleep opportunity, before any wind-down or fall-asleep allowance.")
-                                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                            }
-                        }
-                    }
-                }
-                NavigationLink("Alarm history", value: AlarmRoute.history).font(StrandFont.subhead)
-                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 if manager.busy { ProgressView("Checking WHOOP…").font(StrandFont.caption) }
                 if let error = manager.storageError ?? manager.error {
-                    Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+                    Text(LocalizedStringKey(error)).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Experimental WHOOP scheduling. A stored record is not proof that an alarm fired or woke you.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
         }
         .tint(StrandPalette.alarmAccent)
@@ -163,6 +88,19 @@ private struct AlarmsContent: View, Equatable {
             case .slots: AlarmSlotsView(manager: manager)
             case .history: AlarmHistoryView(manager: manager)
             case .detail(let id): AlarmDetailView(manager: manager, id: id)
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                settingsContent
+                    .navigationDestination(for: AlarmRoute.self) { route in
+                        switch route {
+                        case .slots: AlarmSlotsView(manager: manager)
+                        case .history: AlarmHistoryView(manager: manager)
+                        case .detail(let id): AlarmDetailView(manager: manager, id: id)
+                        }
+                    }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
             }
         }
         .sheet(item: $editor) { alarm in AlarmEditorView(manager: manager, original: alarm) }
@@ -187,14 +125,45 @@ private struct AlarmsContent: View, Equatable {
         // Only refresh presentation of dates; alarm execution never depends on this UI clock.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { capturedAt = $0 }
     }
+    private var settingsContent: some View { AlarmOptionsContent(manager: manager, capturedAt: capturedAt) }
     private var sortedDefinitions: [DhoopAlarmDefinition] { manager.definitions.sorted { $0.rule.minute < $1.rule.minute } }
+
+
+
+}
+
+struct AlarmOptionsContent: View {
+    @ObservedObject var manager: DhoopAlarmManager
+    let capturedAt: Date
+    var body: some View {
+        ScreenScaffold(title: "Alarm settings") {
+            VStack(alignment: .leading, spacing: NoopMetrics.space4) {
+                NavigationLink("Manage WHOOP slots", value: AlarmRoute.slots)
+                    .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                coverage
+                if let alarm = nextDefinition, let epoch = manager.nextEpoch(alarm, now: capturedAt) {
+                    NoopCard(padding: NoopMetrics.space4) {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                            Text("Sleep goal · 8h 15m").font(StrandFont.headline)
+                            Text("Plan to be in bed by \(Date(timeIntervalSince1970: Double(epoch - DhoopSleepGoal.minutes * 60)).formatted(date: .omitted, time: .shortened))")
+                                .font(StrandFont.bodyNumber)
+                            Text("Planned sleep opportunity, before any wind-down or fall-asleep allowance.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }
+                }
+                NavigationLink("Alarm history", value: AlarmRoute.history)
+                    .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                Text("Experimental WHOOP scheduling. A stored record is not proof that an alarm fired or woke you.")
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                Text(verbatim: manager.context.deviceID + " · " + manager.context.firmware)
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+            }
+        }
+    }
     private var nextDefinition: DhoopAlarmDefinition? {
         manager.definitions.filter(\.enabled).filter { manager.nextEpoch($0, now: capturedAt) != nil }
             .min { manager.nextEpoch($0, now: capturedAt)! < manager.nextEpoch($1, now: capturedAt)! }
-    }
-    private func nextStamp(_ alarm: DhoopAlarmDefinition) -> String {
-        guard let epoch = manager.nextEpoch(alarm, now: capturedAt) else { return "No upcoming date" }
-        return "\(Date(timeIntervalSince1970: Double(epoch)).formatted(date: .abbreviated, time: .shortened)) · \(alarm.label)"
     }
     private var coverage: some View {
         NoopCard(padding: NoopMetrics.space4) {
@@ -205,12 +174,134 @@ private struct AlarmsContent: View, Equatable {
                     Text("\(slots.count) occurrences stored · Furthest \(Date(timeIntervalSince1970: Double(last)).formatted(date: .abbreviated, time: .shortened))")
                         .font(StrandFont.subhead)
                 } else { Text("No future alarm verified on WHOOP").font(StrandFont.subhead) }
-                NavigationLink("Manage WHOOP slots", value: AlarmRoute.slots).font(StrandFont.caption)
-                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
                 Text("Repeat rules are saved in Dhoop. Future dates need available slots and successful syncing.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 Text(manager.phoneStatus).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
+        }
+    }
+}
+
+struct AlarmHomeHeader: View {
+    @Binding var section: String
+    let showSettings: () -> Void
+    let add: () -> Void
+    var body: some View {
+        VStack(spacing: NoopMetrics.space3) {
+            HStack(spacing: NoopMetrics.space2) {
+                Text("Alarms").font(StrandFont.title1)
+                Spacer(minLength: NoopMetrics.space1)
+                Button(action: showSettings) { Image(systemName: "gearshape") }
+                    .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Alarm settings")
+                if section == "Alarms" {
+                    Button(action: add) { Image(systemName: "plus") }
+                        .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Add alarm")
+                }
+            }
+            #if os(iOS)
+            NoopSegmentedControl("Alarm category", options: ["Alarms", "Timers"], selection: $section,
+                labels: ["Alarms": String(localized: "Alarms"), "Timers": String(localized: "Timers")])
+            #endif
+        }
+    }
+}
+
+struct AlarmConnectionBadge: View {
+    let connected: Bool
+    let battery: Double?
+    var body: some View {
+        HStack(spacing: NoopMetrics.space2) {
+            Image(systemName: "applewatch").accessibilityHidden(true)
+            Text(connected ? "WHOOP connected" : "Connect WHOOP")
+            Spacer(minLength: NoopMetrics.space1)
+            if connected, let battery { Text("\(Int(battery.rounded()))%") }
+        }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+    }
+}
+
+struct AlarmOverviewRow: Identifiable {
+    let id: String
+    let time: String
+    let label: String
+    let repeatText: String
+    let status: String
+    let enabled: Bool
+}
+
+struct AlarmOverviewRows: View {
+    let rows: [AlarmOverviewRow]
+    let add: () -> Void
+    let toggle: (String, Bool) -> Void
+    let edit: (String) -> Void
+    let skip: (String) -> Void
+    let remove: (String) -> Void
+    @ScaledMetric(relativeTo: .largeTitle) private var timeSize = NoopMetrics.alarmTimeNumber
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        if rows.isEmpty {
+            NoopCard(padding: NoopMetrics.space5) {
+                VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                    Text("No alarms yet").font(StrandFont.title2)
+                    Button("Add alarm", action: add).buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
+                }
+            }
+        } else {
+            NoopCard(padding: NoopMetrics.space4) {
+                VStack(spacing: NoopMetrics.space4) {
+                    ForEach(rows) { row in
+                        let layout = typeSize.isAccessibilitySize
+                            ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
+                            : AnyLayout(HStackLayout(spacing: NoopMetrics.space3))
+                        layout {
+                            NavigationLink(value: AlarmRoute.detail(row.id)) {
+                                VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                                    Text(verbatim: row.time).font(StrandFont.number(timeSize)).monospacedDigit()
+                                        .foregroundStyle(row.enabled ? StrandPalette.textPrimary : StrandPalette.textSecondary)
+                                    Text(verbatim: row.label + " · " + row.repeatText)
+                                        .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                                    Text(LocalizedStringKey(row.status)).font(StrandFont.caption).foregroundStyle(StrandPalette.alarmAccent)
+                                }.frame(maxWidth: .infinity, alignment: .leading)
+                            }.buttonStyle(NoopFeedbackButtonStyle())
+                            Toggle("Enable \(row.label)", isOn: Binding(get: { row.enabled }, set: { toggle(row.id, $0) }))
+                                .labelsHidden().toggleStyle(NoopSwitchStyle())
+                        }
+                        .contextMenu {
+                            Button("Edit alarm") { edit(row.id) }
+                            Button("Skip next alarm") { skip(row.id) }
+                            Button("Delete alarm", role: .destructive) { remove(row.id) }
+                        }
+                        if row.id != rows.last?.id { Divider().overlay(StrandPalette.hairline) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct AlarmTestBuzzButton: View {
+    @ObservedObject var coordinator: BuzzDeliveryCoordinator
+    let deviceID: String
+    let ready: Bool
+    @State private var cueID: String?
+    private var status: String? {
+        guard let cue = coordinator.cues.last(where: { $0.id == cueID }) else { return nil }
+        switch cue.status {
+        case .confirmed: return "Buzz confirmed"
+        case .acknowledged: return "WHOOP acknowledged"
+        case .requested, .responseReceived: return "Buzz requested"
+        case .unavailable: return "WHOOP unavailable"
+        case .suppressed: return "Buzz skipped"
+        default: return "Buzz not verified"
+        }
+    }
+    var body: some View {
+        VStack(spacing: NoopMetrics.space1) {
+            Button {
+                cueID = coordinator.schedule(owner: "manual-test", deviceId: deviceID, loops: 1)
+            } label: { Label("Test buzz", systemImage: "waveform") }
+                .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+                .disabled(!ready || coordinator.storageError != nil)
+            if let status { Text(LocalizedStringKey(status)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
         }
     }
 }

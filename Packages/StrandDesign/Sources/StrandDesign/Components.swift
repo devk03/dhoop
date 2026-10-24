@@ -37,6 +37,9 @@ public enum NoopMetrics {
     public static let alarmTimeNumber: CGFloat = 44
     public static let dashboardMetricNumber: CGFloat = 36
     public static let minimumTouchTarget: CGFloat = 44
+    /// Compact countdown controls share the same scale on the Alarms tab.
+    public static let timerPickerHeight: CGFloat = 180
+    public static let timerRingDiameter: CGFloat = 260
     /// Day-calendar geometry: an hour remains proportional; short events retain usable touch targets.
     public static let calendarHourHeight: CGFloat = 96
     public static let calendarTimeGutter: CGFloat = 60

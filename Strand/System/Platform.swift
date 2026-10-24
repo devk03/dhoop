@@ -89,6 +89,8 @@ enum ScreenIdle {
     enum Reason: Hashable {
         /// An explicit meditation timer, independent of other watched sessions.
         case meditation
+        /// An explicit countdown on the Alarms tab.
+        case alarmTimer
         /// A watched on-screen session (breathing, intervals, workout, HRV snapshot) via `keepAwake`.
         case session
         /// A strap history sync, while Settings → "Keep screen on while syncing" is on (iOS).

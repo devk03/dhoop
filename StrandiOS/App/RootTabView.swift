@@ -127,6 +127,7 @@ struct RootTabView: View {
         .onAppear {
             if runningSession == nil { runningSession = RunningSessionController() }
             if CommandLine.arguments.contains("--calendar-reader-open") { selectedTab = 7 }
+            if CommandLine.arguments.contains("--alarm-timer-open") { selectedTab = 6 }
             #if DEBUG
             if CommandLine.arguments.contains("--alarm-diagnostics") { selectedTab = 6 }
             #endif
