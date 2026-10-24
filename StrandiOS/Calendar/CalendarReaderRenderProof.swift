@@ -33,7 +33,14 @@ enum CalendarReaderRenderProof {
                 "error": ["code": "TASK_CONTEXT_UNAVAILABLE", "message": "Unavailable"]]] : [task]
         } else {
             value["snapshot"] = "synthetic-review-snapshot"
-            value["events"] = empty ? [] : [item, event("demo-lunch", title: "Lunch with Maya", hour: 19),
+            var overlap = event("demo-overlap", title: "Design review", hour: 16)
+            overlap["startAt"] = "2026-10-23T16:30:00Z"; overlap["endAt"] = "2026-10-23T17:15:00Z"
+            var short = event("demo-short", title: "Quick check-in", hour: 17)
+            short["startAt"] = "2026-10-23T17:20:00Z"; short["endAt"] = "2026-10-23T17:25:00Z"
+            var allDay = event("demo-all-day", title: "Project day", hour: 16)
+            allDay["allDay"] = true; allDay["startAt"] = NSNull(); allDay["endAt"] = NSNull()
+            allDay["startDate"] = date; allDay["endDate"] = "2026-10-24"
+            value["events"] = empty ? [] : [allDay, item, overlap, short, event("demo-lunch", title: "Lunch with Maya", hour: 19),
                 event("demo-workout", title: "Upper body workout", hour: 22, source: "local_projection")]
             value["page"] = ["hasMore": false, "nextCursor": NSNull()]
         }
@@ -56,12 +63,15 @@ enum CalendarReaderRenderProof {
             Text(verbatim: caption)
                 .font(StrandFont.caption).padding(NoopMetrics.space2)
             view
-        }.frame(width: width, height: height).environment(\.colorScheme, scheme).environment(\.dynamicTypeSize, type)
-            .environment(\.horizontalSizeClass, width >= 768 ? .regular : .compact)
+        }.frame(width: width, height: height)
             .background(StrandPalette.surfaceBase).foregroundStyle(StrandPalette.textPrimary)
+            .environment(\.colorScheme, scheme).environment(\.dynamicTypeSize, type)
+            .environment(\.horizontalSizeClass, width >= 768 ? .regular : .compact)
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { throw CalendarReaderFailure.invalidResponse }
         let host = UIHostingController(rootView: content), window = UIWindow(windowScene: scene)
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        host.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
+        window.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
         window.frame = bounds; window.windowLevel = .init(rawValue: UIWindow.Level.normal.rawValue - 1)
         window.backgroundColor = UIColor(StrandPalette.surfaceBase); window.isOpaque = true
         host.view.backgroundColor = UIColor(StrandPalette.surfaceBase); host.view.isOpaque = true
@@ -87,13 +97,13 @@ enum CalendarReaderRenderProof {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let dayClient = client(); await dayClient.loadDay(date)
-            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-dark", width: 390, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-320-dark", width: 320, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-light", width: 390, scheme: .light, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-768-dark", width: 768, folder: folder)
-            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-accessibility", width: 390, height: 1200, type: .accessibility3, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-320-dark", width: 320, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-390-light", width: 390, scheme: .light, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-768-dark", width: 768, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "day-390-accessibility", width: 390, height: 1200, type: .accessibility3, folder: folder)
             let empty = client(empty: true); await empty.loadDay(date)
-            try await capture(CalendarReaderView(client: empty, date: date), name: "empty-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: empty, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "empty-390-dark", width: 390, folder: folder)
             let detail = try await dayClient.readEvent(date: date, id: "demo-event")
             try await capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, initialDetail: detail, expandedAgent: true),
                         name: "detail-390-dark", width: 390, height: 2100, folder: folder)
@@ -108,7 +118,7 @@ enum CalendarReaderRenderProof {
                 if offline { throw CalendarReaderFailure.http(502) }; return try payload(detail: false)
             })
             await failed.loadDay(date); offline = true; await failed.loadDay(date)
-            try await capture(CalendarReaderView(client: failed, date: date), name: "error-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: failed, date: date, captureNow: CalendarReaderDates.instant("2026-10-23T16:20:00Z")), name: "error-390-dark", width: 390, folder: folder)
             let loading = CalendarReaderClient(read: { configuration }, save: { _ in }, send: { _, _ in
                 try await Task.sleep(nanoseconds: 5_000_000_000); return try payload(detail: false)
             })
