@@ -33,6 +33,10 @@ public enum NoopMetrics {
     public static let sleepGoalDiameter: CGFloat = 120
     public static let sleepGoalStroke: CGFloat = 6
     public static let sleepGoalNumber: CGFloat = 22
+    /// Unified comparison: outer WHOOP and inner provider duration rings.
+    public static let sleepComparisonDiameter: CGFloat = 264
+    public static let sleepComparisonStroke: CGFloat = 10
+    public static let sleepComparisonRingInset: CGFloat = 18
     public static let dashboardHeroNumber: CGFloat = 64
     public static let alarmTimeNumber: CGFloat = 44
     public static let dashboardMetricNumber: CGFloat = 36

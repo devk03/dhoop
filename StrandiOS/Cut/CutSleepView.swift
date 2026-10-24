@@ -16,8 +16,6 @@ struct CutSleepView: View {
     @State private var timelineSource = ""
     @State private var episodeSelection = ""
     @AppStorage("dhoop.sleep.appleComparisonSource") private var providerID = ""
-    @ScaledMetric(relativeTo: .title) private var ringDiameter = NoopMetrics.sleepGoalDiameter
-    @ScaledMetric(relativeTo: .title) private var ringNumberSize = NoopMetrics.sleepGoalNumber
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardTileNumber
     private var window: MetricDateWindow { selection.window(now: capturedAt) }
     private var result: SleepRangeSnapshot? {
@@ -60,10 +58,11 @@ struct CutSleepView: View {
             }
             MetricRangeControl(selection: $selection, now: capturedAt)
             if history.isRefreshing { ProgressView(result == nil ? "Reading sleep sources…" : "Updating saved sleep…").font(StrandFont.caption) }
-            grid {
-                selectedDayCard("WHOOP", rows: whoop, tint: StrandPalette.metricHRV)
-                selectedDayCard(comparisonName, rows: apple, tint: StrandPalette.metricSteps)
-            }
+            SleepComparisonRings(dateLabel: selectedNight.map(nightLabel) ?? String(localized: "No sleep in range"),
+                whoopMinutes: whoop.first { $0.day == selectedNight }?.total,
+                comparisonName: comparisonName, comparisonMinutes: apple.first { $0.day == selectedNight }?.total,
+                whoopDetail: whoop.first { $0.day == selectedNight }?.method,
+                comparisonDetail: apple.first { $0.day == selectedNight }.map { _ in comparisonDetail })
             timelineCard
             stagesCard
             NoopCard {
@@ -142,38 +141,6 @@ struct CutSleepView: View {
     private var selectedEpisode: SleepComparisonTimeline? {
         episodes.first { $0.id == episodeSelection } ?? episodes.first
     }
-    private func selectedDayCard(_ title: String, rows: [SleepComparisonDay], tint: Color) -> some View {
-        let reading = rows.first { $0.day == selectedNight }
-        return NoopCard(padding: NoopMetrics.space3, tint: tint, fillHeight: true) {
-            VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                Text(title).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                let goal = SleepDurationGoal(recordedMinutes: reading?.total)
-                ZStack {
-                    Circle().stroke(StrandPalette.textTertiary.opacity(0.2), lineWidth: NoopMetrics.sleepGoalStroke)
-                    Circle().trim(from: 0, to: goal.ringFraction)
-                        .stroke(tint, style: StrokeStyle(lineWidth: NoopMetrics.sleepGoalStroke, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    VStack(spacing: NoopMetrics.space1) {
-                        Text(goal.recordedMinutes.map(sleepHM) ?? "—")
-                            .font(StrandFont.number(ringNumberSize, weight: .semibold)).monospacedDigit()
-                        Text(goal.percentage.map { "\($0)% of goal" } ?? "No record")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    }.padding(NoopMetrics.space3)
-                }
-                .frame(width: ringDiameter, height: ringDiameter)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, NoopMetrics.space2)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(goal.recordedMinutes.map { "\(sleepHM($0)), \(goal.percentage ?? 0) percent of the 8 hour 15 minute duration goal" } ?? "No sleep duration recorded")
-                Text("Goal · 8h 15m").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                Text(selectedNight.map { "\(nightLabel($0)) · total sleep" } ?? "No sleep in range")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                Text(reading.map { title == "WHOOP" ? $0.method : "Via Apple Health" } ?? "No record for this date")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-            }.frame(maxWidth: .infinity, alignment: .leading)
-        }.accessibilityElement(children: .combine)
-    }
-
     private var timelineCard: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
