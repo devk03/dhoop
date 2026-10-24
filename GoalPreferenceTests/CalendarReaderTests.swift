@@ -137,8 +137,10 @@ final class CalendarReaderTests: XCTestCase {
     func testProvisioningVerifiesReadAndKeychainBeforeRetiringTransfer() async throws {
         var saved: CalendarReaderConfiguration?
         let c = config(); var succeeds = false
-        let client = CalendarReaderClient(read: { saved }, save: { saved = $0 }, send: { _, _ in
-            if !succeeds { throw CalendarReaderFailure.http(403) }; return try self.day()
+        let client = CalendarReaderClient(read: { saved }, save: { saved = $0 }, send: { endpoint, _ in
+            if !succeeds { throw CalendarReaderFailure.http(403) }
+            guard case .day(let requestedDay, _) = endpoint else { throw CalendarReaderFailure.invalidResponse }
+            return try self.day([], date: requestedDay)
         })
         let envelope: [String: Any] = ["schemaVersion": 1, "baseURL": c.origin, "installationId": c.installationId.uuidString, "readToken": c.readToken]
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("calendar-setup-" + UUID().uuidString + ".json")

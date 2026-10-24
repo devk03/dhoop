@@ -5,11 +5,14 @@ import Foundation
 enum CalendarReaderReadProof {
     static func runIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("--calendar-reader-proof") else { return }
-        let client = CalendarReaderClient.shared, date = CalendarReaderDates.key(Date())
+        // The visible Calendar view can supersede shared-client reads; verification owns its request.
+        let client = CalendarReaderClient(), date = CalendarReaderDates.key(Date())
         var report: [String: Any] = ["schemaVersion": 1, "status": "not_verified", "writesAttempted": false,
             "runId": CalendarReaderProvisioner.verificationRun,
             "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"]
         await client.loadDay(date)
+        report["configurationPresent"] = client.configuration != nil; report["readEnabled"] = client.enabled
+        if let error = client.error { report["error"] = error }
         if let first = client.day.first, first.date == date, !client.stale, client.error == nil {
             report["status"] = "authenticated_day_verified"; report["date"] = date; report["readAt"] = first.readAt
             report["eventCount"] = client.day.events.count; report["hasMore"] = client.day.cursor != nil
