@@ -94,6 +94,9 @@ public enum StrandPalette {
     public static let hairline       = NoopVisualStyle.border
     public static let hairlineStrong = NoopVisualStyle.borderHighlight
 
+    /// Quiet tinted calendar surfaces retain the theme-aware canvas underneath.
+    public static let calendarEventFillOpacity: Double = 0.18
+
     // MARK: Text — dark ink on paper / cool off-white on charcoal
     public static let textPrimary    = NoopVisualStyle.primaryText
     public static let textSecondary  = NoopVisualStyle.secondaryText

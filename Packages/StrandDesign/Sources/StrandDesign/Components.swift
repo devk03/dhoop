@@ -37,6 +37,11 @@ public enum NoopMetrics {
     public static let alarmTimeNumber: CGFloat = 44
     public static let dashboardMetricNumber: CGFloat = 36
     public static let minimumTouchTarget: CGFloat = 44
+    /// Day-calendar geometry: an hour remains proportional; short events retain usable touch targets.
+    public static let calendarHourHeight: CGFloat = 96
+    public static let calendarTimeGutter: CGFloat = 60
+    public static let calendarEventMinimumWidth: CGFloat = 88
+    public static let calendarEventRadius: CGFloat = 8
     /// Minimum macOS detail-sheet footprint for a scrollable editor/history surface.
     public static let detailSheetMinWidth: CGFloat = 520
     public static let detailSheetMinHeight: CGFloat = 620
