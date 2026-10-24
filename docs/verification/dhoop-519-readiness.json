@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "build": "519",
+  "codeCommit": "3748d3a2e08127bec1931364ad627ff3a41dab60",
+  "executableSHA256": "8ccb58c09004d2053909293c2bce85f8aed624fb2add24b846045f8829f17c3d",
+  "physicalIPhoneInstalled": true,
+  "stableIdentityVerified": true,
+  "wakeAlarmStateByteIdentical": true,
+  "targetedTests": {
+    "passed": 55,
+    "failed": 0
+  },
+  "iosReleaseBuild": "passed",
+  "macOSBuild": "passed",
+  "translationAudit": "passed",
+  "docCommentLint": "passed",
+  "finalVisualCapture": "blocked_phone_locked",
+  "freshCalendarRead": "not_verified_phone_locked",
+  "homeScreenWidgetPlacement": "not_verified",
+  "calendarAcceptActivation": "awaiting_owner_approval",
+  "realTimerVibration": "not_wearer_confirmed",
+  "noDatabaseMigration": true,
+  "noLiveInvitationWrite": true
+}
