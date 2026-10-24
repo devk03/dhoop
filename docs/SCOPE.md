@@ -84,3 +84,17 @@ unbounded monitoring job is permitted. The original test receiver remains limite
 No arbitrary commands, configuration changes, health-data writes, alarm writes, telemetry,
 or NOOP-operated server are permitted by this remote-buzz exception. The user-owned API lives
 in the separate Life repository. This does not change upstream NOOP's scope.
+
+## Personal Dhoop fork exception — Life Calendar
+
+The owner requested a native day calendar and, on October 24, 2026, a Home Screen widget and
+invitation acceptance. This personal iOS fork may read the owner's separately configured Life
+Calendar and linked task context. Widgets read a bounded, credential-free App Group cache;
+they do not call Life or Google. Widget links only open a date or event in Dhoop.
+
+The only proposed Calendar mutation is an explicit in-app tap to accept the owner's attendance
+on one event or dated recurring occurrence. It requires separately approved, independently
+enrolled Accept-only credentials. Reader credentials cannot write. No event creation, scheduling,
+general editing, deletion, automatic acceptance, offline write queue, or recurring polling job is
+included. Google credentials remain on the owner-operated Life service, outside this repository.
+This exception does not change upstream NOOP's scope or introduce an Android cloud dependency.
