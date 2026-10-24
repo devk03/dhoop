@@ -58,3 +58,14 @@ The Life thread verified the existing reopen contract with isolated completion t
 Real native tests passed: 24 across bookmark scope/identity, durable drafts and reopened history; two bookmark tests passed again after tightening the invalid-ID fixture; the existing explicit manual completion/reopen permission test also passed with physical start disabled. The optimized iOS Release build and strict signature/identity checks pass. Localization in all ten locales, detached-comment lint and whitespace checks pass. Evidence: `/private/tmp/dhoop-513-focused-tests.log`, `/private/tmp/dhoop-513-bookmark-tests.log`, `/private/tmp/dhoop-513-reopen-command-test.log`, `/private/tmp/dhoop-513-device-build.log`, `/private/tmp/dhoop-513-signature-proof.json`, `/private/tmp/dhoop-513-i18n.log`.
 
 No database migration, reset, backend deployment, production workout write or strap command was needed. The owner is away from the Mac; build 513 is prepared for a later in-place install, not reported installed or physically interaction-tested. Build 511 remains the last confirmed physical installation.
+
+
+## Physical build 513 installation — 2026-10-23
+
+Build **513** is now installed in place and launched on the physical iPhone **0A-Homeboy**, confirmed by fresh device inventory. Its unchanged verified executable SHA-256 is `72f89b1bbe6c08758ef945c1f7acce57adc04cbb79c5f2697ae3724583ea9d95`; source remains `031ebfe`. This supersedes the earlier pending-install notes for builds 512/513 and the earlier locked-launch limitation.
+
+The before/after read-only comparison preserves all 33 immutable command payloads (31 committed/two rejected/zero unresolved), all seven local edits in session 284, and the zero-edit session 287 draft. Pending state is unchanged. No Save or Reopen was invoked.
+
+The fresh native authenticated proof succeeds at Life revision 769: two history pages/40 rows, exact session detail, strength-filtered history, strength dashboard and previous-set contract all validate. The previous set is honestly unavailable (`set_not_completed`), rather than a substituted result. Fresh native capability receipt confirms batch saving, manual completion/reopening, historical editing and progression preferences enabled, while physical lifecycle start remains disabled. The proof records no writes attempted. Physical keyboard/reopen interactions and physiological accuracy are not asserted by these read-only checks.
+
+Evidence: `/private/tmp/dhoop-513-home-install.json`, `/private/tmp/dhoop-513-home-launch.json`, `/private/tmp/dhoop-513-home-inventory.json`, `/private/tmp/dhoop-513-home-verification.json`, and `/private/tmp/dhoop-513-home-after/history-proof.json`.
