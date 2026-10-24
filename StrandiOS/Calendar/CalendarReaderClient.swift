@@ -86,7 +86,7 @@ final class CalendarReaderClient: ObservableObject {
             stale = false
         } catch is CancellationError { }
         catch {
-            guard generation == version, dayTicket == ticket else { return }
+            guard !Task.isCancelled, generation == version, dayTicket == ticket else { return }
             self.error = Self.message(error); stale = day.first != nil
         }
     }

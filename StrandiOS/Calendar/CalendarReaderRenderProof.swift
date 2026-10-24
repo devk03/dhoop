@@ -50,7 +50,7 @@ enum CalendarReaderRenderProof {
         })
     }
     private static func capture<V: View>(_ view: V, name: String, width: CGFloat, height: CGFloat = 844,
-                                         scheme: ColorScheme = .dark, type: DynamicTypeSize = .large, folder: URL) throws {
+                                         scheme: ColorScheme = .dark, type: DynamicTypeSize = .large, folder: URL) async throws {
         let caption = ["IMPLEMENTATION", "SYNTHETIC DATA", "\(Int(width)) PT"].joined(separator: " · ")
         let content = VStack(spacing: 0) {
             Text(verbatim: caption)
@@ -59,8 +59,23 @@ enum CalendarReaderRenderProof {
         }.frame(width: width, height: height).environment(\.colorScheme, scheme).environment(\.dynamicTypeSize, type)
             .environment(\.horizontalSizeClass, width >= 768 ? .regular : .compact)
             .background(StrandPalette.surfaceBase).foregroundStyle(StrandPalette.textPrimary)
-        let renderer = ImageRenderer(content: content); renderer.scale = 2
-        guard let data = renderer.uiImage?.pngData() else { throw CalendarReaderFailure.invalidResponse }
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { throw CalendarReaderFailure.invalidResponse }
+        let host = UIHostingController(rootView: content), window = UIWindow(windowScene: scene)
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        window.frame = bounds; window.windowLevel = .init(rawValue: UIWindow.Level.normal.rawValue - 1)
+        window.backgroundColor = UIColor(StrandPalette.surfaceBase); window.isOpaque = true
+        host.view.backgroundColor = UIColor(StrandPalette.surfaceBase); host.view.isOpaque = true
+        window.rootViewController = host; window.isHidden = false
+        defer { window.isHidden = true; window.rootViewController = nil }
+        host.view.frame = bounds; host.view.layoutIfNeeded()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat(); format.scale = 2
+        var drawn = false
+        let image = UIGraphicsImageRenderer(bounds: bounds, format: format).image { _ in
+            drawn = host.view.drawHierarchy(in: bounds, afterScreenUpdates: true)
+        }
+        guard drawn, let data = image.pngData() else { throw CalendarReaderFailure.invalidResponse }
         try data.write(to: folder.appendingPathComponent(name + ".png"), options: .atomic)
     }
     static func runIfRequested() async {
@@ -72,20 +87,20 @@ enum CalendarReaderRenderProof {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let dayClient = client(); await dayClient.loadDay(date)
-            try capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-dark", width: 390, folder: folder)
-            try capture(CalendarReaderView(client: dayClient, date: date), name: "day-320-dark", width: 320, folder: folder)
-            try capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-light", width: 390, scheme: .light, folder: folder)
-            try capture(CalendarReaderView(client: dayClient, date: date), name: "day-768-dark", width: 768, folder: folder)
-            try capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-accessibility", width: 390, height: 1200, type: .accessibility3, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-320-dark", width: 320, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-light", width: 390, scheme: .light, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-768-dark", width: 768, folder: folder)
+            try await capture(CalendarReaderView(client: dayClient, date: date), name: "day-390-accessibility", width: 390, height: 1200, type: .accessibility3, folder: folder)
             let empty = client(empty: true); await empty.loadDay(date)
-            try capture(CalendarReaderView(client: empty, date: date), name: "empty-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: empty, date: date), name: "empty-390-dark", width: 390, folder: folder)
             let detail = try await dayClient.readEvent(date: date, id: "demo-event")
-            try capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, initialDetail: detail, expandedAgent: true),
+            try await capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, initialDetail: detail, expandedAgent: true),
                         name: "detail-390-dark", width: 390, height: 2100, folder: folder)
-            try capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, initialDetail: detail, expandedAgent: true),
+            try await capture(CalendarEventDetailView(day: date, event: detail.event, client: dayClient, initialDetail: detail, expandedAgent: true),
                         name: "detail-320-dark", width: 320, height: 2300, folder: folder)
             let denied = client(unavailable: true), unavailable = try await denied.readEvent(date: date, id: "demo-event")
-            try capture(CalendarEventDetailView(day: date, event: unavailable.event, client: denied, initialDetail: unavailable),
+            try await capture(CalendarEventDetailView(day: date, event: unavailable.event, client: denied, initialDetail: unavailable),
                         name: "unavailable-390-dark", width: 390, folder: folder)
             var offline = false
             let configuration = demoConfiguration()
@@ -93,16 +108,16 @@ enum CalendarReaderRenderProof {
                 if offline { throw CalendarReaderFailure.http(502) }; return try payload(detail: false)
             })
             await failed.loadDay(date); offline = true; await failed.loadDay(date)
-            try capture(CalendarReaderView(client: failed, date: date), name: "error-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: failed, date: date), name: "error-390-dark", width: 390, folder: folder)
             let loading = CalendarReaderClient(read: { configuration }, save: { _ in }, send: { _, _ in
                 try await Task.sleep(nanoseconds: 5_000_000_000); return try payload(detail: false)
             })
             let pending = Task { await loading.loadDay(date) }
             for _ in 0..<100 { if loading.busy { break }; await Task.yield() }
-            try capture(CalendarReaderView(client: loading, date: date), name: "loading-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderView(client: loading, date: date), name: "loading-390-dark", width: 390, folder: folder)
             pending.cancel(); await pending.value
             let unset = CalendarReaderClient(read: { nil }, save: { _ in }, send: { _, _ in throw CalendarReaderFailure.disabled })
-            try capture(CalendarReaderSettingsView(client: unset), name: "connection-390-dark", width: 390, folder: folder)
+            try await capture(CalendarReaderSettingsView(client: unset), name: "connection-390-dark", width: 390, folder: folder)
             success = true
         } catch { }
         let report: [String: Any] = ["schemaVersion": 1, "rendered": success, "syntheticOnly": true, "fixtureNetworkUsed": false,

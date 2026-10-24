@@ -156,9 +156,12 @@ struct CalendarReaderDayChain: Equatable {
     mutating func accept(_ page: CalendarReaderDay, date: String, requestedCursor: String?) throws {
         try page.validate(date: date)
         if let requestedCursor {
-            guard let first, first.date == date, first.snapshot == page.snapshot, cursor == requestedCursor,
+            guard let first, first.date == date else { throw CalendarReaderFailure.invalidResponse }
+            guard first.snapshot == page.snapshot else { throw CalendarReaderFailure.snapshotChanged }
+            guard events.count + page.events.count <= 5000 else { throw CalendarReaderFailure.http(413) }
+            guard cursor == requestedCursor,
                   Set(events.map(\.id)).isDisjoint(with: Set(page.events.map(\.id))),
-                  page.page.nextCursor != requestedCursor, events.count + page.events.count <= 5000 else { throw CalendarReaderFailure.snapshotChanged }
+                  page.page.nextCursor != requestedCursor else { throw CalendarReaderFailure.invalidResponse }
             events += page.events
         } else { first = page; events = page.events }
         cursor = page.page.nextCursor

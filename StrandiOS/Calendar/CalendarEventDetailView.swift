@@ -116,7 +116,7 @@ struct CalendarEventDetailView: View {
             guard ticket == identity, !Task.isCancelled else { return }
             detail = value; progress = [:]; error = nil
         } catch is CancellationError { }
-        catch { if ticket == identity { self.error = CalendarReaderClient.message(error) } }
+        catch { if !Task.isCancelled && ticket == identity { self.error = CalendarReaderClient.message(error) } }
     }
     private func more(ref: String, before: Int) async {
         let ticket = identity; busy = true
@@ -128,7 +128,7 @@ struct CalendarEventDetailView: View {
                   let next = value.tasks.first(where: { $0.ref == ref })?.task?.progress else { throw CalendarReaderFailure.historyChanged }
             var combined = old; try combined.append(next, before: before); progress[ref] = combined; error = nil
         } catch is CancellationError { }
-        catch { if ticket == identity { self.error = CalendarReaderClient.message(error) } }
+        catch { if !Task.isCancelled && ticket == identity { self.error = CalendarReaderClient.message(error) } }
     }
 }
 #endif
