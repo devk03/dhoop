@@ -6,7 +6,9 @@ enum CalendarReaderReadProof {
     static func runIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("--calendar-reader-proof") else { return }
         let client = CalendarReaderClient.shared, date = CalendarReaderDates.key(Date())
-        var report: [String: Any] = ["schemaVersion": 1, "status": "not_verified", "writesAttempted": false]
+        var report: [String: Any] = ["schemaVersion": 1, "status": "not_verified", "writesAttempted": false,
+            "runId": CalendarReaderProvisioner.verificationRun,
+            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"]
         await client.loadDay(date)
         if let first = client.day.first, first.date == date, !client.stale, client.error == nil {
             report["status"] = "authenticated_day_verified"; report["date"] = date; report["readAt"] = first.readAt

@@ -132,9 +132,15 @@ enum CalendarReaderProvisioner {
         var status = "setup_not_verified"
         do { try await consume(folder.appendingPathComponent("dhoop-calendar-provisioning.json"), client: client); status = "connected_authenticated_day_read" } catch { }
         let report: [String: Any] = ["schemaVersion": 1, "status": status, "readEnabled": client.enabled,
-            "installationId": client.configuration?.installationId.uuidString.lowercased() ?? "unconfigured"]
+            "installationId": client.configuration?.installationId.uuidString.lowercased() ?? "unconfigured",
+            "runId": verificationRun, "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"]
         if let data = try? JSONSerialization.data(withJSONObject: report) {
             try? data.write(to: folder.appendingPathComponent("dhoop-calendar-connection-result.json"), options: .atomic)
         }
+    }
+    static var verificationRun: String {
+        let value = ProcessInfo.processInfo.arguments.first { $0.hasPrefix("--calendar-verification-run=") }
+            .map { String($0.dropFirst("--calendar-verification-run=".count)) }
+        return value.flatMap(UUID.init(uuidString:))?.uuidString ?? "manual"
     }
 }

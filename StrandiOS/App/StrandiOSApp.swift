@@ -365,6 +365,9 @@ struct StrandiOSApp: App {
                 .task {
                     await WorkoutConnectionProvisioner.runLocalLaunchImport()
                     await WorkoutHistoryReadProof.runIfRequested()
+                    await CalendarReaderProvisioner.runIfRequested()
+                    await CalendarReaderReadProof.runIfRequested()
+                    await CalendarReaderRenderProof.runIfRequested()
                     #if DEBUG
                     await LifeSyncReadinessProof.runIfRequested(model: model)
                     await OwnerDataSnapshotProof.runIfRequested(model: model)

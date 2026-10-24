@@ -56,12 +56,12 @@ struct RootTabView: View {
     /// root view alive, so an at-root re-tap keeps scroll position and never re-runs `.task`
     /// (#198; the #197 resetID/`.id()` rebuild reset both). Requires the tab roots' first-hop
     /// links to push `TabRoute`/`MoreDestination` VALUES — closure-destination links bypass the path.
-    @State private var tabPaths: [NavigationPath] = Array(repeating: NavigationPath(), count: 7)
+    @State private var tabPaths: [NavigationPath] = Array(repeating: NavigationPath(), count: 8)
     /// One scroll-to-top token per tab. Bumped when the user re-taps the active tab while it's ALREADY
     /// at its root — the other half of the iOS convention #197/#198 left unserved (an at-root re-tap was
     /// a no-op). Threaded into each tab's root via `\.scrollToTopSignal`; ScreenScaffold / LiquidTodayView
     /// scroll to their top anchor when their tab's token changes.
-    @State private var scrollTop: [Int] = Array(repeating: 0, count: 7)
+    @State private var scrollTop: [Int] = Array(repeating: 0, count: 8)
     /// Which More-tab groups are expanded (S2). Insights + Body stay open at rest; Data + App collapse to
     /// just their header until tapped. Persisted (#860 item 2): the user's open/closed choice must SURVIVE
     /// leaving and re-entering the More tab (and relaunch), not reset to the seed every visit. Backed by an
@@ -110,7 +110,7 @@ struct RootTabView: View {
     }
 
     /// Tags of the tabs this build shows.
-    private static let shownTabs = [0, 2, 5, 6]
+    private static let shownTabs = [0, 2, 5, 6, 7]
 
     var body: some View {
         // The platform tab bar is intentionally left fully native. iOS 26 supplies Liquid Glass and
@@ -121,10 +121,12 @@ struct RootTabView: View {
             tab(CutSleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
             tab(runningTabRoot, "Exercises", "figure.run", path: $tabPaths[5], scrollSignal: scrollTop[5]).tag(5)
             tab(AlarmsView(), "Alarms", "alarm", path: $tabPaths[6], scrollSignal: scrollTop[6]).tag(6)
+            tab(CalendarReaderView(), "Calendar", "calendar", path: $tabPaths[7], scrollSignal: scrollTop[7]).tag(7)
         }
         .tint(StrandPalette.accent)
         .onAppear {
             if runningSession == nil { runningSession = RunningSessionController() }
+            if CommandLine.arguments.contains("--calendar-reader-open") { selectedTab = 7 }
             #if DEBUG
             if CommandLine.arguments.contains("--alarm-diagnostics") { selectedTab = 6 }
             #endif
