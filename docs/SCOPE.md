@@ -98,3 +98,19 @@ enrolled Accept-only credentials. Reader credentials cannot write. No event crea
 general editing, deletion, automatic acceptance, offline write queue, or recurring polling job is
 included. Google credentials remain on the owner-operated Life service, outside this repository.
 This exception does not change upstream NOOP's scope or introduce an Android cloud dependency.
+
+## Personal Dhoop fork exception — food estimates and shared calorie preferences
+
+On October 24, 2026, the owner explicitly requested quick food/protein/calorie tracking in both
+Dhoop and Life and a daily calorie range for chosen dates. The personal iOS food log may store
+optional calorie estimates alongside existing protein entries, without creating deficit-log days
+or changing weight goals. The approved summary transport may include separately enabled estimated
+calorie subtotals and coverage counts. No food names or individual food records are exported.
+
+The existing protein credential may read and edit only the shared dated calorie-goal preferences
+through Life's independently gated nutrition resource on the existing webhook destination. This
+does not grant food-history reads or broader health-data access. Writes require an explicit Save
+or Remove action and version checks; they are not queued or automatically replayed offline. No
+background nutrition poll, new Access destination, credentials, database migration, prescribed
+target, or Calendar permission is introduced. Android's independent implementation is unchanged;
+this is an owner-requested personal iOS/Life integration, not an upstream cloud feature.

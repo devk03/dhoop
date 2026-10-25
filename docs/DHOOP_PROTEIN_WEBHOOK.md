@@ -37,8 +37,10 @@ Examples are synthetic documentation values, never production test health record
   `proteinGrams` is JSON null and `entryCount` is 0. This clears only an automatically owned value.
 - A never-logged day sends nothing. Unreadable/corrupt local logs must fail closed, not become clears.
 - `coverage: logged_entries` always means grams logged so far, NOT a claim of complete daily intake.
-- `source` is exactly `dhoop`; no food names, calorie totals, weight, target or individual entries leave
-  the phone. Strict Gregorian date, Pacific-only timezone and UTC-Z generation timestamp use v1 rules.
+- `source` is exactly `dhoop`; no food names, weight, target or individual entries leave the phone.
+  The separately enabled [nutrition extension](DHOOP_NUTRITION.md) may add an explicitly estimated
+  calorie subtotal and coverage counts. Without it, the original twelve-field envelope is unchanged.
+  Strict Gregorian date, Pacific-only timezone and UTC-Z generation timestamp use v1 rules.
 - Revisions order events. Generation timestamps are not conflict ordering. Retried bytes are immutable.
 
 ## Acknowledgement
