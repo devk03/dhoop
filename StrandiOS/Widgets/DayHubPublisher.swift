@@ -26,7 +26,7 @@ final class DayHubPublisher: ObservableObject {
     private func save(_ value: DayHubSnapshot) {
         guard let defaults, let bytes = try? JSONEncoder().encode(value), bytes.count <= 256 * 1024 else { return }
         snapshot = value; defaults.set(bytes, forKey: DayHubSnapshot.storageKey)
-        WidgetCenter.shared.reloadTimelines(ofKind: DayHubSnapshot.widgetKind)
+        for kind in DayHubSnapshot.widgetKinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) }
     }
     func attach(model: AppModel) {
         guard self.model == nil else { return }; self.model = model

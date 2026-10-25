@@ -6,11 +6,42 @@ struct DayHubView: View {
     let snapshot: DayHubSnapshot?
     let now: Date
     var expanded = false
+    enum Presentation: Equatable { case combined, calendar, summary }
+    var presentation: Presentation = .combined
     @Environment(\.dynamicTypeSize) private var typeSize
     private var food: DayHubSnapshot.Food? { snapshot?.food(at: now) }
     private var workouts: DayHubSnapshot.Workouts? { snapshot?.workouts(at: now) }
     private var sleep: DayHubSnapshot.Sleep? { snapshot?.sleep }
-    var body: some View {
+    @ViewBuilder var body: some View {
+        switch presentation {
+        case .combined: combinedPanel
+        case .calendar: calendarPanel
+        case .summary: summaryPanel
+        }
+    }
+    private var calendarPanel: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            HStack {
+                Text("Today").font(StrandFont.headline)
+                Spacer(minLength: NoopMetrics.space1)
+                Text(now, format: .dateTime.month(.abbreviated).day()).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
+            DayHubCalendarView(days: snapshot?.calendarDays ?? [], now: now, expanded: true,
+                showsEventList: false, plotHeight: NoopMetrics.dayHubCalendarWidget)
+        }.foregroundStyle(StrandPalette.textPrimary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    private var summaryPanel: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+            foodRow
+            HStack(alignment: .top, spacing: NoopMetrics.space2) {
+                workoutCard.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                sleepCard.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }.fixedSize(horizontal: false, vertical: true)
+        }.foregroundStyle(StrandPalette.textPrimary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+    private var combinedPanel: some View {
         VStack(alignment: .leading, spacing: expanded ? NoopMetrics.space3 : NoopMetrics.space2) {
             HStack {
                 Text("Today").font(expanded ? StrandFont.title1 : StrandFont.headline)
@@ -111,7 +142,7 @@ struct DayHubView: View {
                     sleepRing(sleep?.whoopMinutes, tint: StrandPalette.metricHRV)
                     sleepRing(sleep?.eightSleepMinutes, tint: StrandPalette.metricSteps).padding(NoopMetrics.dayHubRingInset)
                     Image(systemName: "moon.fill").font(StrandFont.caption).foregroundStyle(StrandPalette.metricHRV)
-                }.frame(width: NoopMetrics.dayHubRingDiameter, height: NoopMetrics.dayHubRingDiameter).accessibilityHidden(true)
+                }.frame(width: ringDiameter, height: ringDiameter).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
                     HStack(spacing: NoopMetrics.space1) {
                         Text("Sleep")
@@ -127,6 +158,7 @@ struct DayHubView: View {
             }.frame(minHeight: NoopMetrics.minimumTouchTarget, alignment: .topLeading))
         }.buttonStyle(.plain).accessibilityHint("Open sleep comparison")
     }
+    private var ringDiameter: CGFloat { presentation == .summary ? NoopMetrics.dayHubSummaryRingDiameter : NoopMetrics.dayHubRingDiameter }
     private func sleepRing(_ minutes: Double?, tint: Color) -> some View {
         ZStack {
             Circle().stroke(StrandPalette.hairline, lineWidth: NoopMetrics.space1)
@@ -151,9 +183,11 @@ struct DayHubCalendarView: View {
     let days: [CalendarWidgetSnapshot.Day]
     let now: Date
     var expanded = false
+    var showsEventList = true
+    var plotHeight: CGFloat? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     private var window: DayHubWindow { .init(now: now) }
-    private var height: CGFloat { expanded ? NoopMetrics.dayHubCalendarExpanded : NoopMetrics.dayHubCalendarCompact }
+    private var height: CGFloat { plotHeight ?? (expanded ? NoopMetrics.dayHubCalendarExpanded : NoopMetrics.dayHubCalendarCompact) }
     private var timeStyle: Date.FormatStyle { var v = Date.FormatStyle.dateTime.hour().minute(); v.timeZone = CalendarWidgetSnapshot.timeZone; return v }
     private var axisStyle: Date.FormatStyle {
         var value = Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()
@@ -219,7 +253,7 @@ struct DayHubCalendarView: View {
                 }.frame(width: proxy.size.width, height: height, alignment: .topLeading).clipped()
             }.frame(height: height)
                 .dynamicTypeSize(typeSize.isAccessibilitySize ? .large : typeSize)
-            if expanded {
+            if expanded && showsEventList {
                 ForEach(window.placements(days)) { p in
                     Link(destination: CalendarWidgetSnapshot.link(day: p.day, eventID: p.event.id)!) {
                         HStack(spacing: NoopMetrics.space2) {

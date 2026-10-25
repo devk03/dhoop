@@ -4,6 +4,9 @@ import Foundation
 struct DayHubSnapshot: Codable, Equatable {
     static let storageKey = "dhoop.day-hub.v1"
     static let widgetKind = "DhoopDayHubWidget"
+    static let calendarWidgetKind = "DhoopDayHubCalendarWidget"
+    static let summaryWidgetKind = "DhoopDayHubSummaryWidget"
+    static let widgetKinds = [widgetKind, calendarWidgetKind, summaryWidgetKind]
     var version = 1
     var savedAt: Date
     var timeZoneID: String

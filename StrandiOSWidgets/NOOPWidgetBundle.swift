@@ -11,6 +11,8 @@ struct NOOPWidgetBundle: WidgetBundle {
         NOOPWidget()
         CalendarWidget()
         DayHubWidget()
+        DayHubCalendarWidget()
+        DayHubSummaryWidget()
         NOOPLiveActivity()
         CoachBriefWidget()
         HeartRateWidget()

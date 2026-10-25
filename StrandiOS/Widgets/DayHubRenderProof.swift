@@ -18,6 +18,15 @@ enum DayHubRenderProof {
             try? data.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("dhoop-day-hub-read-proof.json"), options: .atomic)
         }
     }
+    private static func pairWidget(_ snapshot: DayHubSnapshot?, now: Date, presentation: DayHubView.Presentation,
+                                   width: CGFloat = 364, scheme: ColorScheme = .dark) -> some View {
+        DayHubView(snapshot: snapshot, now: now, presentation: presentation)
+            .dynamicTypeSize(...DynamicTypeSize.large)
+            .padding(NoopMetrics.space4)
+            .frame(width: width, height: presentation == .calendar ? 382 : 170, alignment: .topLeading)
+            .background(StrandPalette.surfaceBase)
+            .environment(\.colorScheme, scheme)
+    }
     static func runIfRequested() async {
         guard ProcessInfo.processInfo.arguments.contains("--day-hub-render-proof") else { return }
         let prefix = "--day-hub-render-run="
@@ -41,6 +50,17 @@ enum DayHubRenderProof {
             try await CalendarReaderRenderProof.capture(DayHubView(snapshot: nil, now: now).padding(NoopMetrics.space3), name: "widget-unavailable", width: 364, height: 440, folder: folder)
             try await CalendarReaderRenderProof.capture(ScreenScaffold(title: nil) { DayHubView(snapshot: snap, now: now, expanded: true) }, name: "overview-390", width: 390, height: 1400, folder: folder)
             try await CalendarReaderRenderProof.capture(ScreenScaffold(title: nil) { DayHubView(snapshot: snap, now: now, expanded: true) }, name: "overview-accessibility", width: 390, height: 2200, type: .accessibility3, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .calendar), name: "pair-calendar-large", width: 364, height: 520, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .summary), name: "pair-summary-medium", width: 364, height: 300, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .summary, width: 320), name: "pair-summary-narrow", width: 320, height: 300, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .calendar, scheme: .light), name: "pair-calendar-light", width: 364, height: 520, scheme: .light, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .summary, scheme: .light), name: "pair-summary-light", width: 364, height: 300, scheme: .light, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(nil, now: now, presentation: .summary), name: "pair-summary-unavailable", width: 364, height: 300, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(nil, now: now, presentation: .calendar), name: "pair-calendar-unavailable", width: 364, height: 520, folder: folder)
+            try await CalendarReaderRenderProof.capture(VStack(spacing: NoopMetrics.space4) {
+                pairWidget(snap, now: now, presentation: .calendar)
+                pairWidget(snap, now: now, presentation: .summary)
+            }, name: "paired-stack", width: 364, height: 720, folder: folder)
             success = true
         } catch { }
         let report: [String: Any] = ["schemaVersion": 1, "rendered": success, "syntheticOnly": true, "fixtureNetworkUsed": false, "runId": run,
