@@ -32,3 +32,28 @@ Tools/capture-dhoop-day-hub-ui.sh CORE_DEVICE_ID docs/design/day-hub-implementat
 ```
 
 The fixtures do not alter owner records or send fake data. Design mockups are labeled separately: [generated study](design/dhoop-day-hub-study.png). Actual Home Screen placement, physical VoiceOver interaction, and new countdown vibrations are not implied by component renders.
+
+## Final implementation review
+
+[Build 524 gallery](design/day-hub-implementation/build-524-v1/README.md) contains the actual
+large widget, narrow stress case, light/unavailable states, full overview and accessibility layout.
+The plot axes retain a readable bounded size at accessibility settings; the range, event links,
+metrics and source details retain Dynamic Type and scroll rather than compress.
+
+A real iPhone read in build 522 populated food, the complete current-day strength snapshot,
+both sleep sources, and the complete calendar window; all source read timestamps were within
+one minute. This establishes collection/readback, not physiological accuracy, future background
+delivery timing, Home Screen placement or a felt vibration. The final build’s installation and
+source checks are recorded separately in docs/verification. No fake owner records were written.
+
+## Cold-start sleep cache safeguard
+
+The final restart review found that the producer cleared sleep before its replacement read
+completed. Build 525 waits for the repository’s initial refresh, tags the cached sleep with its
+database context, and keeps a dated same-context result when a read is unavailable. Switching
+to another context does not carry that result over. If Health is locked/unreadable, an already
+read Eight Sleep duration can survive only for that same wake date, retaining the earlier read
+time. A previous night is never relabeled as the next night. Two targeted regression tests
+cover unavailable reads, context changes and partial same-night Health reads. No sleep rows
+are changed or deleted. The build-524 UI gallery remains applicable: build 525 changes cache
+resolution, with no layout changes.

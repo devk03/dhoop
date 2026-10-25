@@ -1,0 +1,17 @@
+{
+  "build": "524",
+  "codeCommit": "7d05c1ab9f994c926d494fc61886754f706051a9",
+  "executableSHA256": "7febbfe03b2872d504463462a7c09fecbcca15ca92141573d3a2467d1ed3e27b",
+  "signatureAndStableIdentityVerified": true,
+  "schemaVersion": 1,
+  "iosReleaseBuild": "passed",
+  "physicalIPhoneInstallation": "verified_in_place",
+  "nativeVisualCaptures": "verified_synthetic; complete window and large-text stack",
+  "freshProofRelaunch": "blocked_by_iOS_phone_locked",
+  "lastMatchedRealSourceProofBuild": "522",
+  "knownColdStartCacheIssue": "fixed_in_525; underlying_sleep_records_untouched",
+  "ownerFoodOrGoalTestWrites": false,
+  "databaseMigration": false,
+  "actualHomeScreenPlacement": "not_verified",
+  "localArchive": "build/DhoopInstallers/Dhoop-524.zip"
+}
