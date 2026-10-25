@@ -19,7 +19,7 @@ enum NutritionGoalSetup {
         let client = NutritionGoalClient.shared
         let verified = await client.refresh(activate: arguments.contains("--enable-nutrition-goals"))
         var caloriesEnabled = false
-        if verified && arguments.contains("--enable-calorie-summaries") {
+        if verified && arguments.contains("--enable-calorie-summaries"), SleepWebhookClient.shared.checkpoint.caloriesEnabled != false {
             do { try SleepWebhookClient.shared.setCaloriesEnabled(true); caloriesEnabled = true } catch { }
         }
         let report: [String: Any] = ["schemaVersion": 1, "goalsReadVerified": verified, "writesAttempted": false,

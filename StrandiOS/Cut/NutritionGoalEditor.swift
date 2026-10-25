@@ -17,8 +17,8 @@ struct NutritionGoalEditor: View {
     @FocusState private var focused: Bool
     private var goal: CalorieGoalPeriod? { client.goal(for: day) }
     private var draft: CalorieGoalPeriod? {
-        guard let min = Double(minimum.replacingOccurrences(of: ",", with: ".")),
-              let max = Double(maximum.replacingOccurrences(of: ",", with: ".")) else { return nil }
+        guard let min = NutritionInputNumber.parse(minimum),
+              let max = NutritionInputNumber.parse(maximum) else { return nil }
         let value = CalorieGoalPeriod(id: id, startDate: from, endDate: through, minCalories: min, maxCalories: max)
         return value.valid ? value : nil
     }

@@ -14,8 +14,7 @@ struct FoodInlineEntry: View {
     @State private var message: String?
     @State private var failed = false
     private func number(_ value: String) -> Double? {
-        guard let result = Double(value.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: ",", with: ".")), result.isFinite, result >= 0 else { return nil }
-        return result
+        NutritionInputNumber.parse(value)
     }
     private var canSave: Bool {
         let protein = grams.isEmpty ? 0 : number(grams)

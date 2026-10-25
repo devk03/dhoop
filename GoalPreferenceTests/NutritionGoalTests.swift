@@ -31,6 +31,15 @@ final class NutritionGoalTests: XCTestCase {
         XCTAssertEqual(zero.entryCount, 2); XCTAssertEqual(zero.estimatedEntryCount, 1)
         XCTAssertEqual(NutritionCalorieSummary(estimates: [250, nil, 100]).calories, 350)
     }
+    func testPastedThousandsDoNotBecomeFractionalCalories() {
+        XCTAssertEqual(NutritionInputNumber.parse("2,000", locale: Locale(identifier: "en_US")), 2000)
+        XCTAssertEqual(NutritionInputNumber.parse("1,500.5", locale: Locale(identifier: "en_US")), 1500.5)
+        XCTAssertEqual(NutritionInputNumber.parse("1.500,5", locale: Locale(identifier: "de_DE")), 1500.5)
+        XCTAssertEqual(NutritionInputNumber.parse("1,5", locale: Locale(identifier: "fr_FR")), 1.5)
+        for value in ["1,50", "NaN", "-20", "100kcal", "2,000oops", "1e3"] {
+            XCTAssertNil(NutritionInputNumber.parse(value, locale: Locale(identifier: "en_US")))
+        }
+    }
     func testGoalWriteHasOnlyTheNarrowActionFieldsAndStrictBounds() throws {
         let write = NutritionGoalWrite(installationId: installation, expectedVersion: 2, action: "upsert", goal: goal(), id: nil)
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(write)) as? [String: Any])

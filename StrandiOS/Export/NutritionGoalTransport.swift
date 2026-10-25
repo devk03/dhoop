@@ -23,12 +23,18 @@ final class NutritionGoalTransport: NSObject, URLSessionTaskDelegate, @unchecked
         request.setValue(connection.credentials.clientId, forHTTPHeaderField: "CF-Access-Client-Id")
         request.setValue(connection.credentials.clientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
         let (stream, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, http.mimeType == "application/json", http.expectedContentLength <= 131072 else { throw NutritionGoalFailure.unconfirmed }
-        if http.statusCode == 409 { throw NutritionGoalFailure.changed }
+        guard let http = response as? HTTPURLResponse, http.mimeType == "application/json" else { throw NutritionGoalFailure.unconfirmed }
+        let limit = http.statusCode == 200 ? 131072 : 4096
+        guard http.expectedContentLength <= limit else { throw NutritionGoalFailure.unconfirmed }
+        var data = Data()
+        for try await byte in stream { try Task.checkCancellation(); guard data.count < limit else { throw NutritionGoalFailure.unconfirmed }; data.append(byte) }
+        if http.statusCode == 409 {
+            struct Rejection: Decodable { let error: String }
+            let code = try? JSONDecoder().decode(Rejection.self, from: data).error
+            throw code == "nutrition_goal_conflict" ? NutritionGoalFailure.changed : NutritionGoalFailure.unavailable
+        }
         if http.statusCode == 422 { throw NutritionGoalFailure.invalid }
         guard http.statusCode == 200 else { throw NutritionGoalFailure.unavailable }
-        var data = Data()
-        for try await byte in stream { try Task.checkCancellation(); guard data.count < 131072 else { throw NutritionGoalFailure.unconfirmed }; data.append(byte) }
         return data
     }
 }
