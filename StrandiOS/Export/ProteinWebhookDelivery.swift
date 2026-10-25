@@ -195,7 +195,8 @@ extension SleepWebhookPolicy {
             else if let pending = state.delivery.pending, pending.event.wakeDate <= sleepWakeDays(now: now, calendar: calendar).through { dates.append(now.addingTimeInterval(60)) }
             if state.sleepBacklog == true { dates.append(now.addingTimeInterval(900)) }
         }
-        if state.proteinEnabled == true {
+        let caloriePendingHeld = state.caloriesEnabled != true && state.delivery.proteinPending?.event.calorieSummary != nil
+        if state.proteinEnabled == true && !caloriePendingHeld {
             if let retry = state.proteinNextAttempt { dates.append(max(now.addingTimeInterval(60), retry)) }
             else if let pending = state.delivery.proteinPending, pending.event.day <= end { dates.append(now.addingTimeInterval(60)) }
             if state.proteinBacklog == true { dates.append(now.addingTimeInterval(900)) }

@@ -149,5 +149,17 @@ final class ProteinWebhookTests: XCTestCase {
         XCTAssertTrue(object["calories"] is NSNull)
         XCTAssertFalse(CalorieWebhookSummary(calories: 0, entryCount: 3, estimatedEntryCount: 0, coverage: "logged_estimates").isValid)
     }
+    func testPausedCalorieRequestDoesNotScheduleRepeatedBackgroundRetryOpportunities() throws {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 10, day: 6, hour: 8)))
+        var state = SleepWebhookCheckpoint(); state.proteinEnabled = true; state.caloriesEnabled = false
+        try state.delivery.configure(endpoint: endpoint)
+        var expanded = summary; expanded.calorieSummary = .init(calories: 90, entryCount: 3, estimatedEntryCount: 1, coverage: "logged_estimates")
+        _ = try state.delivery.prepareProtein(expanded, now: now)
+        state.proteinNextAttempt = now.addingTimeInterval(60); state.proteinBacklog = true
+        XCTAssertEqual(SleepWebhookPolicy.nextOpportunity(state: state, now: now, calendar: calendar), SleepWebhookPolicy.nextDailyOpportunity(now: now, calendar: calendar))
+        state.caloriesEnabled = true
+        XCTAssertEqual(SleepWebhookPolicy.nextOpportunity(state: state, now: now, calendar: calendar), now.addingTimeInterval(60))
+    }
 
 }

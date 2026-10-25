@@ -51,13 +51,13 @@ Calorie export is separate from protein export. Under the owner's explicit reque
 opening Food may enable the previously unconfigured calorie flag only after a verified goal read
 and only when protein delivery is already on. An explicit false is preserved. The Life sync setting
 retains a separate Calorie estimates switch. A calorie-bearing pending request is paused when
-that switch is off; its immutable bytes are neither changed nor discarded. Existing sleep/protein
+that switch is off; its immutable bytes are neither changed nor discarded, and it does not request repeated background retries while held. Existing sleep/protein
 pending requests, revision order, acknowledgments, date mapping, and retry behavior stay compatible.
 Delivery waits for completed dates and an iOS execution opportunity, as before.
 
 ## Verification
 
-Build 520's targeted nutrition suite passed 32 tests: legacy entry preservation, zero versus
+Build 520's targeted nutrition suite passed 33 tests: legacy entry preservation, zero versus
 unknown estimates, calorie-only entries without Cut side effects, old pending bytes, count
 semantics, exact request fields, dates/overlap/bounds, server readback, CAS refresh requirements,
 connection identity, and locale-safe numeric entry (including pasted thousands separators). The new unversioned-success regression was observed failing before the
