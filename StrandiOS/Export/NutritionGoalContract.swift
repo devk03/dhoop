@@ -14,9 +14,9 @@ struct NutritionGoalDocument: Codable, Equatable {
     func validate(installation: String) throws {
         guard schemaVersion == 1, kind == "nutrition_goals", installationId == installation,
               version >= 0, version <= 2_147_483_647, periods.count <= 200,
-              Set(periods.map(\.id)).count == periods.count, periods.allSatisfy(\.valid) else { throw NutritionGoalFailure.invalid }
+              Set(periods.map(\.id)).count == periods.count, periods.allSatisfy(\.valid) else { throw NutritionGoalFailure.unconfirmed }
         let sorted = periods.sorted { $0.startDate < $1.startDate }
-        for pair in zip(sorted, sorted.dropFirst()) where pair.0.endDate >= pair.1.startDate { throw NutritionGoalFailure.invalid }
+        for pair in zip(sorted, sorted.dropFirst()) where pair.0.endDate >= pair.1.startDate { throw NutritionGoalFailure.unconfirmed }
     }
 }
 struct NutritionGoalWrite: Encodable {
