@@ -1,0 +1,29 @@
+{
+  "build": "525",
+  "codeCommit": "e09ffd4f85e8657ea897ed990e1e8e814fa30edc",
+  "executableSHA256": "ea73c9aba9b8260a36c30479336153bff7016d47b03b534c79697547d09076d3",
+  "signatureAndStableIdentityVerified": true,
+  "schemaVersion": 1,
+  "physicalIPhoneInstallation": "verified_in_place",
+  "iosReleaseBuild": "passed",
+  "sharedDesignMacOSBuild": "passed_on_same_shared_sources_in_522",
+  "targetedTests": {
+    "passed": 28,
+    "failed": 0,
+    "dayHubCases": 7,
+    "sleepCacheRegressions": 2
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "nativeLayoutEvidenceBuild": "524; unchanged_layout_in_525",
+  "lastMatchedRealSourceProofBuild": "522",
+  "lastSourceFreshness": "all four source reads within one minute",
+  "finalAutomaticRestart": "blocked_iOS_phone_locked; unlock_requested",
+  "sleepCacheFix": "same-context dated cache retained; cross-context/night safeguards tested",
+  "actualHomeScreenPlacement": "not_verified; owner adds widget",
+  "newTimerVibrationConfirmed": false,
+  "calendarRsvpActivation": "pending_owner_approval",
+  "ownerFoodOrGoalTestWrites": false,
+  "databaseMigration": false,
+  "localArchive": "build/DhoopInstallers/Dhoop-525.zip"
+}
