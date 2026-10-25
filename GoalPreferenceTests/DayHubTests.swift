@@ -45,4 +45,19 @@ final class DayHubTests: XCTestCase {
             XCTAssertEqual(snap.food(at: now)?.calories, calories)
         }
     }
+    func testUnavailableSleepReadRetainsSameDeviceButNeverCarriesToAnother() {
+        let old = DayHubSnapshot.Sleep(wakeDay: "2026-10-24", readAt: Date(timeIntervalSince1970: 100), whoopMinutes: 450, eightSleepMinutes: 460, whoopMethod: "Dhoop estimate")
+        XCTAssertEqual(DayHubSnapshot.resolvedSleep(previous: old, cachedDeviceID: "strap-a", activeDeviceID: "strap-a", fresh: nil, healthReadable: false), old)
+        XCTAssertNil(DayHubSnapshot.resolvedSleep(previous: old, cachedDeviceID: "strap-a", activeDeviceID: "strap-b", fresh: nil, healthReadable: false))
+        XCTAssertNil(DayHubSnapshot.resolvedSleep(previous: old, cachedDeviceID: nil, activeDeviceID: "strap-a", fresh: nil, healthReadable: false))
+    }
+    func testLockedHealthReadPreservesOnlyTheSameNightAndItsActualReadDate() {
+        let old = DayHubSnapshot.Sleep(wakeDay: "2026-10-24", readAt: Date(timeIntervalSince1970: 100), whoopMinutes: 450, eightSleepMinutes: 460, whoopMethod: "Dhoop estimate")
+        let fresh = DayHubSnapshot.Sleep(wakeDay: "2026-10-24", readAt: Date(timeIntervalSince1970: 200), whoopMinutes: 455, eightSleepMinutes: nil, whoopMethod: "Dhoop estimate")
+        let kept = DayHubSnapshot.resolvedSleep(previous: old, cachedDeviceID: "a", activeDeviceID: "a", fresh: fresh, healthReadable: false)
+        XCTAssertEqual(kept?.whoopMinutes, 455); XCTAssertEqual(kept?.eightSleepMinutes, 460); XCTAssertEqual(kept?.readAt, old.readAt)
+        let nextNight = DayHubSnapshot.Sleep(wakeDay: "2026-10-25", readAt: fresh.readAt, whoopMinutes: 455, eightSleepMinutes: nil, whoopMethod: "Dhoop estimate")
+        XCTAssertNil(DayHubSnapshot.resolvedSleep(previous: old, cachedDeviceID: "a", activeDeviceID: "a", fresh: nextNight, healthReadable: false)?.eightSleepMinutes)
+    }
+
 }

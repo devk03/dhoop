@@ -10,6 +10,7 @@ struct DayHubSnapshot: Codable, Equatable {
     var food: Food?
     var workouts: Workouts?
     var sleep: Sleep?
+    var sleepDeviceID: String? = nil
     var calendarDays: [CalendarWidgetSnapshot.Day]
     struct Food: Codable, Equatable {
         let day: String
@@ -37,6 +38,17 @@ struct DayHubSnapshot: Codable, Equatable {
         let whoopMinutes: Double?
         let eightSleepMinutes: Double?
         let whoopMethod: String?
+    }
+    /// A failed read cannot erase a dated result from the same active database context.
+    static func resolvedSleep(previous: Sleep?, cachedDeviceID: String?, activeDeviceID: String, fresh: Sleep?, healthReadable: Bool) -> Sleep? {
+        guard cachedDeviceID == activeDeviceID else { return fresh }
+        guard let fresh else { return previous }
+        if !healthReadable, let previous, previous.wakeDay == fresh.wakeDay,
+           fresh.eightSleepMinutes == nil, previous.eightSleepMinutes != nil {
+            return Sleep(wakeDay: fresh.wakeDay, readAt: min(previous.readAt, fresh.readAt), whoopMinutes: fresh.whoopMinutes,
+                eightSleepMinutes: previous.eightSleepMinutes, whoopMethod: fresh.whoopMethod)
+        }
+        return fresh
     }
     static func day(_ date: Date, zone: TimeZone) -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = zone

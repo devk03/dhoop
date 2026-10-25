@@ -88,8 +88,13 @@ final class DayHubPublisher: ObservableObject {
         }
     }
     private func loadSleep(model: AppModel) async {
+        guard model.repo.refreshSeq > 0 else { return }
         let source = model.repo.deviceId
-        if deviceID != source { deviceID = source; nextSleepRead = .distantPast; var value = base(); value.sleep = nil; save(value) }
+        guard !source.isEmpty else { return }
+        if deviceID != source { deviceID = source; nextSleepRead = .distantPast }
+        if let cachedID = snapshot?.sleepDeviceID, cachedID != source {
+            var value = base(); value.sleep = nil; value.sleepDeviceID = nil; save(value)
+        }
         guard !sleepLoading, Date() >= nextSleepRead else { return }
         sleepLoading = true; nextSleepRead = Date().addingTimeInterval(5 * 60)
         defer { sleepLoading = false }
@@ -100,8 +105,11 @@ final class DayHubPublisher: ObservableObject {
         let eight = result.apple.first { $0.isEightSleep }
         let day = (result.whoop.map(\.day) + (eight?.days.map(\.day) ?? [])).max()
         var value = base(); value.savedAt = Date()
-        value.sleep = day.map { key in .init(wakeDay: key, readAt: Date(), whoopMinutes: result.whoop.first { $0.day == key }?.total,
+        let fresh: DayHubSnapshot.Sleep? = day.map { key in .init(wakeDay: key, readAt: Date(), whoopMinutes: result.whoop.first { $0.day == key }?.total,
             eightSleepMinutes: eight?.days.first { $0.day == key }?.total, whoopMethod: result.whoop.first { $0.day == key }?.method) }
+        value.sleep = DayHubSnapshot.resolvedSleep(previous: value.sleep, cachedDeviceID: value.sleepDeviceID,
+            activeDeviceID: source, fresh: fresh, healthReadable: result.healthMessage == nil)
+        if fresh != nil { value.sleepDeviceID = source }
         save(value)
     }
     private func loadCalendar() async {
