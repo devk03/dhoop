@@ -23,6 +23,14 @@ struct CalendarWidgetView: View {
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
             if let day {
+                HStack(spacing: NoopMetrics.space1) {
+                    if family == .systemSmall { Image(systemName: "arrow.clockwise").accessibilityLabel("Updated") }
+                    else { Text("Updated") }
+                    if CalendarWidgetSnapshot.dayKey(day.readAt) != day.date {
+                        Text(day.readAt, format: dateStyle)
+                    }
+                    Text(day.readAt, format: timeStyle)
+                }.font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 let events = Array(day.upcoming(at: entry.date).prefix(family == .systemSmall ? 1 : family == .systemLarge ? 6 : 2))
                 if events.isEmpty {
                     Text(day.complete ? "No more events today" : "Open Calendar for more events").font(StrandFont.subhead)
@@ -32,14 +40,6 @@ struct CalendarWidgetView: View {
                     else if let url = CalendarWidgetSnapshot.link(day: day.date, eventID: event.id) { Link(destination: url) { row(event) } }
                 }
                 Spacer(minLength: 0)
-                HStack(spacing: NoopMetrics.space1) {
-                    if family == .systemSmall { Image(systemName: "arrow.clockwise").accessibilityLabel("Updated") }
-                    else { Text("Updated") }
-                    if CalendarWidgetSnapshot.dayKey(day.readAt) != day.date {
-                        Text(day.readAt, format: dateStyle)
-                    }
-                    Text(day.readAt, format: timeStyle)
-                }.font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
             } else {
                 Spacer(minLength: 0)
                 Text("Open Dhoop to update Calendar").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
