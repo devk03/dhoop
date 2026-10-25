@@ -57,3 +57,29 @@ time. A previous night is never relabeled as the next night. Two targeted regres
 cover unavailable reads, context changes and partial same-night Health reads. No sleep rows
 are changed or deleted. The build-524 UI gallery remains applicable: build 525 changes cache
 resolution, with no layout changes.
+
+## Paired dashboard page on iOS 26
+
+Build 526 adds **Day Hub Calendar** (`systemLarge`, four grid rows) and **Day Hub Summary**
+(`systemMedium`, two grid rows). Place Calendar above Summary on a dedicated page. Both use
+the same credential-free cache, timeline provider and navigation links. The publisher refreshes
+all three stable kinds, including the original combined widget, after one source publication.
+No additional API polling, source permissions, DB changes or strap commands are introduced.
+
+The large calendar shows its full three-hour plot without the expanded app’s duplicate event
+list. The medium summary retains food totals, workout status and the dated two-ring sleep
+comparison. Text inside the fixed widget rectangles is bounded; the linked app overview
+continues to support larger text and scrolling.
+
+[Build-526 pair gallery](design/day-hub-implementation/build-526-pair-v1/README.md) contains actual
+component renders with synthetic data. iOS controls Home Screen placement and Dock behavior;
+the app cannot arrange a page or hide the shared Dock. No app icons or Dock items were changed.
+
+A fresh build-526 physical read confirmed food totals, the complete current-day workout
+snapshot, both sleep sources and the complete calendar window. The production calorie-goal
+read also passed, with calorie summaries enabled. The previous locked-phone readback limit
+was resolved for this run. No production test food, goal or workout records were written.
+
+Home Screen automation was attempted with iPhone Mirroring, which reported Mac Bluetooth off.
+Placement requires enabling that connection or an owner drag-and-drop action; it is not claimed
+as completed by the component screenshots.

@@ -1,0 +1,47 @@
+{
+  "build": "526",
+  "codeCommit": "1e1f20b643244304519e51daeb12f87d280e9334",
+  "executableSHA256": "6785c33407652267b8c64d7b10eb6e5f6e14d4689197e843bad460000392f404",
+  "signatureAndStableIdentityVerified": true,
+  "schemaVersion": 1,
+  "physicalIPhoneInstallation": "verified_in_place",
+  "iosReleaseBuild": "passed",
+  "macOSBuild": "passed",
+  "targetedDayHubTests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "nativeSyntheticCapture": "verified_build_526_fresh_run_824520A9-78FB-4B4A-9EE0-3578DD6A7C83",
+  "pairedWidgetFamilies": {
+    "calendar": "systemLarge",
+    "summary": "systemMedium"
+  },
+  "sharedCacheAndTimeline": true,
+  "additionalNetworkPolling": false,
+  "actualHomeScreenPlacement": "owner_action_not_verified",
+  "dockChanged": false,
+  "databaseMigration": false,
+  "ownerFoodOrGoalTestWrites": false,
+  "localArchive": "build/DhoopInstallers/Dhoop-526.zip",
+  "nativeSourceRead": {
+    "sleepRecordPresent": true,
+    "runId": "54F753C8-DDF6-4581-A0C9-0B75A1AF8E8C",
+    "calendarWindowComplete": true,
+    "eightSleepRecordPresent": true,
+    "schemaVersion": 1,
+    "snapshotPresent": true,
+    "foodToday": true,
+    "workoutsToday": true,
+    "writesAttempted": false,
+    "workoutCompleteRead": true,
+    "build": "526"
+  },
+  "nativeNutritionRead": {
+    "goalsReadVerified": true,
+    "caloriesEnabled": true,
+    "writesAttempted": false
+  },
+  "homeScreenAutomationBlocker": "Mac Bluetooth off prevents iPhone Mirroring; owner choice requested"
+}
