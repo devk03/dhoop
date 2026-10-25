@@ -1,12 +1,34 @@
 import Foundation
 
+struct CalorieWebhookSummary: Codable, Equatable, Sendable {
+    let calories: Double?
+    let entryCount: Int
+    let estimatedEntryCount: Int
+    let coverage: String
+    var isValid: Bool {
+        guard coverage == "logged_estimates", entryCount >= 0, entryCount <= 100000,
+              estimatedEntryCount >= 0, estimatedEntryCount <= entryCount else { return false }
+        if estimatedEntryCount == 0 { return calories == nil }
+        return calories.map { $0.isFinite && $0 >= 0 && $0 <= 100000 } == true
+    }
+    enum CodingKeys: CodingKey { case calories, entryCount, estimatedEntryCount, coverage }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        if let calories { try c.encode(calories, forKey: .calories) } else { try c.encodeNil(forKey: .calories) }
+        try c.encode(entryCount, forKey: .entryCount); try c.encode(estimatedEntryCount, forKey: .estimatedEntryCount)
+        try c.encode(coverage, forKey: .coverage)
+    }
+}
+
 struct ProteinWebhookSummary: Codable, Equatable, Sendable {
     let day: String
     let proteinGrams: Double?
     let entryCount: Int
     let timeZone: String
+    var calorieSummary: CalorieWebhookSummary? = nil
     var isValid: Bool {
-        guard SleepWebhookSummary(wakeDate: day, sleepMinutes: 1, method: "whoop_import", timeZone: timeZone).isValid else { return false }
+        guard SleepWebhookSummary(wakeDate: day, sleepMinutes: 1, method: "whoop_import", timeZone: timeZone).isValid,
+              calorieSummary?.isValid != false else { return false }
         if let grams = proteinGrams { return grams.isFinite && grams >= 0 && grams <= 1000 && entryCount > 0 && entryCount <= 100000 }
         return entryCount == 0
     }
@@ -25,8 +47,9 @@ struct ProteinWebhookEvent: Codable, Equatable, Sendable {
     let coverage: String
     let timeZone: String
     let generationDate: String
-    var summary: ProteinWebhookSummary { .init(day: day, proteinGrams: proteinGrams, entryCount: entryCount, timeZone: timeZone) }
-    enum CodingKeys: String, CodingKey { case schemaVersion, kind, eventId, installationId, revision, day, proteinGrams, entryCount, source, coverage, timeZone, generationDate }
+    var calorieSummary: CalorieWebhookSummary? = nil
+    var summary: ProteinWebhookSummary { .init(day: day, proteinGrams: proteinGrams, entryCount: entryCount, timeZone: timeZone, calorieSummary: calorieSummary) }
+    enum CodingKeys: String, CodingKey { case schemaVersion, kind, eventId, installationId, revision, day, proteinGrams, entryCount, source, coverage, timeZone, generationDate, calorieSummary }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(schemaVersion, forKey: .schemaVersion); try c.encode(kind, forKey: .kind)
@@ -36,6 +59,7 @@ struct ProteinWebhookEvent: Codable, Equatable, Sendable {
         try c.encode(entryCount, forKey: .entryCount); try c.encode(source, forKey: .source)
         try c.encode(coverage, forKey: .coverage); try c.encode(timeZone, forKey: .timeZone)
         try c.encode(generationDate, forKey: .generationDate)
+        try c.encodeIfPresent(calorieSummary, forKey: .calorieSummary)
     }
 }
 
@@ -57,7 +81,7 @@ extension SleepWebhookDelivery {
         let event = ProteinWebhookEvent(schemaVersion: 2, kind: "protein", eventId: UUID().uuidString.lowercased(),
             installationId: installationId, revision: revision, day: summary.day, proteinGrams: summary.proteinGrams,
             entryCount: summary.entryCount, source: "dhoop", coverage: "logged_entries", timeZone: summary.timeZone,
-            generationDate: ISO8601DateFormatter().string(from: now))
+            generationDate: ISO8601DateFormatter().string(from: now), calorieSummary: summary.calorieSummary)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let next = ProteinPending(event: event, bytes: try encoder.encode(event))
         proteinPending = next
@@ -81,37 +105,55 @@ extension SleepWebhookDelivery {
 
 /// Absence is not zero. Only previously exported days can produce a null retraction.
 enum ProteinWebhookProjection {
-    struct Entry { let day: String; let grams: Double }
-    static func summaries(entries: [Entry], acknowledged: [String: ProteinWebhookSummary], from: String, to: String) throws -> [ProteinWebhookSummary] {
+    struct Entry {
+        let day: String; let grams: Double; let calories: Double?; let proteinKnown: Bool
+        init(day: String, grams: Double, calories: Double? = nil, proteinKnown: Bool = true) {
+            self.day = day; self.grams = grams; self.calories = calories; self.proteinKnown = proteinKnown
+        }
+    }
+    static func summaries(entries: [Entry], acknowledged: [String: ProteinWebhookSummary], from: String, to: String, includeCalories: Bool = false) throws -> [ProteinWebhookSummary] {
         var groups: [String: (grams: Double, count: Int)] = [:]
+        var estimates: [String: [Double?]] = [:]
         for entry in entries {
             guard entry.grams.isFinite, entry.grams >= 0 else { throw SleepWebhookFailure.invalidSummary }
+            if includeCalories {
+                guard entry.calories.map({ $0.isFinite && $0 >= 0 }) ?? true else { throw SleepWebhookFailure.invalidSummary }
+                estimates[entry.day, default: []].append(entry.calories)
+            }
+            guard entry.proteinKnown else { continue }
             let old = groups[entry.day] ?? (0, 0)
             groups[entry.day] = (old.grams + entry.grams, old.count + 1)
         }
-        let days = Set(groups.keys.filter { $0 >= from && $0 <= to }).union(acknowledged.keys)
+        let days = Set((Array(groups.keys) + Array(estimates.keys)).filter { $0 >= from && $0 <= to }).union(acknowledged.keys)
         return try days.sorted(by: >).map { day in
             let group = groups[day]
-            let summary = ProteinWebhookSummary(day: day, proteinGrams: group?.grams, entryCount: group?.count ?? 0, timeZone: "America/Los_Angeles")
+            let values = estimates[day] ?? [], known = values.compactMap { $0 }
+            let calories = includeCalories ? CalorieWebhookSummary(calories: known.isEmpty ? nil : known.reduce(0, +),
+                entryCount: values.count, estimatedEntryCount: known.count, coverage: "logged_estimates") : nil
+            let summary = ProteinWebhookSummary(day: day, proteinGrams: group?.grams, entryCount: group?.count ?? 0, timeZone: "America/Los_Angeles", calorieSummary: calories)
             guard summary.isValid else { throw SleepWebhookFailure.invalidSummary }
             return summary
         }
     }
     /// Read saved logs rather than another view's stale ProteinLogStore instance. Malformed data must
     /// never decode as an empty collection and retract real website values.
-    @MainActor static func savedEntries(defaults: UserDefaults = .standard) throws -> [Entry] {
+    @MainActor static func savedEntries(defaults: UserDefaults = .standard, includeCalories: Bool = false) throws -> [Entry] {
         let standalone: [ProteinLogStore.Entry]
         if let data = defaults.data(forKey: ProteinLogStore.entriesKey) {
             standalone = try JSONDecoder().decode([ProteinLogStore.Entry].self, from: data)
         } else if defaults.object(forKey: ProteinLogStore.entriesKey) != nil { throw SleepWebhookFailure.invalidState }
         else { standalone = [] }
-        struct Food: Decodable { let protein: Double? }
+        guard Set(standalone.map(\.id)).count == standalone.count else { throw SleepWebhookFailure.invalidState }
+        struct Food: Decodable { let protein: Double?; let kcal: Double? }
         let food: [String: [Food]]
         if let data = defaults.data(forKey: "cut.food") { food = try JSONDecoder().decode([String: [Food]].self, from: data) }
         else if defaults.object(forKey: "cut.food") != nil { throw SleepWebhookFailure.invalidState }
         else { food = [:] }
-        return standalone.map { Entry(day: $0.day, grams: $0.grams) } + food.flatMap { day, values in
-            values.compactMap { value in value.protein.map { Entry(day: day, grams: $0) } }
+        return standalone.map { Entry(day: $0.day, grams: $0.grams, calories: includeCalories ? $0.calories : nil) } + food.flatMap { day, values in
+            values.compactMap { value in
+                guard includeCalories || value.protein != nil else { return nil }
+                return Entry(day: day, grams: value.protein ?? 0, calories: includeCalories ? value.kcal : nil, proteinKnown: value.protein != nil)
+            }
         }
     }
 }

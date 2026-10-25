@@ -129,4 +129,25 @@ final class ProteinWebhookTests: XCTestCase {
         XCTAssertEqual(SleepWebhookPolicy.nextOpportunity(state:state,now:now,calendar:calendar),now.addingTimeInterval(60))
     }
 
+    func testOptionalCalorieSummaryPreservesProteinCountsUnknownsAndPendingBytes() throws {
+        let entries = [ProteinWebhookProjection.Entry(day: "2026-10-05", grams: 25, calories: nil),
+            .init(day: "2026-10-05", grams: 0, calories: 0), .init(day: "2026-10-05", grams: 0, calories: 90, proteinKnown: false)]
+        let base = try XCTUnwrap(ProteinWebhookProjection.summaries(entries: entries, acknowledged: [:], from: "2026-10-05", to: "2026-10-05").first)
+        XCTAssertNil(base.calorieSummary); XCTAssertEqual(base.entryCount, 2); XCTAssertEqual(base.proteinGrams, 25)
+        let expanded = try XCTUnwrap(ProteinWebhookProjection.summaries(entries: entries, acknowledged: [:], from: "2026-10-05", to: "2026-10-05", includeCalories: true).first)
+        XCTAssertEqual(expanded.calorieSummary?.calories, 90); XCTAssertEqual(expanded.calorieSummary?.entryCount, 3)
+        XCTAssertEqual(expanded.calorieSummary?.estimatedEntryCount, 2); XCTAssertEqual(expanded.entryCount, 2)
+        var delivery = SleepWebhookDelivery(); try delivery.configure(endpoint: endpoint)
+        let old = try XCTUnwrap(delivery.prepareProtein(base)), retry = try XCTUnwrap(delivery.prepareProtein(expanded))
+        XCTAssertEqual(old.bytes, retry.bytes); XCTAssertNil(retry.event.calorieSummary)
+        try delivery.acceptProtein(ack(old.event)); let next = try XCTUnwrap(delivery.prepareProtein(expanded))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: next.bytes) as? [String: Any])
+        XCTAssertEqual(json.count, 13); XCTAssertNotNil(json["calorieSummary"]); try delivery.validate()
+        let unknown = CalorieWebhookSummary(calories: nil, entryCount: 3, estimatedEntryCount: 0, coverage: "logged_estimates")
+        XCTAssertTrue(unknown.isValid)
+        let bytes = try JSONEncoder().encode(unknown), object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        XCTAssertTrue(object["calories"] is NSNull)
+        XCTAssertFalse(CalorieWebhookSummary(calories: 0, entryCount: 3, estimatedEntryCount: 0, coverage: "logged_estimates").isValid)
+    }
+
 }

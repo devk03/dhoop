@@ -171,6 +171,7 @@ struct SleepWebhookCheckpoint: Codable {
     var delivery = SleepWebhookDelivery()
     var enabled = false
     var proteinEnabled: Bool?
+    var caloriesEnabled: Bool?
     var proteinFailures: Int?
     var proteinNextAttempt: Date?
     var proteinMessage: String?
