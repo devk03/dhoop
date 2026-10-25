@@ -31,6 +31,16 @@ final class DayHubTests: XCTestCase {
         XCTAssertEqual(dates.count, 73); XCTAssertEqual(dates.last!.timeIntervalSince(now), 21600)
         XCTAssertTrue(zip(dates, dates.dropFirst()).allSatisfy { $1.timeIntervalSince($0) == 300 })
     }
+    func testHourLabelsDoNotRoundTheDataWindowOrLoseDSTHours() {
+        let ordinary = DayHubWindow(now: date("2026-10-25T05:17:00Z"))
+        XCTAssertEqual(ordinary.hourTicks, [date("2026-10-25T04:00:00Z"), date("2026-10-25T05:00:00Z"), date("2026-10-25T06:00:00Z")])
+        XCTAssertEqual(ordinary.start, date("2026-10-25T03:47:00Z"))
+        for instant in ["2026-11-01T09:00:00Z", "2026-03-08T10:00:00Z"] {
+            let window = DayHubWindow(now: date(instant))
+            XCTAssertEqual(window.hourTicks, [-3600.0, 0, 3600].map { window.now.addingTimeInterval($0) })
+            XCTAssertTrue(window.hourTicks.allSatisfy { $0 >= window.start && $0 < window.end })
+        }
+    }
     func testDayRolloverNeverShowsYesterdayFoodOrWorkoutAsToday() {
         let now = date("2026-10-25T07:10:00Z")
         let snap = DayHubSnapshot(savedAt: now, timeZoneID: "America/Los_Angeles", food: .init(day: "2026-10-24", readAt: now, protein: 30, calories: nil, entries: 1, estimatedEntries: 0), workouts: .init(day: "2026-10-24", readAt: now, complete: true, rows: [.init(id: 1, title: "Lift", status: "completed", timing: nil)]), sleep: nil, calendarDays: [])

@@ -88,6 +88,19 @@ struct DayHubWindow {
     let now: Date
     var start: Date { now.addingTimeInterval(-90 * 60) }
     var end: Date { now.addingTimeInterval(90 * 60) }
+    /// Whole-hour labels within the exact window; elapsed stepping keeps DST instants distinct.
+    var hourTicks: [Date] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = CalendarWidgetSnapshot.timeZone
+        guard let hour = calendar.dateInterval(of: .hour, for: start)?.start else { return [] }
+        var tick = hour < start ? hour.addingTimeInterval(3600) : hour
+        var result: [Date] = []
+        while tick < end {
+            result.append(tick)
+            tick = tick.addingTimeInterval(3600)
+        }
+        return result
+    }
     var requiredDays: Set<String> {
         [CalendarWidgetSnapshot.dayKey(start), CalendarWidgetSnapshot.dayKey(end.addingTimeInterval(-0.001))]
     }

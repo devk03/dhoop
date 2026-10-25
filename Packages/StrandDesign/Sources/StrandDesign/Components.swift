@@ -50,6 +50,9 @@ public enum NoopMetrics {
     public static let calendarEventMinimumWidth: CGFloat = 88
     public static let calendarEventRadius: CGFloat = 8
     /// Day Hub uses the same three-hour window at two readable densities.
+    public static let dayHubCalendarCombined: CGFloat = 156
+    public static let dayHubSummaryContent: CGFloat = 138
+    public static let dayHubHourGutter: CGFloat = 52
     public static let dayHubCalendarCompact: CGFloat = 128
     public static let dayHubCalendarExpanded: CGFloat = 288
     public static let dayHubCalendarWidget: CGFloat = 264

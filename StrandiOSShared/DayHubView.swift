@@ -14,30 +14,81 @@ struct DayHubView: View {
     private var sleep: DayHubSnapshot.Sleep? { snapshot?.sleep }
     @ViewBuilder var body: some View {
         switch presentation {
-        case .combined: combinedPanel
+        case .combined:
+            if expanded { combinedPanel } else { compactPanel }
         case .calendar: calendarPanel
         case .summary: summaryPanel
         }
     }
+    private var compactHeader: some View {
+        HStack {
+            Text("Today").font(StrandFont.headline)
+            Spacer(minLength: NoopMetrics.space1)
+            Text(now, format: .dateTime.month(.abbreviated).day())
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+        }
+    }
+    private var compactPanel: some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            compactHeader
+            DayHubCalendarView(days: snapshot?.calendarDays ?? [], now: now,
+                showsEventList: false, minimalChrome: true, plotHeight: NoopMetrics.dayHubCalendarCombined)
+            Divider().overlay(StrandPalette.hairline)
+            summaryPanel.frame(height: NoopMetrics.dayHubSummaryContent)
+        }.foregroundStyle(StrandPalette.textPrimary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
     private var calendarPanel: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-            HStack {
-                Text("Today").font(StrandFont.headline)
-                Spacer(minLength: NoopMetrics.space1)
-                Text(now, format: .dateTime.month(.abbreviated).day()).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            }
+            compactHeader
             DayHubCalendarView(days: snapshot?.calendarDays ?? [], now: now, expanded: true,
-                showsEventList: false, plotHeight: NoopMetrics.dayHubCalendarWidget)
+                showsEventList: false, minimalChrome: true, plotHeight: NoopMetrics.dayHubCalendarWidget)
         }.foregroundStyle(StrandPalette.textPrimary)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     private var summaryPanel: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-            foodRow
-            HStack(alignment: .top, spacing: NoopMetrics.space2) {
-                workoutCard.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                sleepCard.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            }.fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            HStack(alignment: .top, spacing: NoopMetrics.space3) {
+                Link(destination: DayHubSnapshot.link("food")) {
+                    foodMetric("Protein", value: food.map { $0.protein.formatted(.number.precision(.fractionLength(0...1))) } ?? "—",
+                        unit: "g", tint: StrandPalette.metricProtein)
+                }.buttonStyle(.plain).accessibilityHint("Open food log")
+                Divider().overlay(StrandPalette.hairline)
+                Link(destination: DayHubSnapshot.link("food")) {
+                    foodMetric("Est. kcal", value: food?.calories.map { "≈" + $0.formatted(.number.precision(.fractionLength(0))) } ?? "—",
+                        unit: "", tint: StrandPalette.metricSteps)
+                }.buttonStyle(.plain).accessibilityHint("Open food log")
+            }.frame(maxHeight: .infinity, alignment: .top)
+            Divider().overlay(StrandPalette.hairline)
+            HStack(alignment: .top, spacing: NoopMetrics.space3) {
+                Link(destination: DayHubSnapshot.link("workouts")) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
+                        Text("Workout").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        Text(primaryWorkout?.title ?? String(localized: workouts?.complete == true ? "Not scheduled" : "Unavailable"))
+                            .font(StrandFont.subhead.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.85)
+                        if let row = primaryWorkout {
+                            Text(verbatim: workoutStatus(row.status)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(.plain).accessibilityHint("Open Exercises")
+                Divider().overlay(StrandPalette.hairline)
+                Link(destination: DayHubSnapshot.link("sleep")) {
+                    VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
+                        HStack(spacing: NoopMetrics.space1) {
+                            Text("Sleep")
+                            if let sleep, sleep.wakeDay != CalendarWidgetSnapshot.dayKey(now) {
+                                Text(verbatim: String(sleep.wakeDay.suffix(5)))
+                            }
+                        }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).lineLimit(1)
+                        Text(verbatim: duration(sleep?.whoopMinutes) + " / " + duration(sleep?.eightSleepMinutes))
+                            .font(StrandFont.subhead.weight(.semibold)).foregroundStyle(StrandPalette.metricHRV)
+                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.85)
+                        Text(verbatim: "WHOOP / 8sleep").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).lineLimit(1)
+                    }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text("Sleep"))
+                        .accessibilityValue(Text(verbatim: "WHOOP " + duration(sleep?.whoopMinutes) + ", 8sleep " + duration(sleep?.eightSleepMinutes) + ", " + (sleep?.wakeDay ?? "—")))
+                }.buttonStyle(.plain).accessibilityHint("Open sleep comparison")
+            }.frame(maxHeight: .infinity, alignment: .top)
         }.foregroundStyle(StrandPalette.textPrimary)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -184,6 +235,7 @@ struct DayHubCalendarView: View {
     let now: Date
     var expanded = false
     var showsEventList = true
+    var minimalChrome = false
     var plotHeight: CGFloat? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     private var window: DayHubWindow { .init(now: now) }
@@ -191,6 +243,10 @@ struct DayHubCalendarView: View {
     private var timeStyle: Date.FormatStyle { var v = Date.FormatStyle.dateTime.hour().minute(); v.timeZone = CalendarWidgetSnapshot.timeZone; return v }
     private var axisStyle: Date.FormatStyle {
         var value = Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()
+        value.timeZone = CalendarWidgetSnapshot.timeZone; return value
+    }
+    private var hourStyle: Date.FormatStyle {
+        var value = Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .abbreviated))
         value.timeZone = CalendarWidgetSnapshot.timeZone; return value
     }
     private var rangeLabel: some View {
@@ -210,24 +266,30 @@ struct DayHubCalendarView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: NoopMetrics.space1) { rangeLabel; Spacer(minLength: 0); calendarFreshness }
-                VStack(alignment: .leading, spacing: NoopMetrics.space1) { rangeLabel; calendarFreshness }
-            }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            if !minimalChrome {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NoopMetrics.space1) { rangeLabel; Spacer(minLength: 0); calendarFreshness }
+                    VStack(alignment: .leading, spacing: NoopMetrics.space1) { rangeLabel; calendarFreshness }
+                }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
             GeometryReader { proxy in
-                let gutter = NoopMetrics.dayHubTimeGutter
+                let gutter = minimalChrome ? NoopMetrics.dayHubHourGutter : NoopMetrics.dayHubTimeGutter
                 let width = max(1, proxy.size.width - gutter)
                 let placed = window.placements(days)
                 ZStack(alignment: .topLeading) {
-                    ForEach(0..<7, id: \.self) { tick in
-                        let y = CGFloat(tick) / 6 * height
+                    ForEach(minimalChrome ? window.hourTicks : (0..<7).map { window.start.addingTimeInterval(Double($0) * 1800) }, id: \.self) { tick in
+                        let y = CGFloat(tick.timeIntervalSince(window.start) / 10800) * height
                         HStack(spacing: NoopMetrics.space1) {
-                            Text(window.start.addingTimeInterval(Double(tick) * 1800), format: axisStyle)
+                            Text(tick, format: minimalChrome ? hourStyle : axisStyle)
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).lineLimit(1).frame(width: gutter, alignment: .leading)
                             Rectangle().fill(StrandPalette.hairline).frame(height: NoopMetrics.hairlineWidth)
                         }.offset(y: max(0, min(height - NoopMetrics.space3, y)))
-                        .opacity(expanded || tick % 2 == 0 ? 1 : 0)
                     }
+                    // Event surfaces cover the indicator so it never strikes through a title.
+                    HStack(spacing: 0) {
+                        Circle().fill(StrandPalette.liquidHeart).frame(width: NoopMetrics.space2, height: NoopMetrics.space2)
+                        Rectangle().fill(StrandPalette.liquidHeart).frame(height: NoopMetrics.hairlineWidth)
+                    }.offset(x: gutter - NoopMetrics.space1, y: height / 2)
                     ForEach(placed.prefix(expanded ? 40 : 8)) { p in
                         let x = gutter + CGFloat(p.column) * width / CGFloat(p.columns)
                         let y = CGFloat(p.start / 10800) * height
@@ -235,17 +297,14 @@ struct DayHubCalendarView: View {
                         Link(destination: CalendarWidgetSnapshot.link(day: p.day, eventID: p.event.id)!) {
                             VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
                                 Text(verbatim: p.event.title).font(StrandFont.caption.weight(.semibold)).lineLimit(expanded ? 2 : 1)
-                                if expanded, let organizer = p.event.organizer { Text(verbatim: organizer).font(StrandFont.caption).lineLimit(1) }
+                                if expanded && !minimalChrome, let organizer = p.event.organizer { Text(verbatim: organizer).font(StrandFont.caption).lineLimit(1) }
                             }.padding(NoopMetrics.space1).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                                 .background(StrandPalette.metricSteps.opacity(0.22), in: RoundedRectangle(cornerRadius: NoopMetrics.space1))
+                                .background(StrandPalette.surfaceRaised, in: RoundedRectangle(cornerRadius: NoopMetrics.space1))
                                 .overlay(alignment: .leading) { Rectangle().fill(StrandPalette.metricSteps).frame(width: NoopMetrics.spaceHalf) }
                         }.buttonStyle(.plain).frame(width: max(1, width / CGFloat(p.columns) - NoopMetrics.spaceHalf), height: h).clipped().offset(x: x, y: y)
                             .accessibilityLabel(Text(verbatim: p.event.title)).accessibilityValue(Text(p.event.start ?? now, format: timeStyle))
                     }
-                    HStack(spacing: 0) {
-                        Circle().fill(StrandPalette.liquidHeart).frame(width: NoopMetrics.space2, height: NoopMetrics.space2)
-                        Rectangle().fill(StrandPalette.liquidHeart).frame(height: NoopMetrics.hairlineWidth)
-                    }.offset(x: gutter - NoopMetrics.space1, y: height / 2)
                     if placed.isEmpty {
                         Text(window.complete(days) ? "No events in this window" : "Open Calendar to update")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).padding(.leading, gutter).padding(.top, NoopMetrics.space3)

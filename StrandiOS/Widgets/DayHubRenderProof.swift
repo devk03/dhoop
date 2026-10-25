@@ -23,7 +23,7 @@ enum DayHubRenderProof {
         DayHubView(snapshot: snapshot, now: now, presentation: presentation)
             .dynamicTypeSize(...DynamicTypeSize.large)
             .padding(NoopMetrics.space4)
-            .frame(width: width, height: presentation == .calendar ? 382 : 170, alignment: .topLeading)
+            .frame(width: width, height: presentation == .summary ? 170 : 382, alignment: .topLeading)
             .background(StrandPalette.surfaceBase)
             .environment(\.colorScheme, scheme)
     }
@@ -44,10 +44,16 @@ enum DayHubRenderProof {
                 workouts: .init(day: "2026-10-24", readAt: now, complete: true, rows: [.init(id: 1, title: "Upper body", status: "completed", timing: "5:00 PM")]),
                 sleep: .init(wakeDay: "2026-10-24", readAt: now, whoopMinutes: 468, eightSleepMinutes: 457, whoopMethod: "Dhoop estimate"),
                 calendarDays: [.init(date: "2026-10-24", readAt: now, complete: true, events: events)])
-            try await CalendarReaderRenderProof.capture(DayHubView(snapshot: snap, now: now).padding(NoopMetrics.space3), name: "widget-large", width: 364, height: 440, folder: folder)
-            try await CalendarReaderRenderProof.capture(DayHubView(snapshot: snap, now: now).padding(NoopMetrics.space3), name: "widget-narrow", width: 320, height: 440, folder: folder)
-            try await CalendarReaderRenderProof.capture(DayHubView(snapshot: snap, now: now).padding(NoopMetrics.space3), name: "widget-light", width: 364, height: 440, scheme: .light, folder: folder)
-            try await CalendarReaderRenderProof.capture(DayHubView(snapshot: nil, now: now).padding(NoopMetrics.space3), name: "widget-unavailable", width: 364, height: 440, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .combined), name: "widget-large", width: 364, height: 520, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .combined, width: 320), name: "widget-narrow", width: 320, height: 520, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .combined, scheme: .light), name: "widget-light", width: 364, height: 520, scheme: .light, folder: folder)
+            try await CalendarReaderRenderProof.capture(pairWidget(nil, now: now, presentation: .combined), name: "widget-unavailable", width: 364, height: 520, folder: folder)
+            var empty = snap
+            empty.workouts = .init(day: "2026-10-24", readAt: now, complete: true, rows: [])
+            empty.sleep = .init(wakeDay: "2026-10-23", readAt: now, whoopMinutes: 468, eightSleepMinutes: nil, whoopMethod: "Dhoop estimate")
+            empty.calendarDays = [.init(date: "2026-10-24", readAt: now, complete: true, events: [
+                .init(id: "long", title: "Long project planning session", start: now, end: now.addingTimeInterval(1800), allDay: false, organizer: nil, pending: false, localProjection: false)])]
+            try await CalendarReaderRenderProof.capture(pairWidget(empty, now: now, presentation: .combined, width: 320), name: "widget-empty-workout-partial-sleep", width: 320, height: 520, folder: folder)
             try await CalendarReaderRenderProof.capture(ScreenScaffold(title: nil) { DayHubView(snapshot: snap, now: now, expanded: true) }, name: "overview-390", width: 390, height: 1400, folder: folder)
             try await CalendarReaderRenderProof.capture(ScreenScaffold(title: nil) { DayHubView(snapshot: snap, now: now, expanded: true) }, name: "overview-accessibility", width: 390, height: 2200, type: .accessibility3, folder: folder)
             try await CalendarReaderRenderProof.capture(pairWidget(snap, now: now, presentation: .calendar), name: "pair-calendar-large", width: 364, height: 520, folder: folder)

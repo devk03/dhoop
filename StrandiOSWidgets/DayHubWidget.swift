@@ -16,6 +16,7 @@ struct DayHubWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: DayHubSnapshot.widgetKind, provider: DayHubProvider()) { entry in
             DayHubView(snapshot: entry.snapshot, now: entry.date)
+                .dynamicTypeSize(...DynamicTypeSize.large)
                 .widgetURL(DayHubSnapshot.link()).privacySensitive()
                 .containerBackground(StrandPalette.surfaceBase, for: .widget)
         }.configurationDisplayName("Day Hub")
