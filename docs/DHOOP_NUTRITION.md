@@ -95,3 +95,13 @@ layout issues and unverified interaction states. A fresh authenticated Calendar 
 The nutrition read failed without error classification in build 520; build 521 adds safe
 connection diagnostics before any credential changes or claim of active goal synchronization.
 No physical VoiceOver, gesture, Home Screen placement, or new timer-vibration verification is claimed.
+
+## Installed connection verification
+
+Build 521 was installed in place and successfully read the production goal document (version 0,
+no configured periods). Initial HTTP 409 installation_conflict was traced to a missing Worker
+installation binding, not missing phone credentials. The sole installation in existing delivery
+receipts matched the active phone. Binding that existing identity repaired the read without
+rotating tokens, changing Access paths, altering receipts, or creating test food/goal records.
+Calorie summaries are enabled alongside the existing protein connection. Existing food IDs,
+legacy food content, and decoded wake-alarm configuration were preserved across the update.

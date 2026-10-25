@@ -1,0 +1,31 @@
+{
+  "build": "521",
+  "executableSHA256": "b1e8de5a6129acace0a27b540a8fd03e939e7e174fdf22b9b2d1df58502e426f",
+  "signatureAndStableIdentityVerified": true,
+  "codeCommit": "2d36b4c585cd82092d11bac00327bc355a0f2757",
+  "schemaVersion": 1,
+  "iosReleaseBuild": "passed",
+  "physicalIPhoneInstallation": "verified_in_place",
+  "targetedTests": {
+    "passed": 54,
+    "failed": 0
+  },
+  "additionalDiagnosticRegressionTests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "nativeAuthenticatedCalendarRead": "verified_on_520",
+  "nativeAuthenticatedNutritionRead": "verified_after_server_binding",
+  "calorieSummariesEnabled": true,
+  "sharedGoalVersion": 0,
+  "sharedGoalCount": 0,
+  "foodIDsPreserved": true,
+  "legacyFoodPreserved": true,
+  "wakeAlarmConfigurationUnchanged": true,
+  "wakeAlarmComparison": "decoded_JSON_equal; byte ordering differs",
+  "ownerFoodOrGoalTestWrites": false,
+  "databaseMigration": false,
+  "calendarRsvpChanged": false,
+  "localArchive": "build/DhoopInstallers/Dhoop-521.zip",
+  "nativeVisualCaptures": "synthetic_physical_renders; known Calendar freshness baseline corrected subsequently"
+}
