@@ -202,6 +202,7 @@ targets:
       - Strand/Alarms/DhoopTimerSession.swift
       - Strand/Alarms/DhoopTimerController.swift
       - StrandiOSShared/CalendarWidgetSnapshot.swift
+      - StrandiOSShared/DayHubSnapshot.swift
       - Strand/Data/HapticPrefs.swift
       - StrandiOS/Meditation/MeditationSession.swift
       - StrandiOS/Running/RunningZoneSession.swift
