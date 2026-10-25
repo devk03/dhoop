@@ -65,8 +65,11 @@ struct NutritionGoalEditor: View {
                 if let error = client.error {
                     Text(LocalizedStringKey(error)).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                 }
+                NoopAsyncButton("Refresh ranges", systemImage: "arrow.clockwise", kind: .tertiary) {
+                    if automaticallyConnect { await NutritionGoalSetup.connectForFoodScreen() }
+                    else { _ = await client.refresh(activate: true) }
+                }.disabled(client.busy)
                 if client.enabled {
-                    NoopAsyncButton("Refresh ranges", systemImage: "arrow.clockwise", kind: .tertiary) { _ = await client.refresh() }.disabled(client.busy)
                     if client.requiresRefresh { Text("Showing the last confirmed ranges. Refresh before editing.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                 } else { Text("Shared ranges are waiting for the Life connection.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
             }
