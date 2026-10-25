@@ -49,6 +49,13 @@ public enum NoopMetrics {
     public static let calendarTimeGutter: CGFloat = 60
     public static let calendarEventMinimumWidth: CGFloat = 88
     public static let calendarEventRadius: CGFloat = 8
+    /// Day Hub uses the same three-hour window at two readable densities.
+    public static let dayHubCalendarCompact: CGFloat = 128
+    public static let dayHubCalendarExpanded: CGFloat = 288
+    public static let dayHubTimeGutter: CGFloat = 44
+    public static let dayHubRingDiameter: CGFloat = 48
+    public static let dayHubRingInset: CGFloat = 8
+    public static let dayHubCompactNumber: CGFloat = 20
     /// Minimum macOS detail-sheet footprint for a scrollable editor/history surface.
     public static let detailSheetMinWidth: CGFloat = 520
     public static let detailSheetMinHeight: CGFloat = 620

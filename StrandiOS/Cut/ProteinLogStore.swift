@@ -4,6 +4,7 @@ import Combine
 /// Optional food estimates share the protein log without creating a deficit-log day.
 @MainActor
 final class ProteinLogStore: ObservableObject {
+    static let shared = ProteinLogStore()
     enum Failure: LocalizedError {
         case unreadable, invalidEntry, invalidTarget, encoding
         var errorDescription: String? {

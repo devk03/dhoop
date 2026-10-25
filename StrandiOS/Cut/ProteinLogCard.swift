@@ -10,7 +10,7 @@ struct ProteinLogCard: View {
         self.day = day
         self._selection = selection; _logDay = State(initialValue: day)
     }
-    @StateObject private var protein = ProteinLogStore()
+    @StateObject private var protein = ProteinLogStore.shared
     @ObservedObject private var food = CutPlanStore.shared
     @State private var showEditor = false
     @ScaledMetric(relativeTo: .title) private var numberSize = NoopMetrics.dashboardTileNumber
@@ -84,7 +84,7 @@ struct ProteinLogCard: View {
     }
 }
 
-private struct ProteinHistoryView: View {
+struct ProteinHistoryView: View {
     @ObservedObject var store: ProteinLogStore
     @ObservedObject private var food = CutPlanStore.shared
     @Binding var selection: MetricRangeSelection

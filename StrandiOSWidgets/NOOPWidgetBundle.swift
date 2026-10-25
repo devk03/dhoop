@@ -10,6 +10,7 @@ struct NOOPWidgetBundle: WidgetBundle {
     var body: some Widget {
         NOOPWidget()
         CalendarWidget()
+        DayHubWidget()
         NOOPLiveActivity()
         CoachBriefWidget()
         HeartRateWidget()

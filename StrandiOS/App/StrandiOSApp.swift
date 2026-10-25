@@ -347,6 +347,7 @@ struct StrandiOSApp: App {
                 // HealthKit-free payload. Filter on the host so other future schemes don't trip the
                 // importer; macOS never registers the scheme so this stays iOS-only.
                 .onOpenURL { url in
+                    if DayHubNavigation.shared.open(url) { return }
                     if CalendarNavigation.shared.open(url) { return }
                     if url.scheme == "dhoop", url.host == "remote-buzz" {
                         RemoteBuzzClient.shared.importPairingURL(url)
@@ -377,6 +378,9 @@ struct StrandiOSApp: App {
                     await CalendarInvitationRenderProof.runIfRequested()
                     await SleepComparisonRenderProof.runIfRequested()
                     await FoodLogRenderProof.runIfRequested()
+                    await DayHubRenderProof.runIfRequested()
+                    DayHubPublisher.shared.attach(model: model)
+                    await DayHubRenderProof.readIfRequested()
                     #if DEBUG
                     await LifeSyncReadinessProof.runIfRequested(model: model)
                     await OwnerDataSnapshotProof.runIfRequested(model: model)
@@ -404,6 +408,7 @@ struct StrandiOSApp: App {
             meditation.setForeground(phase == .active)
             alarmTimer.setForeground(phase == .active)
             if phase == .active {
+                DayHubPublisher.shared.refreshIfNeeded()
                 CalendarRSVPClient.shared.reload()
                 NutritionGoalClient.shared.connectionDidChange()
                 CalendarWidgetPublisher.shared.refreshIfNeeded()

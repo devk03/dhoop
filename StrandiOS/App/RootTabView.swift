@@ -48,6 +48,11 @@ struct RootTabView: View {
     /// between tab roots, calm easing). Defaults to Today.
     @State private var selectedTab: Int = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var dayHubNavigation = DayHubNavigation.shared
+    @State private var showDayHub = false
+    @State private var showHubFood = false
+    @State private var hubFoodSelection = MetricRangeSelection()
+    @State private var hubOpenedAt = Date()
     @ObservedObject private var calendarNavigation = CalendarNavigation.shared
     @ObservedObject private var motion = NoopMotionState.shared
     private var poseStill: Bool { motion.poseStill(reduceMotion) }
@@ -127,13 +132,24 @@ struct RootTabView: View {
         .tint(StrandPalette.accent)
         .onAppear {
             if runningSession == nil { runningSession = RunningSessionController() }
+            if CommandLine.arguments.contains("--day-hub-open") { showDayHub = true }
             if CommandLine.arguments.contains("--calendar-reader-open") { selectedTab = 7 }
             if CommandLine.arguments.contains("--alarm-timer-open") { selectedTab = 6 }
             #if DEBUG
             if CommandLine.arguments.contains("--alarm-diagnostics") { selectedTab = 6 }
             #endif
         }
-        .onReceive(calendarNavigation.$request) { request in if request != nil { selectedTab = 7 } }
+        .onReceive(calendarNavigation.$request) { request in if request != nil { showDayHub = false; selectedTab = 7 } }
+        .onReceive(dayHubNavigation.$section) { section in
+            guard let section else { return }
+            showDayHub = section == "overview"
+            if section == "food" { hubOpenedAt = Date(); hubFoodSelection.preset = .today; showHubFood = true }
+            if section == "sleep" { selectedTab = 2 }
+            if section == "workouts" { selectedTab = 5 }
+            dayHubNavigation.consume()
+        }
+        .fullScreenCover(isPresented: $showDayHub) { DayHubOverview() }
+        .sheet(isPresented: $showHubFood) { ProteinHistoryView(store: .shared, selection: $hubFoodSelection, now: hubOpenedAt) }
         // Switching Coach off while STANDING on it leaves `selectedTab` pointing at a tag no tab claims
         // any more, which renders as an empty tab rather than as an error. Send that wearer to Today, and
         // only in that case, so a flip made from anywhere else does not move them.

@@ -66,6 +66,9 @@ private struct CutTodayDashboard: View, Equatable {
                             .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     }
                     Spacer(minLength: NoopMetrics.space1)
+                    Button { DayHubNavigation.shared.open(DayHubSnapshot.link()) } label: {
+                        Image(systemName: "rectangle.grid.1x2").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
+                    }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Open Day Hub")
                     gearMenu
                 }
                 HeartMetricsView(model: model, deviceId: activeDeviceId.isEmpty ? repo.deviceId : activeDeviceId,
