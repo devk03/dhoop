@@ -89,6 +89,9 @@ actual implementation evidence. Tests never create owner food or goal records in
 | Keyboard controls contributed by multiple forms | Only the focused form contributes its keyboard Done control. |
 | No calorie export preference | Life sync has a separate Calorie estimates switch and respects explicit opt-outs. |
 
-Actual build-520 native captures and authenticated phone reads are pending the iPhone reconnection.
-The last verified installed build remains 519 until the build-520 installation receipt is recorded.
+Build 520 was installed in place on the physical iPhone. Synthetic native Food, Calendar, Alarms,
+and combined-ring captures are retained in docs/design; their READMEs distinguish known baseline
+layout issues and unverified interaction states. A fresh authenticated Calendar read passed.
+The nutrition read failed without error classification in build 520; build 521 adds safe
+connection diagnostics before any credential changes or claim of active goal synchronization.
 No physical VoiceOver, gesture, Home Screen placement, or new timer-vibration verification is claimed.

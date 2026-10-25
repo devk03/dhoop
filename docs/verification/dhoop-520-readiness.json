@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "build": "520",
+  "codeCommit": "9393dfa6534e4a506381fbd35c03d74f8770c685",
+  "executableSHA256": "ce6c2d746ce54608bec7dc8ec5192e05d77044873561d6c6a54c8c047031bfba",
+  "signatureAndStableIdentityVerified": true,
+  "targetedTests": {
+    "passed": 33,
+    "failed": 0
+  },
+  "iosReleaseBuild": "passed",
+  "macOSBuild": "passed",
+  "translationAudit": "passed",
+  "docCommentLint": "passed",
+  "physicalIPhoneInstallation": "verified",
+  "lastVerifiedInstalledBuild": "520",
+  "nativeAuthenticatedNutritionRead": "failed_unclassified_in_520",
+  "nativeVisualCaptures": "verified_synthetic_physical_renders",
+  "liveFoodOrGoalTestWrites": false,
+  "databaseMigration": false,
+  "calendarRsvpChanged": false,
+  "localArchive": "build/DhoopInstallers/Dhoop-520.zip",
+  "nativeAuthenticatedCalendarRead": "verified",
+  "ownerFoodOrGoalTestWrites": false
+}
