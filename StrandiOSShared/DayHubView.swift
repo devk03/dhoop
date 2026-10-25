@@ -25,9 +25,9 @@ struct DayHubView: View {
             } else {
                 foodRow
                 HStack(alignment: .top, spacing: NoopMetrics.space2) {
-                    workoutCard.frame(maxWidth: .infinity)
-                    sleepCard.frame(maxWidth: .infinity)
-                }
+                    workoutCard.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    sleepCard.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }.fixedSize(horizontal: false, vertical: true)
             }
         }.foregroundStyle(StrandPalette.textPrimary)
     }
@@ -64,16 +64,17 @@ struct DayHubView: View {
     private var workoutCard: some View {
         Link(destination: DayHubSnapshot.link("workouts")) {
             surface(VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                HStack(spacing: NoopMetrics.space1) {
-                    Label("Workout", systemImage: "dumbbell")
-                    if !expanded, let readAt = workouts?.readAt { Text(readAt, style: .time).foregroundStyle(StrandPalette.textTertiary) }
-                }.font(StrandFont.caption).foregroundStyle(StrandPalette.metricHRV).lineLimit(1)
+                Label("Workout", systemImage: "dumbbell").font(StrandFont.caption).foregroundStyle(StrandPalette.metricHRV)
                 Text(primaryWorkout?.title ?? String(localized: workouts?.complete == true ? "No workout scheduled" : "Open Exercises to update"))
                     .font(StrandFont.subhead.weight(.semibold)).lineLimit(expanded ? nil : 1)
                 if let row = primaryWorkout {
                     HStack(spacing: NoopMetrics.space1) {
                         Image(systemName: row.status == "completed" ? "checkmark.circle.fill" : row.status == "in_progress" ? "play.circle" : "circle")
                         Text(verbatim: workoutStatus(row.status))
+                        if !expanded, let readAt = workouts?.readAt {
+                            Spacer(minLength: NoopMetrics.space1)
+                            Text(readAt, style: .time).foregroundStyle(StrandPalette.textTertiary)
+                        }
                     }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     if expanded, let timing = row.timing, !timing.isEmpty { Text(verbatim: timing).font(StrandFont.caption) }
                 }
@@ -144,6 +145,10 @@ struct DayHubCalendarView: View {
     private var window: DayHubWindow { .init(now: now) }
     private var height: CGFloat { expanded ? NoopMetrics.dayHubCalendarExpanded : NoopMetrics.dayHubCalendarCompact }
     private var timeStyle: Date.FormatStyle { var v = Date.FormatStyle.dateTime.hour().minute(); v.timeZone = CalendarWidgetSnapshot.timeZone; return v }
+    private var axisStyle: Date.FormatStyle {
+        var value = Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()
+        value.timeZone = CalendarWidgetSnapshot.timeZone; return value
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             HStack(spacing: NoopMetrics.space1) {
@@ -166,7 +171,7 @@ struct DayHubCalendarView: View {
                     ForEach(0..<7, id: \.self) { tick in
                         let y = CGFloat(tick) / 6 * height
                         HStack(spacing: NoopMetrics.space1) {
-                            Text(window.start.addingTimeInterval(Double(tick) * 1800), format: timeStyle)
+                            Text(window.start.addingTimeInterval(Double(tick) * 1800), format: axisStyle)
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary).lineLimit(1).frame(width: gutter, alignment: .leading)
                             Rectangle().fill(StrandPalette.hairline).frame(height: NoopMetrics.hairlineWidth)
                         }.offset(y: max(0, min(height - NoopMetrics.space3, y)))
@@ -194,7 +199,7 @@ struct DayHubCalendarView: View {
                         Text(window.complete(days) ? "No events in this window" : "Open Calendar to update")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).padding(.leading, gutter).padding(.top, NoopMetrics.space3)
                     }
-                }.frame(height: height).clipped()
+                }.frame(width: proxy.size.width, height: height, alignment: .topLeading).clipped()
             }.frame(height: height)
             if expanded {
                 ForEach(window.placements(days)) { p in
