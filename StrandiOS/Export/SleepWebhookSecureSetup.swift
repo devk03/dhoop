@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-struct SleepWebhookCredentials: Codable {
+struct SleepWebhookCredentials: Codable, Equatable {
     let endpoint: String
     let bearer: String
     let clientId: String

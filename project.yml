@@ -21,7 +21,7 @@ settings:
     # iOS build number (CFBundleVersion). GLOBAL so the iOS app AND its widget extension inherit the
     # SAME value — they must match or iOS warns "extension version must match parent app" (#416).
     # macOS sets its own CFBundleVersion on the Strand target and is unaffected by this.
-    CURRENT_PROJECT_VERSION: "519"
+    CURRENT_PROJECT_VERSION: "520"
     SWIFT_VERSION: "5.0"
     # Emit localizable strings so Xcode auto-extracts every LocalizedStringKey into the
     # String Catalog on build (the English (US) base entries).
@@ -134,6 +134,10 @@ targets:
       - StrandiOS/Export/SleepWebhookTransport.swift
       - StrandiOS/Cut/CutGoalPreferences.swift
       - StrandiOS/Cut/ProteinLogStore.swift
+      - StrandiOS/Cut/CalorieGoalStore.swift
+      - StrandiOS/Cut/NutritionGoalClient.swift
+      - StrandiOS/Export/NutritionGoalContract.swift
+      - StrandiOS/Export/NutritionGoalTransport.swift
       - StrandiOS/Cut/HeartDashboardProjection.swift
       - StrandiOS/Cut/MetricRangeProjection.swift
       - StrandiOS/Cut/SleepRangeProjection.swift
