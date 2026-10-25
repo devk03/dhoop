@@ -55,6 +55,9 @@ struct FoodInlineEntry: View {
         }
         .toolbar { ToolbarItemGroup(placement: .keyboard) { if focused != nil { Spacer(); Button("Done") { focused = nil } } } }
         .onAppear { target = store.targetGrams.map { $0.formatted(.number.grouping(.never)) } ?? "" }
+        .onChange(of: [name, grams, calories]) { _, values in
+            if values.contains(where: { !$0.isEmpty }) { message = nil; failed = false }
+        }
     }
     private func input(_ title: LocalizedStringKey, text: Binding<String>, unit: String, field: Field) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {

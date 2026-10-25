@@ -14,7 +14,8 @@ struct NutritionGoalEditor: View {
     @AppStorage("dhoop.food.goalDraft.minimum") private var minimum = ""
     @AppStorage("dhoop.food.goalDraft.maximum") private var maximum = ""
     @State private var saved = false
-    @FocusState private var focused: Bool
+    private enum Field: Hashable { case minimum, maximum }
+    @FocusState private var focused: Field?
     private var goal: CalorieGoalPeriod? { client.goal(for: day) }
     private var draft: CalorieGoalPeriod? {
         guard let min = NutritionInputNumber.parse(minimum),
@@ -31,12 +32,13 @@ struct NutritionGoalEditor: View {
                         DatePicker("Through", selection: date($through), displayedComponents: .date)
                         let layout = typeSize >= .xxxLarge ? AnyLayout(VStackLayout(spacing: NoopMetrics.space2)) : AnyLayout(HStackLayout(spacing: NoopMetrics.space2))
                         layout {
-                            input("Minimum kcal", value: $minimum)
-                            input("Maximum kcal", value: $maximum)
+                            input("Minimum kcal", value: $minimum, field: .minimum)
+                            input("Maximum kcal", value: $maximum, field: .maximum)
                         }
                         NoopAsyncButton("Save range", fullWidth: true) {
+                            saved = false
                             guard let draft else { throw NutritionGoalFailure.invalid }
-                            try await client.save(draft); focused = false; saved = true
+                            try await client.save(draft); focused = nil; saved = true
                         }.disabled(draft == nil || client.busy || client.requiresRefresh || !client.enabled)
                         Button("New range") { load(nil) }.buttonStyle(NoopButtonStyle(.tertiary))
                         ForEach(client.periods) { period in
@@ -49,7 +51,7 @@ struct NutritionGoalEditor: View {
                                     }.frame(maxWidth: .infinity, minHeight: NoopMetrics.minimumTouchTarget, alignment: .leading)
                                 }.buttonStyle(NoopFeedbackButtonStyle()).accessibilityHint("Edit calorie range")
                                 NoopAsyncButton("", systemImage: "minus.circle", kind: .tertiary) {
-                                    try await client.remove(period.id); if id == period.id { load(nil) }
+                                    saved = false; try await client.remove(period.id); if id == period.id { load(nil) }
                                 }.disabled(client.busy || client.requiresRefresh).accessibilityLabel("Remove calorie range")
                             }
                         }
@@ -66,6 +68,7 @@ struct NutritionGoalEditor: View {
                     Text(LocalizedStringKey(error)).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                 }
                 NoopAsyncButton("Refresh ranges", systemImage: "arrow.clockwise", kind: .tertiary) {
+                    saved = false
                     if automaticallyConnect { await NutritionGoalSetup.connectForFoodScreen() }
                     else { _ = await client.refresh(activate: true) }
                 }.disabled(client.busy)
@@ -75,21 +78,22 @@ struct NutritionGoalEditor: View {
             }
         }
         .onAppear { if id.isEmpty { load(nil) }; if initiallyExpanded { expanded = true } }
+        .onChange(of: [id, from, through, minimum, maximum]) { _, _ in saved = false }
         .task {
             if automaticallyConnect { await NutritionGoalSetup.connectForFoodScreen() }
             else if client.enabled { _ = await client.refresh() }
         }
-        .toolbar { ToolbarItemGroup(placement: .keyboard) { if focused { Spacer(); Button("Done") { focused = false } } } }
+        .toolbar { ToolbarItemGroup(placement: .keyboard) { if focused != nil { Spacer(); Button("Done") { focused = nil } } } }
     }
     private func band(_ period: CalorieGoalPeriod) -> String {
         let minimum = period.minCalories.formatted(.number.precision(.fractionLength(0)))
         let maximum = period.maxCalories.formatted(.number.precision(.fractionLength(0)))
         return (period.minCalories == period.maxCalories ? minimum : minimum + "–" + maximum) + " " + String(localized: "kcal/day")
     }
-    private func input(_ title: LocalizedStringKey, value: Binding<String>) -> some View {
+    private func input(_ title: LocalizedStringKey, value: Binding<String>, field: Field) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             Text(title).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            TextField("Optional", text: value).keyboardType(.decimalPad).focused($focused)
+            TextField("Optional", text: value).keyboardType(.decimalPad).focused($focused, equals: field)
                 .font(StrandFont.bodyNumber).padding(NoopMetrics.space3)
                 .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius))
         }
