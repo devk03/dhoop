@@ -118,4 +118,22 @@ final class ProteinLogStoreTests: XCTestCase {
         try first.remove(first.entries[0].id)
         XCTAssertEqual(ProteinLogStore(defaults: defaults).total(day: "2026-10-14"), 15)
     }
+    @MainActor
+    func testOptionalCaloriesPreserveLegacyIDsUnknownsAndZeroWithoutCreatingCutDays() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "FoodLogTests." + UUID().uuidString))
+        let legacy = Data(#"[{"id":"00000000-0000-4000-8000-000000000001","day":"2026-10-24","name":"Old meal","grams":25}]"#.utf8)
+        defaults.set(legacy, forKey: ProteinLogStore.entriesKey)
+        let store = ProteinLogStore(defaults: defaults), id = try XCTUnwrap(store.entries.first?.id)
+        XCTAssertNil(store.entries.first?.calories)
+        try store.add(grams: 0, name: "Water", day: "2026-10-24", calories: 0)
+        try store.add(grams: 0, name: "Fruit", day: "2026-10-24", calories: 90)
+        let reopened = ProteinLogStore(defaults: defaults)
+        XCTAssertEqual(reopened.entries.first?.id, id); XCTAssertNil(reopened.entries.first?.calories)
+        XCTAssertEqual(reopened.entries.map(\.calories), [nil, 0, 90]); XCTAssertEqual(reopened.total(day: "2026-10-24"), 25)
+        XCTAssertNil(defaults.object(forKey: "cut.food")); XCTAssertNil(defaults.object(forKey: "cut.goalKg"))
+        for calories in [-1, Double.infinity, Double.nan, 20001] {
+            XCTAssertThrowsError(try store.add(grams: 0, name: "Invalid", day: "2026-10-24", calories: calories))
+        }
+        XCTAssertEqual(ProteinLogStore(defaults: defaults).entries.count, 3)
+    }
 }

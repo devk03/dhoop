@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 
-/// Protein-only entries never create a calorie-log day or change a weight-loss plan.
+/// Optional food estimates share the protein log without creating a deficit-log day.
 @MainActor
 final class ProteinLogStore: ObservableObject {
     enum Failure: LocalizedError {
@@ -9,7 +9,7 @@ final class ProteinLogStore: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .unreadable: return "The saved protein log could not be read. Existing data is preserved; retry after restoring or repairing it."
-            case .invalidEntry: return "Enter a valid positive amount of protein. Your input is kept."
+            case .invalidEntry: return "Enter protein above zero or a calorie estimate. Your input is kept."
             case .invalidTarget: return "Enter a valid positive target or leave it blank. Your input is kept."
             case .encoding: return "Protein could not be saved. Existing entries and your input are kept."
             }
@@ -21,6 +21,7 @@ final class ProteinLogStore: ObservableObject {
         let name: String
         let grams: Double
         var loggedAt: Date? = nil
+        var calories: Double? = nil
     }
 
     static let entriesKey = "dhoop.protein.entries"
@@ -43,7 +44,9 @@ final class ProteinLogStore: ObservableObject {
         guard let raw = defaults.object(forKey: Self.entriesKey) else { return [] }
         guard let data = raw as? Data, let decoded = try? JSONDecoder().decode([Entry].self, from: data),
               Set(decoded.map(\.id)).count == decoded.count,
-              decoded.allSatisfy({ $0.grams.isFinite && $0.grams >= 0 && $0.day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil }) else { throw Failure.unreadable }
+              decoded.allSatisfy({ $0.grams.isFinite && $0.grams >= 0
+                  && ($0.calories.map { $0.isFinite && $0 >= 0 && $0 <= 20000 } ?? true)
+                  && $0.day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil }) else { throw Failure.unreadable }
         return decoded
     }
 
@@ -62,11 +65,14 @@ final class ProteinLogStore: ObservableObject {
         entries = next
     }
 
-    func add(grams: Double, name: String, day: String, now: Date = Date()) throws {
-        guard grams.isFinite, grams > 0, day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { throw Failure.invalidEntry }
+    func add(grams: Double, name: String, day: String, now: Date = Date(), calories: Double? = nil) throws {
+        guard grams.isFinite, grams >= 0, grams > 0 || calories != nil,
+              calories.map({ $0.isFinite && $0 >= 0 && $0 <= 20000 }) ?? true,
+              day.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { throw Failure.invalidEntry }
         try reload()
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        try commit(entries + [Entry(day: day, name: name.isEmpty ? "Protein" : name, grams: grams, loggedAt: now)])
+        try commit(entries + [Entry(day: day, name: name.isEmpty ? (calories == nil ? "Protein" : "Food") : name,
+            grams: grams, loggedAt: now, calories: calories)])
     }
 
     func remove(_ id: UUID) throws {
