@@ -75,6 +75,7 @@ final class NutritionGoalTests: XCTestCase {
         let first = await client.refresh(activate: true); XCTAssertTrue(first)
         let original = defaults.data(forKey: NutritionGoalClient.cacheKey); wrong = true
         let second = await client.refresh(); XCTAssertFalse(second); XCTAssertEqual(defaults.data(forKey: NutritionGoalClient.cacheKey), original)
+        XCTAssertEqual(client.error, NutritionGoalFailure.unconfirmed.localizedDescription, "Invalid readback must not be attributed to the owner's draft")
         XCTAssertEqual(client.periods.count, 1)
         active = .init(credentials: active.credentials, installationId: UUID().uuidString)
         client.connectionDidChange(); XCTAssertTrue(client.periods.isEmpty); XCTAssertEqual(defaults.data(forKey: NutritionGoalClient.cacheKey), original)
