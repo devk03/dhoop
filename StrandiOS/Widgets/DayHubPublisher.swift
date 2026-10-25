@@ -32,6 +32,7 @@ final class DayHubPublisher: ObservableObject {
         guard self.model == nil else { return }; self.model = model
         publishFood()
         ProteinLogStore.shared.$entries.dropFirst().debounce(for: .milliseconds(250), scheduler: RunLoop.main).sink { [weak self] _ in self?.publishFood() }.store(in: &subscriptions)
+        ProteinLogStore.shared.$storageError.dropFirst().debounce(for: .milliseconds(250), scheduler: RunLoop.main).sink { [weak self] _ in self?.publishFood() }.store(in: &subscriptions)
         CutPlanStore.shared.$food.dropFirst().debounce(for: .milliseconds(250), scheduler: RunLoop.main).sink { [weak self] _ in self?.publishFood() }.store(in: &subscriptions)
         model.repo.$refreshSeq.dropFirst().debounce(for: .seconds(2), scheduler: RunLoop.main).sink { [weak self] _ in self?.refreshLocalSleep() }.store(in: &subscriptions)
         WorkoutTrackerClient.shared.$state.map { state in
@@ -53,8 +54,14 @@ final class DayHubPublisher: ObservableObject {
         }
         save(value)
     }
+    func clearCalendar() {
+        var value = base(); value.calendarDays = []; save(value)
+    }
     func refreshIfNeeded(force: Bool = false) {
         guard let model else { return }
+        if !WorkoutTrackerClient.shared.state.enabled || !WorkoutTrackerClient.shared.configured {
+            var value = base(); value.workouts = nil; save(value)
+        }
         if task != nil { if force { pendingRefresh = true }; return }
         guard force || Date() >= nextRefresh else { publishFood(); return }
         nextRefresh = Date().addingTimeInterval(15 * 60); refreshing = true
@@ -107,7 +114,7 @@ final class DayHubPublisher: ObservableObject {
             for day in window.requiredDays.sorted() {
                 let bytes = try await CalendarReaderTransport().send(.day(day, nil), configuration: config)
                 let page = try JSONDecoder().decode(CalendarReaderDay.self, from: bytes); try page.validate(date: day)
-                guard client.configuration == config, let readAt = CalendarReaderDates.instant(page.readAt) else { return }
+                guard CalendarWidgetPublisher.shared.enabled, client.enabled, client.configuration == config, let readAt = CalendarReaderDates.instant(page.readAt) else { return }
                 days.append(.init(date: day, readAt: readAt, complete: !page.page.hasMore && page.events.count <= 100, events: page.events.prefix(100).map {
                     .init(id: $0.id, title: $0.title, start: $0.startAt.flatMap(CalendarReaderDates.instant), end: $0.endAt.flatMap(CalendarReaderDates.instant),
                         allDay: $0.allDay, organizer: $0.invitation?.organizer?.label, pending: $0.invitation?.pending == true, localProjection: $0.source == "local_projection")

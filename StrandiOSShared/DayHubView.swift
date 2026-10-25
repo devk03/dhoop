@@ -42,7 +42,7 @@ struct DayHubView: View {
                 foodMetric("Protein", value: food.map { $0.protein.formatted(.number.precision(.fractionLength(0...1))) } ?? "—", unit: "g", tint: StrandPalette.metricProtein)
                 Divider().overlay(StrandPalette.hairline)
                 foodMetric("Estimated calories", value: food?.calories.map { "≈" + $0.formatted(.number.precision(.fractionLength(0))) } ?? "—", unit: "kcal", tint: StrandPalette.metricSteps)
-            })
+            }.fixedSize(horizontal: false, vertical: true))
         }.buttonStyle(.plain).accessibilityHint("Open food log")
     }
     private func foodMetric(_ title: LocalizedStringKey, value: String, unit: String, tint: Color) -> some View {
@@ -73,20 +73,28 @@ struct DayHubView: View {
                 if let row = primaryWorkout {
                     HStack(spacing: NoopMetrics.space1) {
                         Image(systemName: row.status == "completed" ? "checkmark.circle.fill" : row.status == "in_progress" ? "play.circle" : "circle")
-                        Text(LocalizedStringKey(row.status == "completed" ? "Done" : row.status == "in_progress" ? "In progress" : row.status == "skipped" ? "Skipped" : "Planned"))
+                        Text(verbatim: workoutStatus(row.status))
                     }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     if expanded, let timing = row.timing, !timing.isEmpty { Text(verbatim: timing).font(StrandFont.caption) }
                 }
                 if expanded, let workouts {
                     ForEach(workouts.rows.filter { $0.id != primaryWorkout?.id }) { row in
                         HStack { Text(verbatim: row.title); Spacer(); Image(systemName: row.status == "completed" ? "checkmark.circle.fill" : "circle") }
-                            .font(StrandFont.subhead).accessibilityLabel(Text(verbatim: row.title + ", " + NSLocalizedString(row.status == "completed" ? "Done" : "Planned", comment: "")))
+                            .font(StrandFont.subhead).accessibilityLabel(Text(verbatim: row.title + ", " + workoutStatus(row.status)))
                     }
                     if !workouts.complete { Text("More in Exercises").font(StrandFont.caption) }
                     sourceTime(workouts.readAt)
                 }
             }.frame(minHeight: NoopMetrics.minimumTouchTarget, alignment: .topLeading))
         }.buttonStyle(.plain).accessibilityHint("Open Exercises")
+    }
+    private func workoutStatus(_ value: String) -> String {
+        switch value {
+        case "completed": return String(localized: "Done")
+        case "in_progress": return String(localized: "In progress")
+        case "skipped": return String(localized: "Skipped")
+        default: return String(localized: "Planned")
+        }
     }
     private var sleepCard: some View {
         Link(destination: DayHubSnapshot.link("sleep")) {
@@ -140,6 +148,9 @@ struct DayHubCalendarView: View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             HStack(spacing: NoopMetrics.space1) {
                 Text(window.start, format: timeStyle); Text("–"); Text(window.end, format: timeStyle)
+                if TimeZone.current != CalendarWidgetSnapshot.timeZone {
+                    Text(verbatim: CalendarWidgetSnapshot.timeZone.abbreviation(for: now) ?? CalendarWidgetSnapshot.timeZone.identifier)
+                }
                 Spacer(minLength: 0)
                 if let read = days.filter({ window.requiredDays.contains($0.date) }).map(\.readAt).min() {
                     Image(systemName: "arrow.clockwise")

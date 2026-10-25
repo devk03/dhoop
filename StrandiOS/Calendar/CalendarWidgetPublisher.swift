@@ -23,6 +23,7 @@ final class CalendarWidgetPublisher {
     func clear() {
         generation += 1; ticket = nil; task?.cancel(); task = nil; identity = nil; nextRefresh = .distantPast
         defaults?.removeObject(forKey: CalendarWidgetSnapshot.storageKey)
+        DayHubPublisher.shared.clearCalendar()
         WidgetCenter.shared.reloadTimelines(ofKind: CalendarWidgetSnapshot.widgetKind)
     }
     func record(_ chain: CalendarReaderDayChain) {
