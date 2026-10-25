@@ -94,6 +94,7 @@ struct NutritionGoalEditor: View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             Text(title).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             TextField("Optional", text: value).keyboardType(.decimalPad).focused($focused, equals: field)
+                .accessibilityLabel(title)
                 .font(StrandFont.bodyNumber).padding(NoopMetrics.space3)
                 .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius))
         }

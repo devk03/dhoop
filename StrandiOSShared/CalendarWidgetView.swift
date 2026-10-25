@@ -14,7 +14,7 @@ struct CalendarWidgetView: View {
     private var dateStyle: Date.FormatStyle { var style = Date.FormatStyle.dateTime.day().month(.abbreviated); style.timeZone = CalendarWidgetSnapshot.timeZone; return style }
     private var timeStyle: Date.FormatStyle { var style = Date.FormatStyle.dateTime.hour().minute(); style.timeZone = CalendarWidgetSnapshot.timeZone; return style }
     var body: some View {
-        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             HStack {
                 if family == .systemSmall { Image(systemName: "calendar").accessibilityLabel("Calendar") }
                 else { Label("Calendar", systemImage: "calendar").font(StrandFont.subhead.weight(.semibold)) }
@@ -72,6 +72,7 @@ struct CalendarWidgetView: View {
             }
             Spacer(minLength: 0)
         }
+        .frame(minHeight: NoopMetrics.minimumTouchTarget)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
     }
