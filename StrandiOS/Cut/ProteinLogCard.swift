@@ -100,27 +100,40 @@ private struct ProteinHistoryView: View {
     private var average: MetricAverageGroup? {
         store.storageUnavailable ? nil : MetricRangeProjection.groups(rows, window: window, separateMethods: false, allowZero: true).first
     }
+    private var calorieEstimates: [Double?] {
+        guard !store.storageUnavailable else { return [] }
+        return store.entries.filter { $0.day >= window.fromDay && $0.day <= window.toDay }.map(\.calories)
+            + food.food.filter { $0.key >= window.fromDay && $0.key <= window.toDay }.values.flatMap { $0.map { Double($0.kcal) } }
+    }
+    private var calorieDayTotals: [Double] {
+        guard !store.storageUnavailable else { return [] }
+        let days = Set(store.entries.map(\.day) + Array(food.food.keys)).filter { $0 >= window.fromDay && $0 <= window.toDay }
+        return days.compactMap { key in
+            NutritionCalorieSummary(estimates: store.entries.filter { $0.day == key }.map(\.calories)
+                + (food.food[key] ?? []).map { Double($0.kcal) }).calories
+        }
+    }
     private struct DayEntry: Identifiable {
         let id: String
         let name: String
-        let grams: Double
+        let grams: Double?
+        let calories: Double?
         let time: Date?
         let removableId: UUID?
     }
     private var dayEntries: [DayEntry] {
         let standalone = (store.storageUnavailable ? [] : store.entries).filter { $0.day == window.fromDay }.map {
-            DayEntry(id: "protein|\($0.id)", name: $0.name, grams: $0.grams, time: $0.loggedAt, removableId: $0.id)
+            DayEntry(id: "protein|\($0.id)", name: $0.name, grams: $0.grams, calories: $0.calories, time: $0.loggedAt, removableId: $0.id)
         }
-        let meals = (food.food[window.fromDay] ?? []).compactMap { entry -> DayEntry? in
-            guard let grams = entry.protein, grams.isFinite, grams >= 0 else { return nil }
-            return DayEntry(id: "food|\(entry.id)", name: entry.name, grams: grams, time: entry.at, removableId: nil)
+        let meals = (food.food[window.fromDay] ?? []).map { entry in
+            DayEntry(id: "food|\(entry.id)", name: entry.name, grams: entry.protein, calories: Double(entry.kcal), time: entry.at, removableId: nil)
         }
         return (standalone + meals).sorted {
             if $0.time != $1.time { return ($0.time ?? .distantFuture) < ($1.time ?? .distantFuture) }
             return $0.id < $1.id
         }
     }
-    private func proteinRow(name: String, grams: Double, time: Date?) -> some View {
+    private func proteinRow(name: String, grams: Double?, calories: Double?, time: Date?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space3) {
             VStack(alignment: .leading, spacing: NoopMetrics.space1) {
                 Text(name).font(StrandFont.subhead)
@@ -128,15 +141,23 @@ private struct ProteinHistoryView: View {
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
             Spacer(minLength: NoopMetrics.space1)
-            Text("\(grams.formatted()) g").font(StrandFont.bodyNumber).fixedSize()
+            VStack(alignment: .trailing, spacing: NoopMetrics.space1) {
+                Text(grams.map { "\($0.formatted()) g" } ?? String(localized: "Protein unknown")).font(StrandFont.bodyNumber)
+                Text(calories.map { "\($0.formatted()) kcal" } ?? String(localized: "Calories unknown"))
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
         }.accessibilityElement(children: .combine)
     }
     var body: some View {
         NavigationStack {
             ScreenScaffold(title: nil) {
-                ProteinInlineEntry(store: store)
+                FoodInlineEntry(store: store, day: window.isSingleDay ? window.fromDay : Repository.localDayKey(now))
                 MetricRangeControl(selection: $selection, now: now)
-                NoopCard(tint: StrandPalette.metricProtein) {
+                if !store.storageUnavailable {
+                    FoodCalorieSummaryCard(estimates: calorieEstimates, dayTotals: calorieDayTotals, singleDay: window.isSingleDay, proteinGrams: average?.mean)
+                }
+                NutritionGoalEditor(day: window.isSingleDay ? window.fromDay : Repository.localDayKey(now))
+                if !window.isSingleDay { NoopCard(tint: StrandPalette.metricProtein) {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Text(window.isSingleDay ? "Protein logged" : "Average logged protein").font(StrandFont.headline).foregroundStyle(StrandPalette.metricProtein)
                         Text(average.map { $0.mean.formatted(.number.precision(.fractionLength(0))) } ?? "—")
@@ -164,18 +185,19 @@ private struct ProteinHistoryView: View {
                         }
                     }
                 }
+                }
                 if window.isSingleDay {
                     NoopCard {
                         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                             Text("Entries").font(StrandFont.headline)
                             ForEach(dayEntries) { entry in
                                 HStack(spacing: NoopMetrics.space2) {
-                                    proteinRow(name: entry.name, grams: entry.grams, time: entry.time)
+                                    proteinRow(name: entry.name, grams: entry.grams, calories: entry.calories, time: entry.time)
                                     if let id = entry.removableId {
                                         NoopAsyncButton("", systemImage: "minus.circle", kind: .tertiary) { try store.remove(id) }
                                             .disabled(store.storageUnavailable)
                                             .frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget)
-                                            .accessibilityLabel("Remove \(entry.name), \(entry.grams.formatted()) grams")
+                                            .accessibilityLabel("Remove food")
                                     }
                                 }
                             }
@@ -191,106 +213,8 @@ private struct ProteinHistoryView: View {
                     Text("Includes today’s partial log.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
             }
-            .navigationTitle("Protein").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Food").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
-    }
-}
-
-private struct ProteinInlineEntry: View {
-    @ObservedObject var store: ProteinLogStore
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @FocusState private var focused: Field?
-    private enum Field: Hashable { case grams, name, target }
-    @State private var grams = ""
-    @State private var name = ""
-    @State private var target = ""
-    @State private var savedMessage: String?
-    @State private var targetMessage: String?
-
-    private func parsed(_ value: String) -> Double? {
-        guard let value = Double(value.replacingOccurrences(of: ",", with: ".")), value.isFinite, value > 0 else { return nil }
-        return value
-    }
-
-    var body: some View {
-        NoopCard(tint: StrandPalette.metricProtein) {
-            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                Text("Log protein today").font(StrandFont.headline)
-                if let error = store.storageError {
-                    Text(error).font(StrandFont.caption).foregroundStyle(StrandPalette.statusCritical).fixedSize(horizontal: false, vertical: true)
-                    NoopAsyncButton("Retry reading the log", systemImage: "arrow.clockwise", kind: .secondary) { try store.reload() }
-                }
-                let layout = dynamicTypeSize >= .xxxLarge
-                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
-                    : AnyLayout(HStackLayout(alignment: .center, spacing: NoopMetrics.space3))
-                layout {
-                    HStack(spacing: NoopMetrics.space2) {
-                        TextField("Grams", text: $grams)
-                            .font(StrandFont.title2).monospacedDigit()
-                            .keyboardType(.decimalPad).focused($focused, equals: .grams)
-                            .accessibilityLabel("Protein in grams")
-                        Text("g").font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
-                    }
-                    .padding(.horizontal, NoopMetrics.space3)
-                    .frame(minHeight: NoopMetrics.controlHeight)
-                    .background(StrandPalette.surfaceInset, in: RoundedRectangle(cornerRadius: NoopButtonMetrics.cornerRadius))
-                    NoopAsyncButton("Add protein", fullWidth: dynamicTypeSize >= .xxxLarge) { try addProtein() }
-                        .fixedSize(horizontal: dynamicTypeSize < .xxxLarge, vertical: false)
-                        .disabled(parsed(grams) == nil || store.storageUnavailable)
-                }
-                Text(savedMessage ?? "Protein-only entry. No calories required.")
-                    .font(StrandFont.caption)
-                    .foregroundStyle(savedMessage == nil ? StrandPalette.textSecondary : StrandPalette.metricProtein)
-                    .lineLimit(2, reservesSpace: true)
-                DisclosureGroup("Meal (optional)") {
-                    TextField("Food or meal", text: $name)
-                        .font(StrandFont.body).focused($focused, equals: .name)
-                        .textInputAutocapitalization(.sentences)
-                        .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                }.font(StrandFont.subhead).tint(StrandPalette.metricProtein)
-                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                Text("Life sync sends completed-day totals when enabled. A local save is not a website receipt.")
-                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-                DisclosureGroup("Daily target (optional)") {
-                    VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                        TextField("Target in grams", text: $target)
-                            .font(StrandFont.bodyNumber).keyboardType(.decimalPad)
-                            .focused($focused, equals: .target)
-                            .frame(minHeight: NoopMetrics.minimumTouchTarget)
-                        NoopAsyncButton("Save target", kind: .secondary) {
-                            targetMessage = nil
-                            guard target.isEmpty || parsed(target) != nil else { throw ProteinLogStore.Failure.invalidTarget }
-                            try store.setTarget(target.isEmpty ? nil : parsed(target))
-                            targetMessage = store.targetGrams.map { "Target saved · \($0.formatted()) g/day" } ?? "Target removed"
-                            focused = nil
-                        }
-                        .disabled(!target.isEmpty && parsed(target) == nil)
-                        if let targetMessage {
-                            Text(targetMessage).font(StrandFont.caption).foregroundStyle(StrandPalette.metricProtein)
-                        }
-                        Text("Leave blank to track without a target. Independent of your weight.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                    }
-                }.font(StrandFont.subhead).tint(StrandPalette.metricProtein)
-                    .frame(minHeight: NoopMetrics.minimumTouchTarget)
-            }.foregroundStyle(StrandPalette.textPrimary)
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") { focused = nil }
-            }
-        }
-        .onAppear { target = store.targetGrams.map { $0.formatted(.number.grouping(.never)) } ?? "" }
-    }
-
-    private func addProtein() throws {
-        savedMessage = nil
-        guard let value = parsed(grams) else { throw ProteinLogStore.Failure.invalidEntry }
-        let now = Date()
-        try store.add(grams: value, name: name, day: Repository.localDayKey(now), now: now)
-        grams = ""; name = ""; focused = nil
-        savedMessage = "Saved on this phone · \(value.formatted()) g · \(now.formatted(date: .abbreviated, time: .shortened))"
     }
 }

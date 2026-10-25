@@ -43,11 +43,13 @@ final class SleepWebhookClient: ObservableObject {
         guard value.isValid, !isSending else { throw SleepWebhookFailure.invalidConfiguration }
         var next = checkpoint
         try next.delivery.configure(endpoint: value.endpoint)
-        next.enabled = false; next.proteinEnabled = false; next.failures = 0; next.nextAttempt = nil; next.message = "Connection saved · automatic delivery is off"
+        next.enabled = false; next.proteinEnabled = false; next.caloriesEnabled = false; next.failures = 0; next.nextAttempt = nil; next.message = "Connection saved · automatic delivery is off"
         // Persist the disabled destination BEFORE changing its credentials; a crash cannot accidentally
         // send an old pending event with credentials meant for a different endpoint.
         try commit(next)
         try SleepWebhookKeychain.save(JSONEncoder().encode(value), account: "credentials")
+        UserDefaults.standard.set(false, forKey: NutritionGoalClient.enabledKey)
+        NutritionGoalClient.shared.connectionDidChange()
     }
     func setEnabled(_ enabled: Bool) throws {
         if enabled { _ = try credentials() }
@@ -62,6 +64,11 @@ final class SleepWebhookClient: ObservableObject {
         next.proteinMessage = enabled ? "Protein sends after the day ends" : "Protein delivery is off"
         try commit(next); checkResult = nil; generation += 1; worker?.cancel()
         SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled)
+    }
+    func setCaloriesEnabled(_ enabled: Bool) throws {
+        if enabled { guard try credentials().hasProteinBearer else { throw SleepWebhookFailure.credentials } }
+        var next = checkpoint; next.caloriesEnabled = enabled
+        try commit(next); generation += 1; worker?.cancel()
     }
     func enqueue(model: AppModel, force: Bool = false) {
         guard checkpoint.anyEnabled else { return }
@@ -128,10 +135,15 @@ final class SleepWebhookClient: ObservableObject {
                 let completed = SleepWebhookPolicy.completedDays(now: selectionTime)
                 let sleepDays = SleepWebhookPolicy.sleepWakeDays(now: selectionTime)
                 if protein {
+                    if next.caloriesEnabled != true, next.delivery.proteinPending?.event.calorieSummary != nil {
+                        next.proteinMessage = "A prepared calorie summary is paused while calorie export is off."
+                        try commit(next); continue
+                    }
                     if next.delivery.proteinPending == nil {
-                        let all = try ProteinWebhookProjection.savedEntries()
+                        let includeCalories = next.caloriesEnabled == true
+                        let all = try ProteinWebhookProjection.savedEntries(includeCalories: includeCalories)
                         let summaries = try ProteinWebhookProjection.summaries(entries: all,
-                            acknowledged: next.delivery.proteinAcknowledged ?? [:], from: completed.from, to: completed.through)
+                            acknowledged: next.delivery.proteinAcknowledged ?? [:], from: completed.from, to: completed.through, includeCalories: includeCalories)
                         let differences = summaries.filter { $0.day <= completed.through && next.delivery.proteinAcknowledged?[$0.day] != $0 }
                         next.proteinBacklog = differences.count > 1
                         guard let candidate = oldestFirst ? differences.last : differences.first else {

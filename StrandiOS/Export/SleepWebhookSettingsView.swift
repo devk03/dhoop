@@ -32,6 +32,12 @@ struct SleepWebhookSettingsView: View {
                         .disabled(client.storageUnavailable || (client.checkpoint.proteinEnabled != true && !client.hasProteinCredentials))
                         LifeSyncStatusView(status: LifeSyncStatus(checkpoint: client.checkpoint, protein: true,
                             checking: client.isSending, storageUnavailable: client.storageUnavailable))
+                        Toggle("Calorie estimates", isOn: Binding(get: { client.checkpoint.caloriesEnabled == true }, set: { enabled in
+                            if perform({ try client.setCaloriesEnabled(enabled) }), enabled { client.enqueue(model: model, force: true) }
+                        })).font(StrandFont.headline).toggleStyle(NoopSwitchStyle())
+                            .disabled(client.storageUnavailable || !client.hasProteinCredentials || client.checkpoint.proteinEnabled != true)
+                        Text("Completed-day estimated subtotals. Missing estimates stay unknown.")
+                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                     }
                 }
                 VStack(alignment: .leading, spacing: NoopMetrics.space2) {

@@ -370,11 +370,13 @@ struct StrandiOSApp: App {
                     await WorkoutHistoryReadProof.runIfRequested()
                     await CalendarReaderProvisioner.runIfRequested()
                     await CalendarRSVPProvisioner.runIfRequested()
+                    await NutritionGoalSetup.runIfRequested()
                     await CalendarReaderReadProof.runIfRequested()
                     await CalendarReaderRenderProof.runIfRequested()
                     await DhoopTimerRenderProof.runIfRequested()
                     await CalendarInvitationRenderProof.runIfRequested()
                     await SleepComparisonRenderProof.runIfRequested()
+                    await FoodLogRenderProof.runIfRequested()
                     #if DEBUG
                     await LifeSyncReadinessProof.runIfRequested(model: model)
                     await OwnerDataSnapshotProof.runIfRequested(model: model)
@@ -403,6 +405,7 @@ struct StrandiOSApp: App {
             alarmTimer.setForeground(phase == .active)
             if phase == .active {
                 CalendarRSVPClient.shared.reload()
+                NutritionGoalClient.shared.connectionDidChange()
                 CalendarWidgetPublisher.shared.refreshIfNeeded()
                 Task { await WorkoutSessionDraftController.resumePendingWorkouts() }
                 model.drainPendingIntents(router: router)
