@@ -12,6 +12,7 @@ final class NutritionGoalClient: ObservableObject {
     @Published private(set) var busy = false
     @Published private(set) var requiresRefresh = true
     @Published private(set) var error: String?
+    @Published private(set) var diagnostic: String?
     private let defaults: UserDefaults
     private let connection: () throws -> NutritionGoalConnection
     private let send: (NutritionGoalWrite?, NutritionGoalConnection) async throws -> Data
@@ -58,7 +59,7 @@ final class NutritionGoalClient: ObservableObject {
             try Task.checkCancellation(); guard try connection() == active else { throw NutritionGoalFailure.unconfirmed }
             try accept(bytes, active: active)
             if activate { defaults.set(true, forKey: Self.enabledKey) }; return true
-        } catch { self.error = Self.message(error); requiresRefresh = true; return false }
+        } catch { self.error = Self.message(error); diagnostic = (error as? NutritionGoalFailure)?.diagnosticCode ?? "connection_or_network_error"; requiresRefresh = true; return false }
     }
     func save(_ goal: CalorieGoalPeriod) async throws { try await write(action: "upsert", goal: goal, id: nil) }
     func remove(_ id: String) async throws { try await write(action: "remove", goal: nil, id: id) }
@@ -81,7 +82,7 @@ final class NutritionGoalClient: ObservableObject {
         let value = try JSONDecoder().decode(NutritionGoalDocument.self, from: bytes); try value.validate(installation: active.installationId)
         let next = Cached(endpoint: active.credentials.endpoint, document: value, readAt: Date())
         let data = try JSONEncoder().encode(next); defaults.set(data, forKey: Self.cacheKey)
-        cached = next; requiresRefresh = false; error = nil
+        cached = next; requiresRefresh = false; error = nil; diagnostic = nil
     }
     private static func message(_ error: Error) -> String { (error as? NutritionGoalFailure)?.localizedDescription ?? NutritionGoalFailure.unconfirmed.localizedDescription }
 }

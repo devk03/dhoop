@@ -23,18 +23,21 @@ final class NutritionGoalTransport: NSObject, URLSessionTaskDelegate, @unchecked
         request.setValue(connection.credentials.clientId, forHTTPHeaderField: "CF-Access-Client-Id")
         request.setValue(connection.credentials.clientSecret, forHTTPHeaderField: "CF-Access-Client-Secret")
         let (stream, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, http.mimeType == "application/json" else { throw NutritionGoalFailure.unconfirmed }
+        guard let http = response as? HTTPURLResponse else { throw NutritionGoalFailure.unconfirmed }
+        guard http.mimeType == "application/json" else {
+            if http.statusCode != 200 { throw NutritionGoalFailure.response(http.statusCode, nil) }
+            throw NutritionGoalFailure.unconfirmed
+        }
         let limit = http.statusCode == 200 ? 131072 : 4096
         guard http.expectedContentLength <= limit else { throw NutritionGoalFailure.unconfirmed }
         var data = Data()
         for try await byte in stream { try Task.checkCancellation(); guard data.count < limit else { throw NutritionGoalFailure.unconfirmed }; data.append(byte) }
-        if http.statusCode == 409 {
+        if http.statusCode != 200 {
             struct Rejection: Decodable { let error: String }
             let code = try? JSONDecoder().decode(Rejection.self, from: data).error
-            throw code == "nutrition_goal_conflict" ? NutritionGoalFailure.changed : NutritionGoalFailure.unavailable
+            let allowed = ["unauthorized", "installation_conflict", "nutrition_goal_conflict", "invalid_nutrition_goal", "nutrition_goals_not_enabled", "nutrition_goals_unavailable", "invalid_query"]
+            throw NutritionGoalFailure.response(http.statusCode, code.flatMap { allowed.contains($0) ? $0 : nil })
         }
-        if http.statusCode == 422 { throw NutritionGoalFailure.invalid }
-        guard http.statusCode == 200 else { throw NutritionGoalFailure.unavailable }
         return data
     }
 }

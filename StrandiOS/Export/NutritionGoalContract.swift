@@ -41,6 +41,17 @@ struct NutritionGoalWrite: Encodable {
 }
 enum NutritionGoalFailure: LocalizedError {
     case unavailable, invalid, changed, unconfirmed, storage
+    case response(Int, String?)
+    var diagnosticCode: String {
+        switch self {
+        case .response(let status, let code): return "http_\(status)" + (code.map { ":" + $0 } ?? "")
+        case .unavailable: return "connection_unavailable"
+        case .invalid: return "invalid_goal"
+        case .changed: return "goal_conflict"
+        case .unconfirmed: return "unconfirmed"
+        case .storage: return "cache_unreadable"
+        }
+    }
     var errorDescription: String? {
         switch self {
         case .unavailable: return "Life calorie ranges are not connected yet. Your food log still works."
@@ -48,6 +59,10 @@ enum NutritionGoalFailure: LocalizedError {
         case .changed: return "Calorie ranges changed. Refresh and review before saving again."
         case .unconfirmed: return "Life has not confirmed this change. Your draft is kept; refresh before retrying."
         case .storage: return "The saved calorie-range cache could not be read. Refresh from Life."
+        case .response(let status, let code):
+            if status == 409 && code == "nutrition_goal_conflict" { return NutritionGoalFailure.changed.errorDescription }
+            if status == 422 { return NutritionGoalFailure.invalid.errorDescription }
+            return NutritionGoalFailure.unavailable.errorDescription
         }
     }
 }

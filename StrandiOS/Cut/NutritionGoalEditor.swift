@@ -57,21 +57,21 @@ struct NutritionGoalEditor: View {
                         }
                     }.padding(.top, NoopMetrics.space3).environment(\.timeZone, TimeZone(secondsFromGMT: 0)!)
                 }.font(StrandFont.subhead).tint(StrandPalette.metricPurple)
-                if let goal {
+                if !expanded, let goal {
                     Text(verbatim: band(goal)).font(StrandFont.headline)
                     Text(verbatim: goal.startDate + " – " + goal.endDate).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                } else if client.cached == nil { Text("Calorie ranges not loaded").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                } else { Text("No calorie range for this date").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
+                } else if !expanded, client.cached == nil { Text("Calorie ranges not loaded").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                } else if !expanded { Text("No calorie range for this date").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                 if client.busy { ProgressView().accessibilityLabel("Daily calorie range") }
                 if saved { Text("Saved on Life").font(StrandFont.caption).foregroundStyle(StrandPalette.metricPurple) }
                 if let error = client.error {
                     Text(LocalizedStringKey(error)).font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
                 }
-                NoopAsyncButton("Refresh ranges", systemImage: "arrow.clockwise", kind: .tertiary) {
+                if expanded || client.requiresRefresh || client.error != nil { NoopAsyncButton("Refresh ranges", systemImage: "arrow.clockwise", kind: .tertiary) {
                     saved = false
                     if automaticallyConnect { await NutritionGoalSetup.connectForFoodScreen() }
                     else { _ = await client.refresh(activate: true) }
-                }.disabled(client.busy)
+                }.disabled(client.busy) }
                 if client.enabled {
                     if client.requiresRefresh { Text("Showing the last confirmed ranges. Refresh before editing.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                 } else { Text("Shared ranges are waiting for the Life connection.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }

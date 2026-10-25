@@ -63,7 +63,7 @@ struct FoodInlineEntry: View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
             Text(title).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             HStack(spacing: NoopMetrics.space1) {
-                TextField("Optional", text: text).keyboardType(.decimalPad).focused($focused, equals: field)
+                TextField(field == .protein ? "0" : "—", text: text).keyboardType(.decimalPad).focused($focused, equals: field)
                     .accessibilityLabel(title).font(StrandFont.bodyNumber)
                 Text(verbatim: unit).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }.padding(NoopMetrics.space3).frame(minHeight: NoopMetrics.controlHeight)

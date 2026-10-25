@@ -16,13 +16,14 @@ struct CalendarWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space2) {
             HStack {
-                Label("Calendar", systemImage: "calendar").font(StrandFont.subhead.weight(.semibold))
+                if family == .systemSmall { Image(systemName: "calendar").accessibilityLabel("Calendar") }
+                else { Label("Calendar", systemImage: "calendar").font(StrandFont.subhead.weight(.semibold)) }
                 Spacer(minLength: NoopMetrics.space1)
                 Text(entry.date, format: dateStyle)
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
             if let day {
-                let events = Array(day.upcoming(at: entry.date).prefix(family == .systemSmall ? 1 : family == .systemLarge ? 6 : 3))
+                let events = Array(day.upcoming(at: entry.date).prefix(family == .systemSmall ? 1 : family == .systemLarge ? 6 : 2))
                 if events.isEmpty {
                     Text(day.complete ? "No more events today" : "Open Calendar for more events").font(StrandFont.subhead)
                 }
@@ -32,7 +33,8 @@ struct CalendarWidgetView: View {
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: NoopMetrics.space1) {
-                    Text("Updated")
+                    if family == .systemSmall { Image(systemName: "arrow.clockwise").accessibilityLabel("Updated") }
+                    else { Text("Updated") }
                     if CalendarWidgetSnapshot.dayKey(day.readAt) != day.date {
                         Text(day.readAt, format: dateStyle)
                     }
@@ -59,14 +61,18 @@ struct CalendarWidgetView: View {
                     Text(verbatim: event.title).font(StrandFont.subhead.weight(.semibold)).lineLimit(family == .systemSmall ? 2 : 1)
                     if event.pending { Image(systemName: "envelope.badge").foregroundStyle(StrandPalette.metricSteps).accessibilityLabel("Needs response") }
                 }
-                if event.allDay { Text("All-day").font(StrandFont.caption) }
-                else if let start = event.start {
-                    Text(start, format: timeStyle).font(StrandFont.caption)
+                HStack(spacing: NoopMetrics.space1) {
+                    if event.allDay { Text("All-day").font(StrandFont.caption) }
+                    else if let start = event.start { Text(start, format: timeStyle).font(StrandFont.caption) }
+                    if family != .systemSmall, let organizer = event.organizer {
+                        Text(verbatim: organizer).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).lineLimit(1)
+                    }
                 }
-                if let organizer = event.organizer { Text(verbatim: organizer).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).lineLimit(1) }
+                if family == .systemSmall, let organizer = event.organizer { Text(verbatim: organizer).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).lineLimit(1) }
             }
             Spacer(minLength: 0)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
     }
 }
