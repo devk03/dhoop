@@ -1,0 +1,43 @@
+{
+  "build": "527",
+  "executableSHA256": "03e5d42d1ea8a566a725374da742bc9706813cc207e568bd0e22b1a496a9f945",
+  "signatureAndStableIdentityVerified": true,
+  "schemaVersion": 1,
+  "codeCommit": "0a4d56699c53dff0fc90fc0db0028fda0235fb1c",
+  "physicalIPhoneInstallation": "verified_in_place",
+  "iosReleaseBuild": "passed",
+  "macOSBuild": "passed",
+  "targetedDayHubTests": {
+    "passed": 8,
+    "failed": 0
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "nativeSyntheticCapture": {
+    "syntheticOnly": true,
+    "fixtureNetworkUsed": false,
+    "runId": "930D1167-BF79-4437-AA6C-58F25577D361",
+    "rendered": true,
+    "build": "527",
+    "schemaVersion": 1
+  },
+  "actualHomeScreenPlacement": "not_changed",
+  "simulatorUsed": false,
+  "additionalNetworkPolling": false,
+  "databaseMigration": false,
+  "ownerTestRecordsWritten": false,
+  "localArchive": "build/DhoopInstallers/Dhoop-527.zip",
+  "nativeSourceRead": {
+    "sleepRecordPresent": true,
+    "schemaVersion": 1,
+    "writesAttempted": false,
+    "foodToday": true,
+    "workoutsToday": true,
+    "calendarWindowComplete": true,
+    "snapshotPresent": true,
+    "build": "527",
+    "runId": "CB101EAB-15BC-4EE4-8C66-F9E5BE9462C8",
+    "workoutCompleteRead": true,
+    "eightSleepRecordPresent": true
+  }
+}

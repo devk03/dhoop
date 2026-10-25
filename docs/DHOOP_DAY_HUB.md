@@ -83,3 +83,24 @@ was resolved for this run. No production test food, goal or workout records were
 Home Screen automation was attempted with iPhone Mirroring, which reported Mac Bluetooth off.
 Placement requires enabling that connection or an owner drag-and-drop action; it is not claimed
 as completed by the component screenshots.
+
+## Compact widget redesign (build 527)
+
+The combined widget and matching pair use one Today/date header, whole-hour calendar ticks,
+and four flat metric fields. The extra range/sync row, nested backgrounds, compact sleep
+rings, repeated workout read time and decorative icons are removed. The full in-app overview
+keeps source details, larger text and full-size event links. Estimated calories remain labeled
+and missing values remain unavailable; a complete empty workout read says “Not scheduled.”
+Older sleep retains its wake date, with WHOOP and 8sleep durations in a consistent order.
+
+The exact ±90-minute window and event instants are unchanged. Only axis labels are rounded
+to whole hours; tests cover off-hour windows and both daylight-saving transitions. Event
+surfaces cover the red time indicator to keep it clear of title text. No cache schema,
+physiological calculation, source refresh or additional network work changed.
+
+[Generated simplification study · demo data](design/dhoop-widget-simple-study.png) is a design
+reference, not an implementation screenshot. The implementation retains the vertical day
+calendar. Physical captures and installation status are recorded separately; no owner image
+or health/calendar data was sent to image generation.
+
+[Build-527 visual review](design/day-hub-implementation/build-527-simple-v1/README.md) includes actual native light/dark, narrow, missing-source, long-title and expanded accessibility captures. Build 527 was installed in place on the physical iPhone; Home Screen placement itself was not changed.
