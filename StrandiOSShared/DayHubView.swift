@@ -20,6 +20,10 @@ struct DayHubView: View {
             DayHubCalendarView(days: snapshot?.calendarDays ?? [], now: now, expanded: expanded)
             if expanded || typeSize.isAccessibilitySize {
                 foodRow
+                if let food, expanded {
+                    Text("\(food.estimatedEntries) of \(food.entries) entries estimated").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    Text("Logged subtotal, not complete daily intake.").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+                }
                 workoutCard
                 sleepCard
             } else {
@@ -38,12 +42,18 @@ struct DayHubView: View {
     }
     private var foodRow: some View {
         Link(destination: DayHubSnapshot.link("food")) {
-            surface(HStack(alignment: .top, spacing: NoopMetrics.space2) {
-                foodMetric("Protein", value: food.map { $0.protein.formatted(.number.precision(.fractionLength(0...1))) } ?? "—", unit: "g", tint: StrandPalette.metricProtein)
-                Divider().overlay(StrandPalette.hairline)
-                foodMetric("Estimated calories", value: food?.calories.map { "≈" + $0.formatted(.number.precision(.fractionLength(0))) } ?? "—", unit: "kcal", tint: StrandPalette.metricSteps)
+            surface(Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: NoopMetrics.space3) { foodMetrics }
+                } else {
+                    HStack(alignment: .top, spacing: NoopMetrics.space2) { foodMetrics }
+                }
             }.fixedSize(horizontal: false, vertical: true))
         }.buttonStyle(.plain).accessibilityHint("Open food log")
+    }
+    @ViewBuilder private var foodMetrics: some View {
+        foodMetric("Protein", value: food.map { $0.protein.formatted(.number.precision(.fractionLength(0...1))) } ?? "—", unit: "g", tint: StrandPalette.metricProtein)
+        foodMetric("Estimated calories", value: food?.calories.map { "≈" + $0.formatted(.number.precision(.fractionLength(0))) } ?? "—", unit: "kcal", tint: StrandPalette.metricSteps)
     }
     private func foodMetric(_ title: LocalizedStringKey, value: String, unit: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) {
@@ -52,9 +62,6 @@ struct DayHubView: View {
                 Text(verbatim: value).font(StrandFont.number(expanded ? NoopMetrics.dashboardTileNumber : NoopMetrics.dayHubCompactNumber, weight: .semibold)).foregroundStyle(tint)
                 Text(verbatim: unit).font(StrandFont.caption)
             }.monospacedDigit()
-            if expanded {
-                Text("Logged subtotal, not complete daily intake.").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
-            }
         }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .combine)
     }
     private var primaryWorkout: DayHubSnapshot.Workout? {
@@ -133,8 +140,10 @@ struct DayHubView: View {
         let value = Int(minutes.rounded()); return "\(value / 60)h\(String(format: "%02d", value % 60))"
     }
     private func sourceTime(_ date: Date) -> some View {
-        HStack(spacing: NoopMetrics.space1) { Text("Updated"); Text(date, format: .dateTime.month(.abbreviated).day().hour().minute()) }
-            .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: NoopMetrics.space1) { Text("Updated"); Text(date, format: .dateTime.month(.abbreviated).day().hour().minute()) }
+            VStack(alignment: .leading, spacing: NoopMetrics.spaceHalf) { Text("Updated"); Text(date, format: .dateTime.month(.abbreviated).day().hour().minute()) }
+        }.font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
     }
 }
 
@@ -142,6 +151,7 @@ struct DayHubCalendarView: View {
     let days: [CalendarWidgetSnapshot.Day]
     let now: Date
     var expanded = false
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var window: DayHubWindow { .init(now: now) }
     private var height: CGFloat { expanded ? NoopMetrics.dayHubCalendarExpanded : NoopMetrics.dayHubCalendarCompact }
     private var timeStyle: Date.FormatStyle { var v = Date.FormatStyle.dateTime.hour().minute(); v.timeZone = CalendarWidgetSnapshot.timeZone; return v }
@@ -149,20 +159,27 @@ struct DayHubCalendarView: View {
         var value = Date.FormatStyle.dateTime.hour(.defaultDigits(amPM: .omitted)).minute()
         value.timeZone = CalendarWidgetSnapshot.timeZone; return value
     }
+    private var rangeLabel: some View {
+        HStack(spacing: NoopMetrics.space1) {
+            Text(window.start, format: timeStyle); Text("–"); Text(window.end, format: timeStyle)
+            if TimeZone.current != CalendarWidgetSnapshot.timeZone { Text(verbatim: CalendarWidgetSnapshot.timeZone.abbreviation(for: now) ?? CalendarWidgetSnapshot.timeZone.identifier) }
+        }.fixedSize(horizontal: true, vertical: false)
+    }
+    @ViewBuilder private var calendarFreshness: some View {
+        if let read = days.filter({ window.requiredDays.contains($0.date) }).map(\.readAt).min() {
+            HStack(spacing: NoopMetrics.space1) {
+                Image(systemName: "arrow.clockwise")
+                if CalendarWidgetSnapshot.dayKey(read) != CalendarWidgetSnapshot.dayKey(now) { Text(read, format: .dateTime.month(.abbreviated).day()) }
+                Text(read, format: timeStyle)
+            }.fixedSize(horizontal: true, vertical: false)
+        }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-            HStack(spacing: NoopMetrics.space1) {
-                Text(window.start, format: timeStyle); Text("–"); Text(window.end, format: timeStyle)
-                if TimeZone.current != CalendarWidgetSnapshot.timeZone {
-                    Text(verbatim: CalendarWidgetSnapshot.timeZone.abbreviation(for: now) ?? CalendarWidgetSnapshot.timeZone.identifier)
-                }
-                Spacer(minLength: 0)
-                if let read = days.filter({ window.requiredDays.contains($0.date) }).map(\.readAt).min() {
-                    Image(systemName: "arrow.clockwise")
-                    if CalendarWidgetSnapshot.dayKey(read) != CalendarWidgetSnapshot.dayKey(now) { Text(read, format: .dateTime.month(.abbreviated).day()) }
-                    Text(read, format: timeStyle)
-                }
-            }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary).lineLimit(1)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NoopMetrics.space1) { rangeLabel; Spacer(minLength: 0); calendarFreshness }
+                VStack(alignment: .leading, spacing: NoopMetrics.space1) { rangeLabel; calendarFreshness }
+            }.font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             GeometryReader { proxy in
                 let gutter = NoopMetrics.dayHubTimeGutter
                 let width = max(1, proxy.size.width - gutter)
@@ -201,6 +218,7 @@ struct DayHubCalendarView: View {
                     }
                 }.frame(width: proxy.size.width, height: height, alignment: .topLeading).clipped()
             }.frame(height: height)
+                .dynamicTypeSize(typeSize.isAccessibilitySize ? .large : typeSize)
             if expanded {
                 ForEach(window.placements(days)) { p in
                     Link(destination: CalendarWidgetSnapshot.link(day: p.day, eventID: p.event.id)!) {
