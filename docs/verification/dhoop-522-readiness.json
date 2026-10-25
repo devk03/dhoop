@@ -1,0 +1,41 @@
+{
+  "build": "522",
+  "codeCommit": "dfb97c9271c77a32e1de223bf3573d5b1f813468",
+  "executableSHA256": "8c4f77df6fa39464130f7db6f7d32ac2c25115907a4dd480ce97f01cf4a03564",
+  "signatureAndStableIdentityVerified": true,
+  "schemaVersion": 1,
+  "physicalIPhoneInstallation": "verified_in_place",
+  "iosReleaseBuild": "passed",
+  "macOSBuild": "passed",
+  "targetedTests": {
+    "passed": 26,
+    "failed": 0
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "nativeSourceRead": {
+    "foodToday": true,
+    "schemaVersion": 1,
+    "workoutsToday": true,
+    "workoutCompleteRead": true,
+    "calendarWindowComplete": true,
+    "writesAttempted": false,
+    "snapshotPresent": true,
+    "eightSleepRecordPresent": true,
+    "build": "522",
+    "runId": "CD2B41C3-A15D-4FDE-ABDE-7732004A0050",
+    "sleepRecordPresent": true
+  },
+  "nativeSourceFreshness": {
+    "allSourcesFreshWithinThreeMinutes": true,
+    "foodAgeSeconds": 30,
+    "workoutAgeSeconds": 43,
+    "sleepAgeSeconds": 45,
+    "calendarMaxAgeSeconds": 44
+  },
+  "ownerFoodOrGoalTestWrites": false,
+  "databaseMigration": false,
+  "actualHomeScreenPlacement": "not_verified",
+  "visualReview": "caught_calendar_future_clipping; corrected_in_523",
+  "localArchive": "build/DhoopInstallers/Dhoop-522.zip"
+}
