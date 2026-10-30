@@ -162,6 +162,28 @@ final class HealthJournalTests: XCTestCase {
         await client.refresh(.init(topicId:UUID().uuidString.lowercased()))
         XCTAssertFalse(client.loaded);XCTAssertTrue(client.document.observations.isEmpty);XCTAssertNotNil(client.error)
     }
+    func testWrongWriteReceiptCannotMarkDraftSaved() async throws {
+        let config=configuration
+        let client=HealthJournalClient(archive:archive(),read:{config},save:{_ in},send:{request,_ in
+            if request.body != nil {return Data("{\"id\":\"00000000-0000-4000-8000-000000000099\",\"version\":1}".utf8)}
+            return self.empty
+        })
+        let id=try client.create(.entry(topicId:topicID));await client.send(id)
+        XCTAssertFalse(try XCTUnwrap(client.draft(id)).bodyAccepted)
+        XCTAssertFalse(try XCTUnwrap(client.draft(id)).completed)
+    }
+    func testOriginalRetrievalChecksDigestAndRejectsForeignImageRoute() async throws {
+        let config=configuration,bytes=Data("original".utf8)
+        let metadata=HealthJournalImage(id:entryID,observationId:entryID,contentType:"image/jpeg",bytes:bytes.count,
+            sha256:HealthJournalMedia.digest(bytes),filename:"photo.jpg",recordedAt:"2026-10-30T13:00:00Z",source:"web",
+            url:"/api/integrations/dhoop/health/images/"+entryID)
+        let client=HealthJournalClient(archive:archive(),read:{config},save:{_ in},send:{_,_ in Data("changed!".utf8)})
+        do {_ = try await client.image(metadata);XCTFail("A mismatched original must never be accepted")}
+        catch {XCTAssertEqual(error as? HealthJournalFailure,.invalidResponse)}
+        let foreign=HealthJournalImage(id:entryID,observationId:entryID,contentType:"image/jpeg",bytes:bytes.count,
+            sha256:metadata.sha256,filename:"photo.jpg",recordedAt:metadata.recordedAt,source:"web",url:"https://other.example/photo.jpg")
+        XCTAssertFalse(foreign.valid)
+    }
     func testCorruptArchiveFailsClosedWithoutOverwriting() throws {
         let store=archive();try store.prepare();let file=store.folder.appendingPathComponent("drafts.json"),bad=Data("broken".utf8)
         try bad.write(to:file)

@@ -28,7 +28,7 @@ final class HealthJournalClient: ObservableObject {
          send: @escaping (HealthJournalRequest, HealthJournalConnection) async throws -> Data = { try await HealthJournalTransport().send($0, connection: $1) }) {
         self.archive = archive; credentialRead = read; credentialSave = save; transport = send
         do { state = try archive.read() } catch { storageError = true; corruptArchive = true; self.error = HealthJournalFailure.storage.localizedDescription }
-        do { connection = try read(); guard connection?.valid != false else { throw HealthJournalFailure.configuration } }
+        do { connection = try read(); guard connection?.valid != false, state.installationId == nil || connection?.installationId == state.installationId else { throw HealthJournalFailure.configuration } }
         catch { connection = nil; self.error = HealthJournalFailure.configuration.localizedDescription }
     }
     func reloadWhenAccessible() {
@@ -39,7 +39,7 @@ final class HealthJournalClient: ObservableObject {
             do {
                 let candidate = try credentialRead()
                 guard candidate?.valid != false, state.installationId == nil || candidate?.installationId == state.installationId else { return }
-                connection = candidate
+                connection = candidate; if candidate != nil { error = nil }
             } catch { }
         }
     }
@@ -151,7 +151,7 @@ final class HealthJournalClient: ObservableObject {
                 let data = try await transport(.init(path: "entries", body: item.body), connection)
                 struct Receipt: Decodable { let id: String; let version: Int }
                 let receipt = try JSONDecoder().decode(Receipt.self, from: data)
-                guard receipt.id == item.mutation.id, receipt.version > 0 else { throw HealthJournalFailure.invalidResponse }
+                guard receipt.id == item.mutation.id, receipt.version == (item.mutation.expectedVersion ?? 0) + 1 else { throw HealthJournalFailure.invalidResponse }
                 next = state; next.drafts[index].bodyAccepted = true; try persist(next)
             }
             // Each successful photo receipt is durable before attempting the next original.
