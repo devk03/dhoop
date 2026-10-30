@@ -22,6 +22,8 @@ be checked.
 
 ## 1. Design principle: offline by default
 
+> **Personal Dhoop fork:** the owner explicitly enabled additional Life integrations. The private Health journal frontend is documented in [DHOOP_HEALTH_JOURNAL.md](DHOOP_HEALTH_JOURNAL.md): dedicated, default-unconfigured Health credentials, foreground reads/explicit saves, protected local drafts, optional original-photo uploads to the owner’s Life backend, and no automatic image analysis. The upstream network inventory below describes NOOP; it does not enumerate these personal-fork integrations.
+
 NOOP is **offline by default**. The biometric pipeline — strap → on-device decode →
 local SQLite — has no network layer at all: no phone-home, no analytics, no accounts,
 no login, no cloud sync, and no telemetry. Everything NOOP computes about you lives in a

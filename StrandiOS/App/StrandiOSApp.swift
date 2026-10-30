@@ -369,6 +369,8 @@ struct StrandiOSApp: App {
                 .task {
                     await WorkoutConnectionProvisioner.runLocalLaunchImport()
                     await WorkoutHistoryReadProof.runIfRequested()
+                    await HealthJournalProvisioner.runIfRequested()
+                    await HealthJournalRenderProof.runIfRequested()
                     await CalendarReaderProvisioner.runIfRequested()
                     await CalendarRSVPProvisioner.runIfRequested()
                     await NutritionGoalSetup.runIfRequested()
