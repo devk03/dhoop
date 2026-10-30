@@ -35,7 +35,10 @@ struct HealthJournalEditor: View {
                 } else if !draft.completed {
                     NoopAsyncButton(draft.queued ? "Retry save":"Save entry",systemImage:"checkmark",fullWidth:true) {
                         focused=nil;await client.send(draftId)
-                        guard client.draft(draftId)?.completed == true else {throw HealthJournalFailure.http(503)}
+                        guard client.draft(draftId)?.completed == true else {
+                            let message=client.draft(draftId)?.lastError ?? client.error ?? HealthJournalFailure.http(503).localizedDescription
+                            throw NSError(domain:"DhoopHealth",code:1,userInfo:[NSLocalizedDescriptionKey:NSLocalizedString(message,comment:"")])
+                        }
                         dismiss()
                     }.disabled(client.sending || importing || client.connection == nil || client.storageError)
                 }
