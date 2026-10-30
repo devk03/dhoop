@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "build": "528",
+  "codeCommit": "caeddfab71c8533fe4afadee752c45399755547f",
+  "executableSHA256": "d18a3dee5b8d7f98e388c8103d551595e7429ff74e75b21cf4deebda4e4c4db8",
+  "iosReleaseBuild": "passed",
+  "signatureAndStableIdentityVerified": true,
+  "targetedSyncTests": {
+    "passed": 25,
+    "failed": 0
+  },
+  "regressionReproducedBeforeFix": true,
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "physicalIPhoneInstallation": "not_attempted_owner_requested_ready_for_later",
+  "freshPhoneCheckpoint": "unavailable",
+  "newEndToEndReceipt": "not_verified",
+  "databaseMigration": false,
+  "savedRecordDatesChanged": false,
+  "pendingBytesRewritten": false,
+  "manualValuesOverwritten": false,
+  "newCredentialsOrTokenRotation": false,
+  "receiverChangesRequired": false,
+  "localArchive": "build/DhoopInstallers/Dhoop-528.zip"
+}

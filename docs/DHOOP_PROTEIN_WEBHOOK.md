@@ -28,6 +28,7 @@ Sleep v1 payloads, validation, acknowledgements and behavior remain unchanged.
 Examples are synthetic documentation values, never production test health records.
 
 - `day` is the consumption date and maps to the SAME Life row; no sleep-style day subtraction.
+- Travel does not block delivery. Eligibility and daily opportunities use Life’s Pacific calendar; saved day keys and exact pending bytes are never converted or rewritten.
 - Canonical lowercase UUIDs; positive JavaScript-safe integer revision. Sleep and protein share the
   same persisted installation ID and increasing revision counter, with at most one pending event per metric and one network request at a time.
   Independent retry deadlines prevent a protein-specific failure from delaying sleep.
