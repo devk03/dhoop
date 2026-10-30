@@ -12,14 +12,21 @@
   "regressionReproducedBeforeFix": true,
   "localizationGate": "passed",
   "docCommentLint": "passed",
-  "physicalIPhoneInstallation": "not_attempted_owner_requested_ready_for_later",
-  "freshPhoneCheckpoint": "unavailable",
-  "newEndToEndReceipt": "not_verified",
+  "physicalIPhoneInstallation": "verified_in_place_2026_10_30",
+  "freshPhoneCheckpoint": "verified_read_only_after_launch",
+  "newEndToEndReceipt": "verified_sleep_and_protein_after_build_528_launch",
   "databaseMigration": false,
   "savedRecordDatesChanged": false,
   "pendingBytesRewritten": false,
   "manualValuesOverwritten": false,
   "newCredentialsOrTokenRotation": false,
   "receiverChangesRequired": false,
-  "localArchive": "build/DhoopInstallers/Dhoop-528.zip"
+  "localArchive": "build/DhoopInstallers/Dhoop-528.zip",
+  "physicalIPhoneLaunch": "verified",
+  "freshDeliveryOutcomes": {
+    "sleep": "manual_preserved",
+    "protein": "stored"
+  },
+  "sleepStatus": "newer_analysis_waiting_for_processing",
+  "proteinStatus": "no_further_new_summaries_ready"
 }
