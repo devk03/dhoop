@@ -81,14 +81,15 @@ struct HealthJournalView: View {
                 }
             }
             ForEach(client.document.observations) { row in
-                NavigationLink {
-                    HealthJournalDetail(client: client, observationId: row.id)
-                } label: { HealthJournalEntryCard(entry: row, topic: title(row.topicId)) }
+                NavigationLink(value: HealthJournalRoute.entry(row.id)) { HealthJournalEntryCard(entry: row, topic: title(row.topicId)) }
                 .buttonStyle(NoopFeedbackButtonStyle())
             }
             if client.document.nextOffset != nil {
                 NoopAsyncButton("Older entries", systemImage: "arrow.down", kind: .secondary, fullWidth: true) { await client.refresh(more: true) }.disabled(client.loading)
             }
+        }
+        .navigationDestination(for: HealthJournalRoute.self) { route in
+            switch route { case .entry(let id): HealthJournalDetail(client: client, observationId: id) }
         }
         .task { client.reloadWhenAccessible(); if client.connection != nil { await client.refresh() } }
         .onChange(of: scenePhase) { _, phase in
@@ -106,6 +107,7 @@ struct HealthJournalView: View {
         do { editor = .init(id: try client.create(.entry(topicId: topic.id))) } catch { localError = HealthJournalClient.message(error) }
     }
 }
+enum HealthJournalRoute: Hashable { case entry(String) }
 struct HealthJournalEditorRoute: Identifiable { let id: UUID }
 
 struct HealthJournalEntryCard: View {
@@ -228,7 +230,11 @@ struct HealthJournalConnectionView: View {
             Task {
                 let access=url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() };busy=false }
-                do { try await HealthJournalProvisioner.consume(url,client:client);error=nil }
+                do {
+                    let bytes=try Data(contentsOf:url)
+                    guard bytes.count <= 8192 else {throw HealthJournalFailure.configuration}
+                    try await client.install(JSONDecoder().decode(HealthJournalConnection.self,from:bytes));error=nil
+                }
                 catch { self.error=HealthJournalClient.message(error) }
             }
         }

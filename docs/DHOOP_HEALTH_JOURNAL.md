@@ -31,7 +31,7 @@ Protected JSON envelope (values supplied outside Git):
 {"schemaVersion":1,"endpoint":"https://track.kunjadia.dev/api/integrations/dhoop/health","bearerToken":"<Health-only base64url token>","installationId":"<Health UUID>","accessClientId":"<Health path-scoped ID>","accessClientSecret":"<Health path-scoped secret>"}
 ```
 
-Import via Health connection, or copy to the app's `tmp/dhoop-health-provisioning.json` and explicitly launch with `--configure-health`. Setup verifies capabilities and a read, then saves/verifies Keychain storage. Only after success is the transfer file replaced with a consumed marker. A safe result file contains status/build only; no owner entry is created during setup. Auth activation is separate from code/build readiness.
+Import via Health connection, or copy to the app's `tmp/dhoop-health-provisioning.json` and explicitly launch with `--configure-health`. Setup verifies capabilities and a read, then saves/verifies Keychain storage. Only after success is the developer-assisted app-container transfer file replaced with a consumed marker. The interactive file importer reads the selected original without attempting to rewrite a potentially read-only file provider. A safe result file contains status/build only; no owner entry is created during setup. Auth activation is separate from code/build readiness.
 
 ## Verification
 

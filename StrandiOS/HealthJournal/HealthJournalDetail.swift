@@ -68,7 +68,7 @@ struct HealthJournalDetail: View {
                     }
                 }
             }
-        }.navigationTitle("Health entry").navigationBarTitleDisplayMode(.inline)
+        }.navigationTitle("Health entry").navigationBarTitleDisplayMode(.inline).toolbar(.visible,for:.navigationBar)
         .task {await load()}
         .sheet(item:$editor,onDismiss:{Task {await load()}}) {route in
             NavigationStack {HealthJournalEditor(client:client,draftId:route.id,existingPhotos:entry?.images?.count ?? 0)}
