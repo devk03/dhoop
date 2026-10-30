@@ -160,7 +160,7 @@ enum ProteinWebhookProjection {
 
 extension SleepWebhookPolicy {
     static func completedDays(now: Date, calendar input: Calendar = .current) -> (from: String, through: String) {
-        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = input.timeZone
+        let calendar = destinationCalendar(from: input)
         let today = calendar.startOfDay(for: now)
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
         let start = calendar.date(byAdding: .day, value: -6, to: yesterday)!
@@ -173,13 +173,14 @@ extension SleepWebhookPolicy {
     /// Sleep belongs to its wake date, which can be eligible before that calendar day ends.
     /// Keep the existing completed-day lookback for corrections and include today's stored summary.
     static func sleepWakeDays(now: Date, calendar input: Calendar = .current) -> (from: String, through: String) {
-        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = input.timeZone
+        let calendar = destinationCalendar(from: input)
         let parts = calendar.dateComponents([.year, .month, .day], from: now)
         let today = String(format: "%04d-%02d-%02d", parts.year!, parts.month!, parts.day!)
         return (completedDays(now: now, calendar: calendar).from, today)
     }
 
-    static func nextDailyOpportunity(now: Date, calendar: Calendar = .current) -> Date {
+    static func nextDailyOpportunity(now: Date, calendar input: Calendar = .current) -> Date {
+        let calendar = destinationCalendar(from: input)
         let midnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
         return midnight.addingTimeInterval(5 * 60)
     }

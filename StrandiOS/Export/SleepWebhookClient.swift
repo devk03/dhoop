@@ -111,10 +111,6 @@ final class SleepWebhookClient: ObservableObject {
     }
     func deliver(model: AppModel, force: Bool = false) async -> Bool {
         guard !isSending, !storageUnavailable, checkpoint.anyEnabled else { return true }
-        guard TimeZone.current.identifier == "America/Los_Angeles" else {
-            setMessage("Paused outside America/Los_Angeles. No dates are converted.")
-            return false
-        }
         isSending = true
         let ticket = generation
         defer { isSending = false; SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled) }
@@ -158,7 +154,6 @@ final class SleepWebhookClient: ObservableObject {
                         try commit(next)
                     }
                     guard let pending = checkpoint.delivery.proteinPending, pending.event.day <= completed.through else { continue }
-                    guard TimeZone.current.identifier == "America/Los_Angeles" else { throw SleepWebhookFailure.travelPause }
                     let response = try await SleepWebhookTransport().send(pending.bytes, credentials: secret, protein: true)
                     try Task.checkCancellation(); guard ticket == generation else { return false }
                     next = checkpoint; try next.delivery.acceptProtein(response)
@@ -194,7 +189,6 @@ final class SleepWebhookClient: ObservableObject {
                         try commit(next)
                     }
                     guard let pending = checkpoint.delivery.pending, pending.event.wakeDate <= sleepDays.through else { continue }
-                    guard TimeZone.current.identifier == "America/Los_Angeles" else { throw SleepWebhookFailure.travelPause }
                     let response = try await SleepWebhookTransport().send(pending.bytes, credentials: secret)
                     try Task.checkCancellation(); guard ticket == generation else { return false }
                     next = checkpoint; try next.delivery.accept(response)
@@ -236,7 +230,6 @@ final class SleepWebhookClient: ObservableObject {
         case .receiver(_, let code): return code.guidance
         case .invalidSummary: return "A local record is invalid. Check the logged values; nothing was acknowledged."
         case .credentials: return "Credentials unavailable. Unlock the phone or update the connection."
-        case .travelPause: return "Paused outside America/Los_Angeles. No dates are converted."
         case .invalidAcknowledgement, .responseTooLarge: return "Life's receipt could not be verified. Your pending summary is saved for retry."
         case .storage, .invalidState: return "Delivery state could not be read or saved. Export is paused."
         case .expiredSetup: return "Setup expired or does not match this phone. Prepare a new setup."

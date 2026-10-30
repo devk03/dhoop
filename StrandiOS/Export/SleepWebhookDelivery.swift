@@ -50,7 +50,7 @@ struct SleepWebhookAcknowledgement: Decodable {
 
 enum SleepWebhookFailure: Error {
     case invalidConfiguration, invalidSummary, invalidAcknowledgement, invalidState
-    case storage, credentials, http(Int), responseTooLarge, travelPause, expiredSetup
+    case storage, credentials, http(Int), responseTooLarge, expiredSetup
     case receiver(Int, LifeSyncReceiverCode)
 }
 
@@ -217,8 +217,15 @@ struct SleepWebhookFileStore {
 }
 
 enum SleepWebhookPolicy {
-    static func canSend(enabled: Bool, timeZone: TimeZone, nextAttempt: Date?, now: Date) -> Bool {
-        enabled && timeZone.identifier == "America/Los_Angeles" && (nextAttempt.map { now >= $0 } ?? true)
+    /// Execution location does not change the destination's dates or disable an opted-in export.
+    static func canSend(enabled: Bool, timeZone _: TimeZone, nextAttempt: Date?, now: Date) -> Bool {
+        enabled && (nextAttempt.map { now >= $0 } ?? true)
+    }
+    static func destinationCalendar(from deviceCalendar: Calendar = .current) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = deviceCalendar.locale
+        calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        return calendar
     }
     static func retryDelay(failures: Int) -> TimeInterval {
         min(6 * 3600, 60 * pow(2, Double(min(max(failures - 1, 0), 9))))

@@ -106,7 +106,7 @@ struct SleepWebhookSettingsView: View {
                 }.font(StrandFont.subhead)
                 if let error { Text(error).font(StrandFont.subhead).foregroundStyle(StrandPalette.statusCritical) }
                 DisclosureGroup("How Life sync works") {
-                    Text("Verified WHOOP sleep sends after processing. Protein sends after the logged day ends; no calories or weight are required. Life keeps manual values. Newer sleep analysis may still be pending. Opening Dhoop retries saved events; iOS controls background timing. Export pauses outside America/Los_Angeles.")
+                    Text("Sleep sends after processing; protein after the day ends. Travel uses Life’s Pacific dates without changing saved dates. Manual values stay protected; background timing depends on iOS.")
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true).padding(.top, NoopMetrics.space2)
                 }.font(StrandFont.subhead)

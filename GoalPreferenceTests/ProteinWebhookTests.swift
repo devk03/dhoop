@@ -74,6 +74,26 @@ final class ProteinWebhookTests: XCTestCase {
         }
     }
 
+    func testTravelKeepsLifeDatesAndMidnightOpportunityInPacific() throws {
+        // Detroit has crossed midnight; Life's date is still October 28.
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-29T04:30:00Z"))
+        let next = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-29T07:05:00Z"))
+        for zone in ["America/Los_Angeles", "America/Detroit", "Asia/Tokyo"] {
+            var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: zone)!
+            let completed = SleepWebhookPolicy.completedDays(now: now, calendar: calendar)
+            XCTAssertEqual(completed.from, "2026-10-21")
+            XCTAssertEqual(completed.through, "2026-10-27")
+            XCTAssertEqual(SleepWebhookPolicy.sleepWakeDays(now: now, calendar: calendar).through, "2026-10-28")
+            XCTAssertEqual(SleepWebhookPolicy.nextDailyOpportunity(now: now, calendar: calendar), next)
+            var state = SleepWebhookCheckpoint(); state.proteinEnabled = true
+            try state.delivery.configure(endpoint: endpoint)
+            let pending = try XCTUnwrap(state.delivery.prepareProtein(.init(day: "2026-10-28", proteinGrams: 25,
+                entryCount: 1, timeZone: "America/Los_Angeles"), now: now))
+            XCTAssertEqual(SleepWebhookPolicy.nextOpportunity(state: state, now: now, calendar: calendar), next)
+            let restored = try JSONDecoder().decode(SleepWebhookCheckpoint.self, from: JSONEncoder().encode(state))
+            XCTAssertEqual(restored.delivery.proteinPending?.bytes, pending.bytes)
+        }
+    }
     func testTodaysProteinStillWaitsEvenWithEligibleSleepPending() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!

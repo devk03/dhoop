@@ -76,11 +76,11 @@ final class SleepWebhookDeliveryTests: XCTestCase {
         try delivery.configure(endpoint: delivery.endpoint)
         XCTAssertEqual(delivery.pending?.bytes, next.bytes)
     }
-    func testTravelDisabledAndBackoffGates() {
+    func testTravelDoesNotBlockEnabledDeliveryButOptOutAndBackoffStillApply() {
         let pacific = TimeZone(identifier: "America/Los_Angeles")!
         XCTAssertTrue(SleepWebhookPolicy.canSend(enabled: true, timeZone: pacific, nextAttempt: nil, now: now))
         XCTAssertFalse(SleepWebhookPolicy.canSend(enabled: false, timeZone: pacific, nextAttempt: nil, now: now))
-        XCTAssertFalse(SleepWebhookPolicy.canSend(enabled: true, timeZone: TimeZone(identifier: "America/New_York")!, nextAttempt: nil, now: now))
+        XCTAssertTrue(SleepWebhookPolicy.canSend(enabled: true, timeZone: TimeZone(identifier: "America/Detroit")!, nextAttempt: nil, now: now))
         XCTAssertFalse(SleepWebhookPolicy.canSend(enabled: true, timeZone: pacific, nextAttempt: now.addingTimeInterval(60), now: now))
         XCTAssertEqual(SleepWebhookPolicy.retryDelay(failures: 1), 60)
         XCTAssertEqual(SleepWebhookPolicy.retryDelay(failures: 2), 120)

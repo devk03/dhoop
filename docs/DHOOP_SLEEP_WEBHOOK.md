@@ -63,8 +63,10 @@ Apple/Eight Sleep is not part of this first contract; add it only through an agr
 No raw HR, R–R, sleep-stage traces, serial numbers, MAC addresses, weight or protein are sent.
 
 `wakeDate` is a strictly validated Gregorian calendar date (`YYYY-MM-DD`). In this first integration
-`timeZone` must be exactly `America/Los_Angeles`; return 422 otherwise. Dhoop must pause export when its
-local calendar is in another timezone instead of pretending its persisted day keys can be converted.
+`timeZone` must be exactly `America/Los_Angeles`; return 422 otherwise. Dhoop selects eligible dates
+and daily scheduling opportunities using Life's Pacific calendar, even while the phone travels.
+Saved day keys and pending events retain their original dates and bytes; travel does not re-date records.
+The earlier execution-location pause is removed in build 528.
 Do not reinterpret a day key as UTC midnight or derive it from the request's arrival time.
 
 ## Life date and value mapping
