@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "build": 529,
+  "codeCommit": "c41d28ed3f94db165d140057a552cb54545fe0bb",
+  "sourceSHA256": {
+    "StrandiOS/HealthJournal/HealthJournalClient.swift": "3058fd7e80c66dc9d70ae854263702bb06ab281829f245c1f62fa032e4b95f81",
+    "StrandiOS/HealthJournal/HealthJournalDetail.swift": "822a2516cf6123e8b42d8bcdbffc77f94c233df75af08be6559a847c46b0a871",
+    "StrandiOS/HealthJournal/HealthJournalEditor.swift": "6ecbb87920307b104f1072f4fcb9ef90ae2067796d077d7022549ee2f65f9dd5",
+    "StrandiOS/HealthJournal/HealthJournalRenderProof.swift": "4a2b902e168cec604d971e9e508d2497c632f312ef801205ba42eac3be0be60d",
+    "StrandiOS/HealthJournal/HealthJournalKeychain.swift": "eadd5626ed76400f52879b40202c4e90465e51128b30e3d6aa2c24e5703d3993",
+    "StrandiOS/HealthJournal/HealthJournalTransport.swift": "503416d0ea69626958ff03469f5f4c68f96161f5e9fdcd978a6688bad518a9a6",
+    "StrandiOS/HealthJournal/HealthJournalContract.swift": "c6fe8c922dbf34c0b1d72af22bd091f35b4cbde2dd284e9e150439e0b0d65169",
+    "StrandiOS/HealthJournal/HealthJournalArchive.swift": "33df43e96c03b93a6b88f5298ba9d126135a87ebdf10276f0a2a266561f1abff",
+    "StrandiOS/HealthJournal/HealthJournalView.swift": "03c9b00557a9dfac2e1ac6464f01af36c1c7b1850377ae279d3dfdd7d9698f09",
+    "StrandiOS/App/RootTabView.swift": "6e319c9770dcb140f9c1ff7d4f4f41d0659e872a63d451df2ddbe1f4e0198572",
+    "StrandiOS/App/StrandiOSApp.swift": "c01064366c066746b203e1102edc16ddc21058e284afc07a74fc47983957293c",
+    "project.yml": "93f9ed8a3ac89882cfb89d4d4daccdf54accaa64e156df7985661e7553554d41",
+    "Strand/Resources/Localizable.xcstrings": "a66068a31f5724e632e1652426910ef01f87306a238cbe75056253fbd7d3c86b"
+  },
+  "executableSHA256": "d773517fe98daafe79a39c84a10de11d6f286d478ca607683a40c266777d6341",
+  "iosReleaseBuild": "passed",
+  "signatureAndStableIdentityVerified": true,
+  "targetedHealthTests": {
+    "passed": 14,
+    "failed": 0
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "databaseMigration": false,
+  "physicalIPhoneInstallation": "not_requested_for_this_update",
+  "physicalHealthConnection": "not_provisioned",
+  "physicalUIAndPhotoPicker": "not_verified",
+  "syntheticImplementationCaptures": "harness_ready_not_run",
+  "liveHealthMutation": "none",
+  "localArchive": "build/DhoopInstallers/Dhoop-529.zip"
+}
