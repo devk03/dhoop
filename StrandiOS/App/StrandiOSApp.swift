@@ -383,8 +383,8 @@ struct StrandiOSApp: App {
                     await DayHubRenderProof.runIfRequested()
                     DayHubPublisher.shared.attach(model: model)
                     await DayHubRenderProof.readIfRequested()
-                    #if DEBUG
                     await LifeSyncReadinessProof.runIfRequested(model: model)
+                    #if DEBUG
                     await OwnerDataSnapshotProof.runIfRequested(model: model)
                     #endif
                     RemoteBuzzClient.shared.setForeground(scenePhase == .active)
