@@ -39,5 +39,7 @@
   "productionHealthWritesAttemptedByAgent": false,
   "productionHealthEntrySaveAndPhotoUpload": "not_exercised_no_owner_entry_supplied",
   "physicalUIAndPhotoPicker": "not_visually_verified",
-  "existingSleepProteinWorkoutCalendarCredentialsChanged": false
+  "existingSleepProteinWorkoutCalendarCredentialsChanged": false,
+  "fullHealthStateEqualityAfterUpgrade": false,
+  "fullStateDifference": "additional_unsent_local_draft_retained"
 }
