@@ -15,6 +15,8 @@ Personal iOS frontend for the owner's existing Life Health journal. The website,
 
 ## Save and recovery
 
+Build 531 retries a retained local state write when the app becomes accessible again after a temporary storage failure. This restores the Save action without resending network writes. An unreadable/corrupt archive still blocks overwriting existing bytes.
+
 A draft stores its selected observation timestamp and IANA timezone at compose time. Travel/retry never reassigns dates. Life remains the authority for recordedAt, provenance and versions.
 
 Before a request leaves the phone, the exact JSON bytes/request UUID and installation identity are persisted. Ambiguous failures retry those exact bytes. Notes and each original photo have independent receipts: accepted text or photos are not resent when a remaining upload fails. “Saved to Life” requires all receipts. “Entry saved; photo pending” identifies partial completion. Completed local receipts are retained but not listed as pending drafts.

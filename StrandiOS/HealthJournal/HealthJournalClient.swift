@@ -35,6 +35,13 @@ final class HealthJournalClient: ObservableObject {
         if corruptArchive {
             do { state = try archive.read(); corruptArchive = false; storageError = false; error = nil } catch { return }
         }
+        if storageError {
+            // A protected/temporarily unavailable file must not strand retained input after unlock.
+            do {
+                try persist(state)
+                if error == HealthJournalFailure.storage.localizedDescription { error = nil }
+            } catch { return }
+        }
         if connection == nil {
             do {
                 let candidate = try credentialRead()

@@ -184,11 +184,31 @@ final class HealthJournalTests: XCTestCase {
             sha256:metadata.sha256,filename:"photo.jpg",recordedAt:metadata.recordedAt,source:"web",url:"https://other.example/photo.jpg")
         XCTAssertFalse(foreign.valid)
     }
+    func testForegroundRecoveryPersistsRetainedDraftAfterTransientWriteFailure() throws {
+        let store=archive()
+        let client=HealthJournalClient(archive:store,read:{nil},save:{_ in},send:{_,_ in self.empty})
+        let id=try client.create(.entry(topicId:topicID))
+        let file=store.folder.appendingPathComponent("drafts.json"),preserved=store.folder.appendingPathComponent("preserved-state.json")
+        try FileManager.default.moveItem(at:file,to:preserved)
+        try FileManager.default.createDirectory(at:file,withIntermediateDirectories:false)
+        var mutation=try XCTUnwrap(client.draft(id)).mutation;mutation.notes="Retained after a temporary storage failure"
+        client.edit(id,mutation:mutation)
+        XCTAssertTrue(client.storageError)
+        XCTAssertEqual(client.draft(id)?.mutation.notes,mutation.notes)
+        try FileManager.default.moveItem(at:file,to:store.folder.appendingPathComponent("retained-obstruction"))
+        try FileManager.default.moveItem(at:preserved,to:file)
+        client.reloadWhenAccessible()
+        XCTAssertFalse(client.storageError,"Available storage must restore the Save action after foreground recovery")
+        XCTAssertEqual(try store.read().drafts.first?.mutation.notes,mutation.notes)
+        XCTAssertNil(client.error)
+    }
     func testCorruptArchiveFailsClosedWithoutOverwriting() throws {
         let store=archive();try store.prepare();let file=store.folder.appendingPathComponent("drafts.json"),bad=Data("broken".utf8)
         try bad.write(to:file)
         let client=HealthJournalClient(archive:store,read:{nil},save:{_ in},send:{_,_ in self.empty})
         XCTAssertThrowsError(try client.create(.entry(topicId:topicID)))
+        client.reloadWhenAccessible()
+        XCTAssertTrue(client.storageError)
         XCTAssertEqual(try Data(contentsOf:file),bad)
     }
     func testPhotoIntegrityAndCredentialInstallationMismatchFailClosed() async throws {
