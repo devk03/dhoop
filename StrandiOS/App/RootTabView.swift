@@ -126,8 +126,8 @@ struct RootTabView: View {
             tab(todayTabRoot, "Today", "square.grid.2x2", path: $tabPaths[0], scrollSignal: scrollTop[0]).tag(0)
             tab(CutSleepView(), "Sleep", "bed.double", path: $tabPaths[2], scrollSignal: scrollTop[2]).tag(2)
             tab(runningTabRoot, "Exercises", "figure.run", path: $tabPaths[5], scrollSignal: scrollTop[5]).tag(5)
-            tab(AlarmsView(), "Alarms", "alarm", path: $tabPaths[6], scrollSignal: scrollTop[6]).tag(6)
             tab(CalendarReaderView(), "Calendar", "calendar", path: $tabPaths[7], scrollSignal: scrollTop[7]).tag(7)
+            tab(AlarmsView(), "Alarms", "alarm", path: $tabPaths[6], scrollSignal: scrollTop[6]).tag(6)
             tab(HealthJournalView(), "Health", "heart.text.clipboard", path: $tabPaths[8], scrollSignal: scrollTop[8]).tag(8)
         }
         .tint(StrandPalette.accent)

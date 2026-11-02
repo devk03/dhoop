@@ -52,4 +52,4 @@ Synthetic implementation screenshot capture is opt-in in `HealthJournalRenderPro
 
 ## Navigation
 
-Existing Today (0), Sleep (2), Exercises (5), Alarms (6) and Calendar (7) tags are preserved; Health is 8. Each has its own path and scroll signal. The platform owns tab overflow: on a compact iPhone with a five-item tab limit, Calendar and Health are available through More. Calendar widget requests still select Calendar (7); `--health-journal-open` selects Health. Physical overflow/reselection has not yet been verified on build 529. No existing tab or connection was removed to make room.
+Existing Today (0), Sleep (2), Exercises (5), Alarms (6) and Calendar (7) tags are preserved; Health is 8. Build 530 places Calendar before Alarms to prioritize the main tab bar. Each has its own path and scroll signal. The platform owns tab overflow: on a compact iPhone with a five-item tab limit, Alarms and Health are available through More. Calendar widget requests still select Calendar (7); `--health-journal-open` selects Health. Physical overflow/reselection has not yet been verified on build 529. No existing tab or connection was removed to make room.
