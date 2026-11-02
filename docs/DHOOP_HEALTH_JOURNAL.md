@@ -55,3 +55,14 @@ Synthetic implementation screenshot capture is opt-in in `HealthJournalRenderPro
 ## Navigation
 
 Existing Today (0), Sleep (2), Exercises (5), Alarms (6) and Calendar (7) tags are preserved; Health is 8. Build 530 places Calendar before Alarms to prioritize the main tab bar. Each has its own path and scroll signal. The platform owns tab overflow: on a compact iPhone with a five-item tab limit, Alarms and Health are available through More. Calendar widget requests still select Calendar (7); `--health-journal-open` selects Health. Physical overflow/reselection has not yet been verified on build 529. No existing tab or connection was removed to make room.
+
+
+## Activation and recovery verification — build 531
+
+The owner approved Health-only activation. Build 530 completed fresh native authenticated capabilities/entries reads, verified Keychain save/readback, and replaced the one-time transfer file with a consumed marker. The same Health installation and original draft queue were preserved through the in-place update to signed build 531. The hardware baseline queue was empty; an additional unsent local draft was retained. Nonempty queue and partial-upload preservation are covered by isolated tests.
+
+A normal build-531 Health relaunch, without the setup flag, produced five independently observed native GET /entries HTTP 200 responses using the persisted credential. The bounded server observation stopped and retained only sanitized route/status/native-agent metadata, not records, headers, photos or credentials. Fifteen native tests passed; the temporary-write recovery regression failed before the fix and passed afterward. Signed device build, stable signing identity, localization and source gates passed. No database/schema migration or synthetic production medical record was used.
+
+Live production entry saving/photo upload and physical picker/layout accessibility checks have not been exercised. Current-session journal rows remain visible on a same-filter refresh failure; changing the filter clears stale rows. The journal page cache is memory-only; durable local drafts and pending original files survive relaunch. Network failures show Retry; authentication failures direct the owner to Health connection for a verified same-installation credential replacement. These checks demonstrate recovery, not a guarantee of uninterrupted network availability.
+
+Life owns service credential rotation. Cloudflare's dashboard displays the dedicated service credential expiry as **November 2, 2027, 01:06 AM in the dashboard's local timezone**; it has not been converted to UTC here. Replace the scoped service credential before that expiry using the protected connection import. Keep the same Health installation and canonical endpoint; verify authenticated reads before Keychain replacement. Retain exact pending request bodies/IDs and original-photo receipts. Do not use full MCP, calendar, workout, sleep or protein credentials as a fallback.

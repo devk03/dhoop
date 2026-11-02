@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "build": 531,
+  "codeCommit": "faf9eff1390c5e1a633a02150b0135cee238a458",
+  "iosReleaseBuild": "passed",
+  "signatureAndStableIdentityVerified": true,
+  "executableSHA256": "172049c9677a11384b358dca4d601bc30915e3349dc7f811ca2de2c3c1fb1ffb",
+  "localArchive": "build/DhoopInstallers/Dhoop-531.zip",
+  "regressionReproducedBeforeFix": true,
+  "targetedHealthTests": {
+    "passed": 15,
+    "failed": 0
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "databaseMigration": false,
+  "healthQueueSchemaChanged": false,
+  "keychainServiceChanged": false,
+  "physicalIPhoneInstallation": "verified_in_place_2026_11_02",
+  "physicalHealthEnrollment": "verified_on530_preserved_after531_update",
+  "physicalIPhoneBuildVerified": 531,
+  "physicalIPhoneLaunch": "verified_normal_health_relaunch_without_setup_flag",
+  "freshAuthenticatedReadOnlyEnrollment": true,
+  "keychainSaveAndReadbackVerified": true,
+  "credentialTransferConsumed": true,
+  "healthInstallationPreservedAcrossUpgrade": true,
+  "existingDraftsPreservedAcrossEnrollmentAndUpgrade": true,
+  "physicalQueueBaselineWasEmpty": true,
+  "additionalLocalDraftPreserved": true,
+  "normalRelaunchHealthReads": {
+    "independentlyObserved": true,
+    "httpStatus": 200,
+    "successfulReadsObserved": 5,
+    "nativeUserAgentVerified": true,
+    "recordContentsCaptured": false,
+    "credentialsCaptured": false,
+    "observationStopped": true
+  },
+  "productionHealthWritesAttemptedByAgent": false,
+  "productionHealthEntrySaveAndPhotoUpload": "not_exercised_no_owner_entry_supplied",
+  "physicalUIAndPhotoPicker": "not_visually_verified",
+  "existingSleepProteinWorkoutCalendarCredentialsChanged": false
+}
