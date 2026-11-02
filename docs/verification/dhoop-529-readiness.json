@@ -27,10 +27,12 @@
   "localizationGate": "passed",
   "docCommentLint": "passed",
   "databaseMigration": false,
-  "physicalIPhoneInstallation": "not_requested_for_this_update",
+  "physicalIPhoneInstallation": "verified_in_place_2026_11_01",
   "physicalHealthConnection": "not_provisioned",
   "physicalUIAndPhotoPicker": "not_verified",
   "syntheticImplementationCaptures": "harness_ready_not_run",
   "liveHealthMutation": "none",
-  "localArchive": "build/DhoopInstallers/Dhoop-529.zip"
+  "localArchive": "build/DhoopInstallers/Dhoop-529.zip",
+  "physicalIPhoneLaunch": "verified_normal_launch",
+  "installationPreservedExistingContainer": true
 }
