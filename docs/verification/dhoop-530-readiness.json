@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "build": 530,
+  "codeCommit": "5ef6aa6d6979275d7afc754fdb8bbd7fd58bc33a",
+  "iosReleaseBuild": "passed",
+  "signatureAndStableIdentityVerified": true,
+  "executableSHA256": "5164f3846497d3c36045dce60cde4de1693a60d6f2d51be7ab59406011ee25d0",
+  "localArchive": "build/DhoopInstallers/Dhoop-530.zip",
+  "mainTabs": [
+    "Today",
+    "Sleep",
+    "Exercises",
+    "Calendar",
+    "More"
+  ],
+  "moreDestinations": [
+    "Alarms",
+    "Health"
+  ],
+  "databaseMigration": false,
+  "navigationIDsChanged": false,
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "physicalVisualOrder": "not_captured",
+  "physicalIPhoneInstallation": "verified_in_place_2026_11_01",
+  "physicalIPhoneLaunch": "blocked_by_iOS_phone_locked"
+}
