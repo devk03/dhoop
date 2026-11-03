@@ -20,35 +20,7 @@ struct WorkoutInlineExerciseCard: View {
     var body: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                let layout = typeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
-                    : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.space2))
-                layout {
-                    Text(verbatim: session.displayName(for: exercise)).font(StrandFont.headline).frame(maxWidth: .infinity, alignment: .leading)
-                    if revision != nil {
-                        Button { showingSwap.toggle() } label: { Label("Swap", systemImage: "arrow.triangle.2.circlepath") }
-                            .buttonStyle(NoopButtonStyle(.secondary))
-                        Menu {
-                            if let revision {
-                                if let mode, mode != .duration, !exercise.isPriming, exercise.progressionPreference != nil {
-                                    NavigationLink("Progression and rep range") {
-                                        WorkoutProgressionPreferencesView(session: session, exercise: exercise, revision: revision)
-                                    }.disabled(hasUnsavedEdits)
-                                }
-                                ForEach(exercise.sets) { row in
-                                    NavigationLink("Set \(row.setNumber) · targets") {
-                                        WorkoutTrackerSetEditor(session: session, exercise: exercise, row: row,
-                                            revision: revision, system: system, targetsOnly: true)
-                                    }.disabled(hasUnsavedEdits)
-                                }
-                                NavigationLink("Targets and program options") {
-                                    WorkoutTrackerExerciseEditor(session: session, exercise: exercise, library: library, revision: revision)
-                                }.disabled(hasUnsavedEdits)
-                            }
-                        } label: { Image(systemName: "ellipsis").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
-                        .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel(String(format: NSLocalizedString("Options for %@", comment: ""), session.displayName(for: exercise)))
-                    }
-                }
+                exerciseHeader
                 if let mode {
                     Text(mode.explanation).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }
@@ -91,5 +63,63 @@ struct WorkoutInlineExerciseCard: View {
                 .id("\(session.id)-\(session.weekNumber)-\(exercise.id)-\(exercise.exerciseKey)-\(exercise.loadMode)-\(row.id)-\(row.setType)-\(row.setNumber)-\(system.rawValue)")
         }
     }
+    private var exerciseTitle: some View {
+        Text(verbatim: session.displayName(for: exercise)).font(StrandFont.headline)
+    }
+    @ViewBuilder private var exerciseHeader: some View {
+        if revision == nil { exerciseTitle.frame(maxWidth: .infinity, alignment: .leading) }
+        else if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                exerciseTitle.fixedSize(horizontal: false, vertical: true)
+                swapButton
+                exerciseOptions
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: NoopMetrics.space2) {
+                    exerciseTitle.fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: NoopMetrics.space2)
+                    exerciseControls.fixedSize(horizontal: true, vertical: false)
+                }
+                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                    exerciseTitle.fixedSize(horizontal: false, vertical: true)
+                    exerciseControls
+                }
+            }
+        }
+    }
+    private var exerciseControls: some View {
+        HStack(spacing: NoopMetrics.space2) {
+            swapButton.fixedSize(horizontal: true, vertical: false)
+            exerciseOptions
+        }
+    }
+    private var swapButton: some View {
+        Button { showingSwap.toggle() } label: { Label("Swap", systemImage: "arrow.triangle.2.circlepath") }
+            .buttonStyle(NoopButtonStyle(.secondary))
+    }
+    private var exerciseOptions: some View {
+        Menu {
+            if let revision {
+                if let mode, mode != .duration, !exercise.isPriming, exercise.progressionPreference != nil {
+                    NavigationLink("Progression and rep range") {
+                        WorkoutProgressionPreferencesView(session: session, exercise: exercise, revision: revision)
+                    }.disabled(hasUnsavedEdits)
+                }
+                ForEach(exercise.sets) { row in
+                    NavigationLink("Set \(row.setNumber) · targets") {
+                        WorkoutTrackerSetEditor(session: session, exercise: exercise, row: row,
+                            revision: revision, system: system, targetsOnly: true)
+                    }.disabled(hasUnsavedEdits)
+                }
+                NavigationLink("Targets and program options") {
+                    WorkoutTrackerExerciseEditor(session: session, exercise: exercise, library: library, revision: revision)
+                }.disabled(hasUnsavedEdits)
+            }
+        } label: { Image(systemName: "ellipsis").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
+        .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel(String(format: NSLocalizedString("Options for %@", comment: ""), session.displayName(for: exercise)))
+
+    }
+
 }
 #endif
