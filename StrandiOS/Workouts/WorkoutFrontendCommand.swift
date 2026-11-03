@@ -179,3 +179,68 @@ struct WorkoutCustomExerciseDefinition: Codable, Equatable {
         var result = command; result["replacementExercise"] = definition.value; return result
     }
 }
+
+/// An editable local form is separate from immutable submitted operations and canonical Life data.
+struct WorkoutReplacementDraft: Codable, Equatable {
+    let scope: WorkoutReplacementDraftScope
+    var customKey = "custom:" + UUID().uuidString.lowercased()
+    var custom = false
+    var replacement = ""
+    var name = ""
+    var loadMode: String
+    var increment: String
+    var repMin: String
+    var repMax: String
+    var notes = ""
+    var applied = false
+    init(scope: WorkoutReplacementDraftScope, exercise: WorkoutTrackerDashboard.Exercise, library: [WorkoutTrackerDashboard.LibraryItem]) {
+        self.scope = scope; loadMode = exercise.loadMode
+        let original = library.first { $0.exerciseKey == exercise.exerciseKey }
+        increment = (original?.increment ?? 5).formatted(.number.grouping(.never))
+        repMin = String(original?.repMin ?? exercise.plannedReps)
+        repMax = String(original?.repMax ?? max(exercise.plannedReps, 12))
+    }
+    func command(exercise: WorkoutTrackerDashboard.Exercise, library: [WorkoutTrackerDashboard.LibraryItem], locale: Locale = .current) throws -> [String: WorkoutTrackerValue] {
+        var result: [String: WorkoutTrackerValue] = ["action": .string("substitute_exercise"),
+            "mesocycleId": .number(Double(scope.programID)), "sessionId": .number(Double(scope.sessionID)),
+            "sessionExerciseId": .number(Double(scope.exerciseID))]
+        if custom {
+            guard let step = try? Double(increment, format: .number.locale(locale)),
+                  let low = Int(repMin), let high = Int(repMax) else { throw WorkoutCustomExerciseDefinition.Invalid() }
+            result["replacementExerciseKey"] = .string(customKey)
+            result["replacementExercise"] = try WorkoutCustomExerciseDefinition(name: name, movementPattern: exercise.movementPattern,
+                loadMode: loadMode, unit: "lb", increment: step, repMin: low, repMax: high, notes: notes).normalized().value
+        } else {
+            guard library.contains(where: { $0.exerciseKey == replacement && $0.movementPattern == exercise.movementPattern && $0.exerciseKey != exercise.exerciseKey }) else { throw WorkoutCustomExerciseDefinition.Invalid() }
+            result["replacementExerciseKey"] = .string(replacement)
+        }
+        return try WorkoutCustomExerciseDefinition.normalize(command: result)
+    }
+}
+struct WorkoutReplacementDraftScope: Codable, Equatable {
+    let origin: String
+    let installationID: UUID
+    let programID: Int
+    let sessionID: Int
+    let exerciseID: Int
+}
+struct WorkoutReplacementDraftStore {
+    let url: URL
+    func load(scope: WorkoutReplacementDraftScope) throws -> WorkoutReplacementDraft? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        guard data.count <= 32768 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        let result = try JSONDecoder().decode(WorkoutReplacementDraft.self, from: data)
+        guard result.scope == scope else { throw WorkoutTrackerContractError.invalidSnapshot }
+        return result
+    }
+    func save(_ draft: WorkoutReplacementDraft) throws {
+        let data = try JSONEncoder().encode(draft)
+        guard data.count <= 32768 else { throw WorkoutTrackerContractError.invalidSnapshot }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: url, options: .atomic)
+        #if os(iOS)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+        #endif
+    }
+}

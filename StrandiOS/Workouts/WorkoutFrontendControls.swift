@@ -18,16 +18,27 @@ struct WorkoutFrontendSubmitSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-            NoopAsyncButton(LocalizedStringKey(title), systemImage: "checkmark", fullWidth: true) {
+            NoopAsyncButton(LocalizedStringKey(buttonTitle), systemImage: "checkmark", fullWidth: true) {
                 guard sameConnection else { throw WorkoutSyncTransportError.configuration }
-                let id = try client.prepare(command: command(), revision: revision)
-                operationId = id
-                do { try await client.submit(id) }
-                catch { message = "Input retained in pending changes. Recover its receipt before making another change."; throw error }
+                let id: UUID
+                if let retained = operationId { id = retained }
+                else { id = try client.prepare(command: command(), revision: revision); operationId = id }
+                do {
+                    let outcome = try await client.deliverRetained(id)
+                    guard outcome == .committed else { throw WorkoutFrontendClient.Failure.rejected }
+                } catch {
+                    message = "Input retained in pending changes. Recover its receipt before making another change."
+                    throw error
+                }
                 message = "Saved in Life."
                 do { try await refresh() }
                 catch { message = "Saved in Life. The updated view could not be read; refresh it when connected." }
-            }.disabled(operationId != nil || !sameConnection || !client.supports(action, lifecycle: lifecycle))
+            }.disabled(!sameConnection || client.busy || !canSubmit)
+            if let operationId, client.state.operations.first(where: { $0.id == operationId })?.state == .rejected {
+                NoopAsyncButton("Review latest workout", systemImage: "arrow.clockwise", kind: .secondary, fullWidth: true) {
+                    try await refresh()
+                }
+            }
             if let message { Text(message).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary).accessibilityAddTraits(.updatesFrequently) }
             if client.unresolved != nil || !client.state.enabled || client.state.capabilities == nil || !sameConnection {
                 NavigationLink("Editing connection & pending changes") { WorkoutFrontendSettingsView() }
@@ -37,7 +48,25 @@ struct WorkoutFrontendSubmitSection: View {
                 Text("Editing needs a verified Life connection and no unresolved earlier change.")
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
             }
+        }.onAppear {
+            guard operationId == nil, sameConnection, let unresolved = client.unresolved,
+                  unresolved.origin == client.state.origin, unresolved.installationId == client.state.installationId,
+                  let current = try? WorkoutCustomExerciseDefinition.normalize(command: command()),
+                  current == unresolved.intent.command else { return }
+            operationId = unresolved.id
         }
+    }
+    private var buttonTitle: String {
+        guard let operationId else { return title }
+        switch client.state.operations.first(where: { $0.id == operationId })?.state {
+        case .committed: return "Saved in Life."
+        case .rejected: return "Review latest workout"
+        default: return "Retry saved change"
+        }
+    }
+    private var canSubmit: Bool {
+        if let operationId { return client.state.operations.first(where: { $0.id == operationId })?.unresolved == true }
+        return client.supports(action, lifecycle: lifecycle)
     }
     private var sameConnection: Bool {
         guard let origin = scope?.origin ?? tracker.state.origin,

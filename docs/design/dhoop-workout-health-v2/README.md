@@ -79,3 +79,48 @@ Verified: 29 Health contract/client/storage tests, 130 StrandDesign tests, simul
 app builds, translation audit, and the renders above. Interactive New entry/typing was inspected
 before the Mac locked. System photo selection, camera capture, complete interactive save flow,
 keyboard/loading captures and physical-device Health checks remain pending.
+
+
+## Actual implementation — reusable exercises, build 535
+
+| New exercise · 390pt | Narrow · 320pt |
+| --- | --- |
+| [![Exercise definition](implementation-workout-535/custom-390.png)](implementation-workout-535/custom-390.png) | [![Narrow exercise definition](implementation-workout-535/custom-320.png)](implementation-workout-535/custom-320.png) |
+
+These native synthetic renders show the shared replacement component. The equipment choice is
+explicit owner input, not inferred from the exercise name. Library selection and new exercise
+creation use the same Life substitution action, gated by its separate capability. Entered definitions
+are retained locally and normalized only when an explicit Save freezes the immutable request.
+Completed sets remain historical work; eligible future workouts use the replacement.
+
+| Previous behavior | Updated behavior |
+| --- | --- |
+| A custom name changed only this workout's display label | Swap can create an explicit reusable catalog exercise |
+| An interrupted editor sent the owner to connection settings | Retry recovers the same operation before replay; rejected changes require review |
+| Reopening a screen repeated permission checks | Screen reads reuse a verified check for 60 seconds; concurrent reads coalesce |
+
+Repeat the native component captures with an isolated Debug simulator build:
+
+```sh
+xcrun simctl launch SIMULATOR_ID com.devkunjadia.zhoop.loshi.noop \
+  --workout-draft-ui-proof --workout-replacement-render-proof --workout-ui-run=NEW_UUID
+```
+
+Files are in the app data container's `tmp/dhoop-workout-replacement-ui`. A fresh run UUID isolates the
+workout fixture. The replacement renders use a separate fresh synthetic connection and no HTTP.
+`--workout-ui-slow` delays the fixture's write response by 2 seconds for interactive checks.
+Do not use production owner data in screenshots.
+
+Current targeted regression run: 69 tests passed (29 Health, 19 workout command/client, 21 workout
+draft). This includes three successive Upper and Lower model workflows each, with save, finish,
+reopen, relaunch, retained aliases, untouched unlogged sets, offline receipt recovery and conflicts.
+A new capability-read regression failed before the fix because the second caller received
+`disabled`; it passes after coalescing. Thirty durable model edits took 9ms total with zero HTTP
+requests in the latest Mac run. This does **not** measure visible tap latency or the iPhone.
+
+The coordinated Life Health deployment reported authenticated read-only capability and limit-one
+entry reads passing with `inlineTopicCreation:true`. One finite Mac CLI repeat measured 774ms and
+113.5ms respectively; these are single end-to-end request samples, including connection/network
+work, not server-only or iPhone timings. No owner workout or Health test writes were performed.
+Interactive swap/create, keyboard/delay/loading states, VoiceOver navigation, 30 visible interactions
+and physical-phone verification remain required before the full goal can be declared complete.

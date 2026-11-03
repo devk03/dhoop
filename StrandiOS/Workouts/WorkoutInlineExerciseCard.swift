@@ -15,12 +15,8 @@ struct WorkoutInlineExerciseCard: View {
     @ObservedObject var frontend = WorkoutFrontendClient.shared
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showingSwap = false
-    @State private var replacement = ""
     @State private var historySet: WorkoutTrackerDashboard.SetLog?
     private var mode: WorkoutTrackerLoadMode? { .init(rawValue: exercise.loadMode) }
-    private var alternatives: [WorkoutTrackerDashboard.LibraryItem] {
-        library.filter { $0.movementPattern == exercise.movementPattern && $0.exerciseKey != exercise.exerciseKey }
-    }
     var body: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -63,11 +59,6 @@ struct WorkoutInlineExerciseCard: View {
                 }
                 if showingSwap, let revision {
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                        Picker("Replace with", selection: $replacement) {
-                            Text("Choose exercise").tag("")
-                            ForEach(alternatives) { Text($0.name).tag($0.exerciseKey) }
-                        }.pickerStyle(.menu)
-                        if alternatives.isEmpty { Text("No replacements are available for this movement.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
                         if !drafts.state.canReplaceExercise(exercise.id) {
                             Text("Save this exercise before swapping.")
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
@@ -76,16 +67,11 @@ struct WorkoutInlineExerciseCard: View {
                             ? "Changes future workouts; logged sets stay unchanged."
                             : "Your other edits stay on this phone.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        WorkoutFrontendSubmitSection(title: "Save replacement", action: "substitute_exercise", revision: revision, command: {
-                            guard alternatives.contains(where: { $0.exerciseKey == replacement }) else {
-                                throw WorkoutFrontendInput.Invalid(message: "Choose an eligible replacement first.")
-                            }
-                            return ["action": .string("substitute_exercise"), "mesocycleId": .number(Double(session.mesocycleId)),
-                                "sessionId": .number(Double(session.id)), "sessionExerciseId": .number(Double(exercise.id)), "replacementExerciseKey": .string(replacement)]
-                        }, refresh: { try await refresh(); showingSwap = false; replacement = "" }, client: frontend,
-                            scope: .init(origin: drafts.state.origin, installationId: drafts.state.installationId))
-                        .disabled(replacement.isEmpty || !editingEnabled || !drafts.canEdit || !drafts.state.canReplaceExercise(exercise.id))
-                        .id("replace-\(exercise.exerciseKey)-\(revision)")
+                        WorkoutExerciseReplacementEditor(session: session, exercise: exercise, library: library, revision: revision,
+                            scope: .init(origin: drafts.state.origin, installationId: drafts.state.installationId),
+                            enabled: editingEnabled && drafts.canEdit && drafts.state.canReplaceExercise(exercise.id),
+                            refresh: { try await refresh(); showingSwap = false }, client: frontend)
+                            .id("replace-\(exercise.exerciseKey)-\(revision)")
                     }
                 }
                 ForEach(exercise.sets) { row in

@@ -35,6 +35,66 @@ final class WorkoutFrontendClientTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: object)
     }
 
+    func testConcurrentCapabilityReadsShareOneResultInsteadOfReportingDisabled() async throws {
+        var calls = 0
+        var release: CheckedContinuation<Void, Never>?
+        let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in
+            XCTAssertEqual(endpoint, .frontendCapabilities); XCTAssertNil(body); calls += 1
+            await withCheckedContinuation { release = $0 }
+            return try self.capabilities()
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try client.configure(origin: config.origin, installationId: config.installationId, token: config.credential)
+        try client.setEnabled(true)
+        let first = Task { try await client.checkCapabilities() }
+        for _ in 0..<100 { if release != nil { break }; await Task.yield() }
+        let second = Task { try await client.checkCapabilities() }
+        for _ in 0..<10 { await Task.yield() }
+        release?.resume(); try await first.value
+        do { try await second.value } catch { XCTFail("A second read of the same capability must share the authenticated result: \(error)") }
+        XCTAssertEqual(calls, 1); XCTAssertFalse(client.busy)
+    }
+
+    func testVisibleScreensReuseRecentCapabilityButExplicitChecksRemainFresh() async throws {
+        var calls = 0
+        let client = WorkoutFrontendClient(store: store(), send: { _, _, _ in calls += 1; return try self.capabilities() },
+            readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(client)
+        try await client.checkCapabilities(force: false); try await client.checkCapabilities(force: false)
+        XCTAssertEqual(calls, 1)
+        try await client.checkCapabilities()
+        XCTAssertEqual(calls, 2)
+        try client.setEnabled(false)
+        do { try await client.checkCapabilities(force: false); XCTFail("Disabled connection must not use cached permission") } catch { }
+        XCTAssertEqual(calls, 2)
+    }
+
+    func testReplacementInputSurvivesRelaunchAndNeverCrossesConnections() throws {
+        let row = WorkoutTrackerDashboard.SetLog(id: 1, setNumber: 1, setType: "work", plannedLoad: 135,
+            plannedReps: 8, actualLoad: nil, actualReps: nil, rir: nil, completed: false)
+        let exercise = WorkoutTrackerDashboard.Exercise(id: 11, exerciseKey: "bench", name: "Bench press", orderIndex: 1,
+            loadMode: "barbell", progressionType: "double", plannedSets: 1, plannedReps: 8, plannedLoad: 135, targetRir: 2,
+            notes: "", slotKey: "press", movementPattern: "push", originalExerciseKey: "", originalExerciseName: "", isPriming: false, sets: [row])
+        let scope = WorkoutReplacementDraftScope(origin: config.origin, installationID: config.installationId,
+            programID: 1, sessionID: 10, exerciseID: 11)
+        let file = WorkoutReplacementDraftStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("replacement.json"))
+        var input = WorkoutReplacementDraft(scope: scope, exercise: exercise, library: [])
+        input.custom = true; input.name = "  Cable press  "; input.increment = "2.5"; input.repMin = "10"; input.repMax = "15"
+        try file.save(input)
+        let reopened = try XCTUnwrap(file.load(scope: scope))
+        XCTAssertEqual(reopened, input)
+        let command = try reopened.command(exercise: exercise, library: [], locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(command["replacementExerciseKey"], .string(input.customKey))
+        guard case .object(let definition) = command["replacementExercise"] else { return XCTFail("Missing definition") }
+        XCTAssertEqual(definition["name"], .string("Cable press")); XCTAssertEqual(definition["increment"], .number(2.5))
+        XCTAssertThrowsError(try file.load(scope: .init(origin: "https://tracker.kunjadia.dev", installationID: config.installationId,
+            programID: 1, sessionID: 10, exerciseID: 11)))
+        let bytes = try Data(contentsOf: file.url)
+        XCTAssertEqual(try Data(contentsOf: file.url), bytes)
+        try Data("invalid retained file".utf8).write(to: file.url)
+        XCTAssertThrowsError(try file.load(scope: scope))
+        XCTAssertEqual(try Data(contentsOf: file.url), Data("invalid retained file".utf8))
+    }
+
     func testCustomExerciseNormalizesNameBeforeFreezingAndRequiresCapability() async throws {
         let key = "custom:" + UUID().uuidString.lowercased()
         let definition = WorkoutCustomExerciseDefinition(name: "  Cable press ", movementPattern: "horizontal_push",

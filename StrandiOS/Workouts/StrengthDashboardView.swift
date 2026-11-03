@@ -128,7 +128,7 @@ struct StrengthDashboardView: View {
     }
     private func load() async throws {
         try await tracker.refreshStrength()
-        if frontend.state.enabled && !frontend.busy { try? await frontend.checkCapabilities() }
+        if frontend.state.enabled && !frontend.busy { try? await frontend.checkCapabilities(force: false) }
     }
 }
 

@@ -47,8 +47,8 @@ private final class WorkoutDraftVerificationModel: ObservableObject {
         let client = WorkoutFrontendClient(store: commandStore, send: { endpoint, data, _ in
             if endpoint == .frontendCapabilities {
                 return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true,
-                    "frontendStart": false, "sessionCompletion": true, "sessionBatchSave": true,
-                    "lifeRevision": counts.revision, "actions": ["update_session", "update_set"]])
+                    "frontendStart": false, "sessionCompletion": true, "sessionBatchSave": true, "customExerciseSubstitution": true,
+                    "lifeRevision": counts.revision, "actions": ["update_session", "update_set", "substitute_exercise"]])
             }
             if case .frontendReceipt(let id) = endpoint {
                 if id == legacyID {
@@ -69,7 +69,7 @@ private final class WorkoutDraftVerificationModel: ObservableObject {
                 try data.write(to: root.appendingPathComponent("rejected.json"), options: .atomic)
                 counts.revision = 6; throw WorkoutSyncTransportError.http(409)
             }
-            try await Task.sleep(nanoseconds: 400_000_000)
+            try await Task.sleep(nanoseconds: arguments.contains("--workout-ui-slow") ? 2_000_000_000 : 400_000_000)
             counts.revision = intent.expectedLifeRevision + 1
             if var saved = counts.saved {
                 if case .array(let updates) = intent.command["sets"] {
@@ -86,7 +86,21 @@ private final class WorkoutDraftVerificationModel: ObservableObject {
                     }
                 }
                 if case .string(let status) = intent.command["status"] { saved.status = status }
+                if intent.command["action"] == .string("substitute_exercise"),
+                   case .string(let replacement) = intent.command["replacementExerciseKey"],
+                   !saved.exercises[0].sets.contains(where: \.completed) {
+                    guard var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved.exercises[0])) as? [String: Any] else { throw WorkoutTrackerContractError.invalidSnapshot }
+                    object["exerciseKey"] = replacement
+                    if case .object(let definition) = intent.command["replacementExercise"] {
+                        for key in ["name", "loadMode", "notes", "repMin", "repMax"] {
+                            if let value = definition[key] { object[key] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value), options: .fragmentsAllowed) }
+                        }
+                    } else { object["name"] = "Cable press"; object["loadMode"] = "machine" }
+                    saved.exercises[0] = try JSONDecoder().decode(WorkoutTrackerDashboard.Exercise.self, from: JSONSerialization.data(withJSONObject: object))
+                }
                 counts.saved = saved
+                try JSONEncoder().encode(saved).write(to: root.appendingPathComponent("server.json"), options: .atomic)
+                try JSONEncoder().encode(counts.revision).write(to: root.appendingPathComponent("revision.json"), options: .atomic)
             }
             return try receipt(intent, state: "committed", revision: counts.revision)
         }, readCredential: { config }, saveCredential: { _ in })
@@ -99,7 +113,8 @@ private final class WorkoutDraftVerificationModel: ObservableObject {
         let session = WorkoutTrackerDashboard.Session(id: 10, mesocycleId: 1, weekNumber: 2, sessionKey: "upper", kind: "strength",
             title: "Upper A", scheduledDate: "2026-10-20", orderIndex: 1, status: "planned", readiness: "", rating: "", notes: "",
             metrics: [:], sheetItemId: "", linkedSessionId: nil, completedAt: "", exercises: [exercise], finisher: nil)
-        counts.saved = session
+        counts.saved = (try? Data(contentsOf: root.appendingPathComponent("server.json"))).flatMap { try? JSONDecoder().decode(WorkoutTrackerDashboard.Session.self, from: $0) } ?? session
+        counts.revision = (try? Data(contentsOf: root.appendingPathComponent("revision.json"))).flatMap { try? JSONDecoder().decode(Int.self, from: $0) } ?? counts.revision
         drafts = WorkoutSessionDraftController(initial: .init(origin: config.origin, installationId: config.installationId,
             baseline: session, revision: 4, massScale: 1, localeIdentifier: "en_US"), store: .init(url: root.appendingPathComponent("draft.json")), frontend: client)
     }
@@ -112,6 +127,37 @@ private final class WorkoutDraftVerificationModel: ObservableObject {
             try await frontend.checkCapabilities(); ready = true
         } catch { ready = false }
     }
+    func renderReplacementIfRequested() async {
+        guard ProcessInfo.processInfo.arguments.contains("--workout-replacement-render-proof"), ready,
+              let session = evidence.saved, let exercise = session.exercises.first else { return }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("dhoop-workout-replacement-ui")
+        let scope = WorkoutFrontendScope(origin: drafts.state.origin, installationId: UUID())
+        let identity = WorkoutReplacementDraftScope(origin: scope.origin, installationID: scope.installationId,
+            programID: session.mesocycleId, sessionID: session.id, exerciseID: exercise.id)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let file = WorkoutReplacementDraftStore(url: root.appendingPathComponent("Dhoop/WorkoutReplacementDrafts/" + scope.installationId.uuidString.lowercased()).appendingPathComponent("\(session.id)-\(exercise.id).json"))
+        var input = WorkoutReplacementDraft(scope: identity, exercise: exercise, library: [])
+        input.custom = true; input.name = "Cable chest press"; input.notes = "Keep shoulders comfortable."
+        do {
+            try file.save(input); try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let config = WorkoutSyncConfiguration(enabled: true, origin: scope.origin, installationId: scope.installationId, credential: String(repeating: "f", count: 64))
+            let renderedClient = WorkoutFrontendClient(store: .init(url: folder.appendingPathComponent(UUID().uuidString + ".json")), send: { _, _, _ in
+                try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true, "frontendStart": false,
+                    "customExerciseSubstitution": true, "lifeRevision": 4, "actions": ["substitute_exercise"]])
+            }, readCredential: { config }, saveCredential: { _ in })
+            try renderedClient.configure(origin: scope.origin, installationId: scope.installationId, token: config.credential)
+            try renderedClient.setEnabled(true); try await renderedClient.checkCapabilities()
+            for width in [390.0, 320.0] {
+                try await CalendarReaderRenderProof.capture(NavigationStack {
+                    ScreenScaffold(title: "Replace exercise") {
+                        WorkoutExerciseReplacementEditor(session: session, exercise: exercise, library: [], revision: self.evidence.revision,
+                            scope: scope, refresh: {}, client: renderedClient)
+                    }
+                }, name: "custom-\(Int(width))", width: width, height: 1000, folder: folder)
+            }
+        } catch { }
+    }
+
     func read() async throws -> WorkoutSessionDraft.Remote {
         evidence.reads += 1
         if ProcessInfo.processInfo.arguments.contains("--workout-ui-offline") { throw URLError(.notConnectedToInternet) }
@@ -124,7 +170,7 @@ struct WorkoutDraftVerificationView: View {
         Group {
             if model.ready { WorkoutDraftVerificationContent(model: model, drafts: model.drafts) }
             else { ProgressView { Text(verbatim: "Preparing isolated workout proof") } }
-        }.task { await model.prepare() }
+        }.task { await model.prepare(); await model.renderReplacementIfRequested() }
     }
 }
 private struct WorkoutDraftVerificationContent: View {
@@ -142,7 +188,7 @@ private struct WorkoutDraftVerificationContent: View {
                         .font(StrandFont.caption).accessibilityIdentifier("workout-demo-operation-id")
                     ForEach(drafts.state.baseline.exercises) { exercise in
                         WorkoutInlineExerciseCard(session: drafts.state.baseline, exercise: exercise, library: [],
-                            revision: drafts.state.revision, system: .imperial, refresh: {}, drafts: drafts, hasUnsavedEdits: drafts.state.isProtected, frontend: model.frontend)
+                            revision: drafts.state.revision, system: .imperial, refresh: { try drafts.receive(await model.read()) }, drafts: drafts, hasUnsavedEdits: drafts.state.isProtected, frontend: model.frontend)
                     }
                     Text("Edits stay on your phone until you save the workout.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }

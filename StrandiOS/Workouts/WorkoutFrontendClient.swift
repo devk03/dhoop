@@ -29,6 +29,7 @@ final class WorkoutFrontendClient: ObservableObject {
     private let readCredential: () throws -> WorkoutSyncConfiguration?
     private let saveCredential: (WorkoutSyncConfiguration) throws -> Void
     private var generation=0
+    private var capabilityTask: Task<Void, Error>?
     init(store:WorkoutFrontendFileStore,
          send:@escaping @MainActor (WorkoutSyncEndpoint,Data?,WorkoutSyncConfiguration) async throws -> Data = { endpoint,body,config in try await WorkoutSyncTransport().send(to:endpoint,body:body,credentials:config) },
          readCredential:@escaping () throws -> WorkoutSyncConfiguration? = WorkoutTrackerKeychain.readFrontend,
@@ -60,14 +61,25 @@ final class WorkoutFrontendClient: ObservableObject {
         var next=state;next.enabled=value;if !value { next.capabilities=nil;next.checkedAt=nil }
         try commit(next);generation+=1
     }
-    func checkCapabilities() async throws {
-        guard !busy,!storageUnavailable,state.enabled else { throw Failure.disabled }
-        let config=try credentials(),ticket=generation
-        busy=true;defer{busy=false}
-        let data=try await send(.frontendCapabilities,nil,config)
-        let result=try JSONDecoder().decode(WorkoutFrontendCapabilities.self,from:data);try result.validate()
-        guard ticket==generation,!Task.isCancelled,state.enabled else { throw Failure.disabled }
-        var next=state;next.capabilities=result;next.checkedAt=Date();try commit(next)
+    /// Visible workout screens can reuse a recently authenticated read; explicit verification stays fresh.
+    func checkCapabilities(force: Bool = true) async throws {
+        guard !storageUnavailable, state.enabled else { throw Failure.disabled }
+        let config = try credentials()
+        if let capabilityTask { try await capabilityTask.value; return }
+        if !force, state.capabilities != nil, let checked = state.checkedAt,
+           (0..<60).contains(Date().timeIntervalSince(checked)) { return }
+        guard !busy else { throw Failure.disabled }
+        let ticket = generation
+        busy = true
+        let task = Task { @MainActor in
+            let data = try await self.send(.frontendCapabilities, nil, config)
+            let result = try JSONDecoder().decode(WorkoutFrontendCapabilities.self, from: data); try result.validate()
+            guard ticket == self.generation, !Task.isCancelled, self.state.enabled else { throw Failure.disabled }
+            var next = self.state; next.capabilities = result; next.checkedAt = Date(); try self.commit(next)
+        }
+        capabilityTask = task
+        defer { capabilityTask = nil; busy = false }
+        try await task.value
     }
     @discardableResult
     func prepare(command:[String:WorkoutTrackerValue],revision:Int,operationId:UUID = UUID()) throws -> UUID {

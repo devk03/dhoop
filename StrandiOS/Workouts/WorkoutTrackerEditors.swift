@@ -87,7 +87,6 @@ struct WorkoutTrackerExerciseEditor: View {
     let library: [WorkoutTrackerDashboard.LibraryItem]
     let revision: Int
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
-    @State private var replacement = ""
     @State private var direction = "lighter"
     @State private var oneOffName = ""
     @State private var loadedName = false
@@ -111,19 +110,10 @@ struct WorkoutTrackerExerciseEditor: View {
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Text("Replace program exercise").font(StrandFont.headline)
-                        Picker("Replacement", selection: $replacement) {
-                            Text("Choose an exercise").tag("")
-                            ForEach(library.filter { $0.movementPattern == exercise.movementPattern && $0.exerciseKey != exercise.exerciseKey }) {
-                                Text($0.name).tag($0.exerciseKey)
-                            }
+                        if let origin = tracker.state.origin, let installation = tracker.state.installationId {
+                            WorkoutExerciseReplacementEditor(session: session, exercise: exercise, library: library, revision: revision,
+                                scope: .init(origin: origin, installationId: installation), refresh: refresh, client: .shared)
                         }
-                        Text("Changes the shared program. Life verifies eligibility; completed work remains in history.")
-                            .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                        WorkoutFrontendSubmitSection(title: "Replace in Life", action: "substitute_exercise", revision: revision, command: {
-                            guard !replacement.isEmpty else { throw WorkoutFrontendInput.Invalid(message: "Choose a replacement first.") }
-                            return base.merging(["action": .string("substitute_exercise"), "sessionExerciseId": .number(Double(exercise.id)),
-                                "replacementExerciseKey": .string(replacement)]) { _, new in new }
-                        }, refresh: refresh)
                     }
                 }
                 NoopCard {

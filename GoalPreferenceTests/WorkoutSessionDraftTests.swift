@@ -30,6 +30,66 @@ final class WorkoutSessionDraftTests: XCTestCase {
         try frontend.configure(origin: config.origin, installationId: config.installationId, token: config.credential)
         try frontend.setEnabled(true); try await frontend.checkCapabilities()
     }
+    func testThreeConsecutiveUpperAndLowerSaveFinishReopenWorkflows() async throws {
+        for kind in ["upper", "lower"] {
+            for run in 1...3 {
+                var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(session())) as? [String: Any])
+                json["sessionKey"] = kind; json["title"] = kind == "upper" ? "Upper" : "Lower"
+                json["metrics"] = ["exerciseSubstitutions": ["press": ["name": kind == "upper" ? "Cable press" : "Leg press"]]]
+                var canonical = try JSONDecoder().decode(WorkoutTrackerDashboard.Session.self, from: JSONSerialization.data(withJSONObject: json))
+                let original = canonical, weight = Double(kind == "upper" ? 140 + run : 200 + run)
+                var revision = 4, writes: [WorkoutFrontendIntent] = []
+                let commands = WorkoutFrontendFileStore(url: file("commands.json")), draftFile = WorkoutSessionDraftFileStore(url: file("draft.json"))
+                let frontend = WorkoutFrontendClient(store: commands, send: { endpoint, body, _ in
+                    if endpoint == .frontendCapabilities { return try self.capabilities() }
+                    XCTAssertEqual(endpoint, .frontendCommand)
+                    let intent = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body))
+                    XCTAssertEqual(intent.expectedLifeRevision, revision)
+                    writes.append(intent); revision += 1
+                    if writes.count == 1 {
+                        XCTAssertNil(intent.command["status"])
+                        XCTAssertEqual(intent.command["sets"], .array([.object(["setId": .number(1), "actualLoad": .number(weight),
+                            "actualReps": .number(9), "completed": .bool(true)])]))
+                        canonical.exercises[0].sets[0].actualLoad = weight
+                        canonical.exercises[0].sets[0].actualReps = 9
+                        canonical.exercises[0].sets[0].completed = true
+                    } else if writes.count == 2 {
+                        XCTAssertEqual(intent.command["status"], .string("completed")); XCTAssertNil(intent.command["sets"])
+                        canonical.status = "completed"
+                    } else {
+                        XCTAssertEqual(writes.count, 3); XCTAssertEqual(intent.command["status"], .string("planned"))
+                        canonical.status = "planned"
+                    }
+                    return try self.receipt(intent, revision: revision)
+                }, readCredential: { self.config }, saveCredential: { _ in })
+                try await enable(frontend)
+                let controller = WorkoutSessionDraftController(initial: initial(original), store: draftFile, frontend: frontend)
+                var input = try XCTUnwrap(controller.state.entry(1)); input.load = String(Int(weight)); input.reps = "9"; controller.edit(input)
+                let read: () async throws -> WorkoutSessionDraft.Remote = { .init(session: canonical, revision: revision) }
+                try await controller.requestSaveAfterRefreshing(finishing: false, logEnteredSets: true, refresh: read)
+                await controller.waitForDelivery()
+                XCTAssertEqual(controller.state.baseline.exercises[0].sets[0].actualLoad, weight)
+                XCTAssertFalse(controller.state.hasChanges); XCTAssertNil(controller.state.pending)
+                XCTAssertFalse(controller.state.baseline.exercises[0].sets[1].completed)
+                try await controller.requestSaveAfterRefreshing(finishing: true, refresh: read)
+                await controller.waitForDelivery()
+                XCTAssertEqual(controller.state.baseline.status, "completed")
+                let id = try frontend.prepare(command: ["action": .string("update_session"), "mesocycleId": .number(1),
+                    "sessionId": .number(10), "status": .string("planned")], revision: revision)
+                try await frontend.submit(id); try controller.receive(try await read())
+                let restartedFrontend = WorkoutFrontendClient(store: commands, readCredential: { self.config }, saveCredential: { _ in })
+                let restarted = WorkoutSessionDraftController(initial: .init(origin: config.origin, installationId: config.installationId,
+                    baseline: canonical, revision: revision, massScale: 1, localeIdentifier: "en_US"), store: draftFile, frontend: restartedFrontend)
+                XCTAssertEqual(writes.count, 3); XCTAssertNil(restartedFrontend.unresolved)
+                XCTAssertEqual(restarted.state.baseline.status, "planned")
+                XCTAssertEqual(restarted.state.entry(1)?.load, String(Int(weight)))
+                XCTAssertEqual(restarted.state.entry(1)?.reps, "9")
+                XCTAssertEqual(restarted.state.baseline.displayName(for: restarted.state.baseline.exercises[0]), kind == "upper" ? "Cable press" : "Leg press")
+                XCTAssertFalse(restarted.state.baseline.exercises[0].sets[2].completed)
+            }
+        }
+    }
+
     func testRapidLocalEditsAndChecksMakeZeroRequestsAndSurviveRelaunch() async throws {
         var network = 0
         let frontend = WorkoutFrontendClient(store: .init(url: file("commands.json")), send: { _, _, _ in network += 1; return try self.capabilities() }, readCredential: { self.config }, saveCredential: { _ in })

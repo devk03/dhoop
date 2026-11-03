@@ -116,7 +116,7 @@ struct WorkoutTrackerSessionView: View {
             if openedContext == nil { openedContext = connectionIdentity }
             guard !connectionChanged else { refreshState.reset(); return }
             drafts.setRefresh(WorkoutSessionDraftController.reader(for: drafts.state))
-            if frontend.state.enabled { try? await frontend.checkCapabilities() }
+            if frontend.state.enabled { try? await frontend.checkCapabilities(force: false) }
             if refreshOnAppear { try? await refresh() }
             drafts.resume()
         }
