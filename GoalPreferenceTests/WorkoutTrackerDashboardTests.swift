@@ -11,6 +11,31 @@ final class WorkoutTrackerDashboardTests: XCTestCase {
             "pagination":["cursor":cursor,"limit":10,"totalSessions":total,"nextCursor":next as Any? ?? NSNull()],
             "capabilities":["manualCommands":false,"frontendStart":false]])
     }
+    func testWorkoutOnlyNameSurvivesRoundTripWithoutRenamingCatalogOrOtherSessions() throws {
+        let exercise = WorkoutTrackerDashboard.Exercise(id: 11, exerciseKey: "press", name: "Bench press", orderIndex: 1,
+            loadMode: "barbell", progressionType: "double", plannedSets: 3, plannedReps: 8, plannedLoad: 135,
+            targetRir: 2, notes: "", slotKey: "press", movementPattern: "push", originalExerciseKey: "press",
+            originalExerciseName: "Bench press", isPriming: false, sets: [])
+        for (value, expected) in [(WorkoutTrackerValue.string("  Cable press  "), "Cable press"),
+                                  (.string("  "), "Bench press"), (.number(4), "Bench press")] {
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: page()) as? [String: Any])
+            var dashboard = try XCTUnwrap(object["dashboard"] as? [String: Any])
+            var sessions = try XCTUnwrap(dashboard["sessions"] as? [[String: Any]])
+            sessions[0]["exercises"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode([exercise]))
+            let metrics: [String: WorkoutTrackerValue] = ["exerciseSubstitutions": .object(["press": .object(["name": value])])]
+            sessions[0]["metrics"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(metrics))
+            dashboard["sessions"] = sessions; object["dashboard"] = dashboard
+            let decoded = try JSONDecoder().decode(WorkoutTrackerDashboard.self, from: JSONSerialization.data(withJSONObject: object))
+            let saved = try JSONDecoder().decode(WorkoutTrackerDashboard.Session.self,
+                from: JSONEncoder().encode(try XCTUnwrap(decoded.dashboard.sessions.first)))
+            XCTAssertEqual(saved.displayName(for: exercise), expected)
+            XCTAssertEqual(saved.exercises[0].name, "Bench press", "Catalog name must remain unchanged")
+            // The same canonical name in a different session has no workout-only overlay.
+            let untouched = try JSONDecoder().decode(WorkoutTrackerDashboard.self, from: page()).dashboard.sessions[0]
+            XCTAssertEqual(untouched.displayName(for: exercise), "Bench press")
+        }
+    }
+
     func testCanonicalPageRoundTripRetainsRevisionAndDoesNotEnableCommands() throws {
         let response = try JSONDecoder().decode(WorkoutTrackerDashboard.self,from:page())
         try response.validate()

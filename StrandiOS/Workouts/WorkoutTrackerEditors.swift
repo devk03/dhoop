@@ -33,7 +33,7 @@ struct WorkoutTrackerSetEditor: View {
         _rir = State(initialValue: values[4]); _completed = State(initialValue: row.completed)
     }
     var body: some View {
-        ScreenScaffold(title: targetsOnly ? "Set targets" : "Log set", subtitle: LocalizedStringKey("\(exercise.name) · set \(row.setNumber)")) {
+        ScreenScaffold(title: targetsOnly ? "Set targets" : "Log set", subtitle: LocalizedStringKey("\(session.displayName(for: exercise)) · set \(row.setNumber)")) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 if !targetsOnly { NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
@@ -95,7 +95,7 @@ struct WorkoutTrackerExerciseEditor: View {
         ["mesocycleId": .number(Double(session.mesocycleId)), "sessionId": .number(Double(session.id))]
     }
     var body: some View {
-        ScreenScaffold(title: LocalizedStringKey(exercise.name), subtitle: "Shared program changes") {
+        ScreenScaffold(title: LocalizedStringKey(session.displayName(for: exercise)), subtitle: "Shared program changes") {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {

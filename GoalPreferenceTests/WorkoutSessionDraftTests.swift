@@ -180,6 +180,56 @@ final class WorkoutSessionDraftTests: XCTestCase {
         var edit = try XCTUnwrap(controller.state.entry(1)); edit.reps = "8"; controller.edit(edit)
         XCTAssertEqual(try Data(contentsOf: path), original); XCTAssertFalse(controller.canEdit)
     }
+    func testExplicitLogEnteredSetsDoesNotInventUntouchedTargetsOrLogDuringTyping() throws {
+        var draft = initial(session())
+        var edit = try XCTUnwrap(draft.entry(1)); edit.load = "145"; edit.reps = "9"
+        try draft.edit(edit)
+        XCTAssertFalse(try XCTUnwrap(draft.entry(1)).completed)
+        XCTAssertEqual(draft.enteredUncompletedSetCount, 1)
+        XCTAssertThrowsError(try draft.command(finishing: false), "Ordinary typing is not completion")
+        try draft.logEnteredSets()
+        XCTAssertTrue(try XCTUnwrap(draft.entry(1)).completed)
+        XCTAssertFalse(try XCTUnwrap(draft.entry(2)).completed)
+        XCTAssertEqual(try XCTUnwrap(draft.entry(2)).load, "")
+        XCTAssertEqual(draft.enteredUncompletedSetCount, 0)
+        try draft.freeze(finishing: false)
+        guard case .array(let sets) = draft.pending?.command["sets"], case .object(let fields) = sets.first else {
+            return XCTFail("The explicit owner action must freeze the entered results")
+        }
+        XCTAssertEqual(sets.count, 1); XCTAssertEqual(fields["actualLoad"], .number(145))
+        XCTAssertEqual(fields["actualReps"], .number(9)); XCTAssertEqual(fields["completed"], .bool(true))
+        let restored = try JSONDecoder().decode(WorkoutSessionDraft.self, from: JSONEncoder().encode(draft))
+        try restored.validate(); XCTAssertEqual(restored.pending?.command, draft.pending?.command)
+    }
+
+    func testUnrelatedDraftDoesNotBlockReplacementAndRefreshRetainsItsExactInput() throws {
+        var draft = initial(session())
+        var other = session().exercises[0]
+        // A different canonical exercise and stable set IDs are required for a safe unrelated edit.
+        other = .init(id: 22, exerciseKey: "squat", name: "Squat", orderIndex: 2, loadMode: "barbell",
+            progressionType: "double", plannedSets: 1, plannedReps: 8, plannedLoad: 135, targetRir: 2,
+            notes: "", slotKey: "squat", movementPattern: "squat", originalExerciseKey: "squat",
+            originalExerciseName: "Squat", isPriming: false, sets: [
+                .init(id: 20, setNumber: 1, setType: "work", plannedLoad: 135, plannedReps: 8,
+                    actualLoad: nil, actualReps: nil, rir: nil, completed: false)])
+        draft.baseline.exercises.append(other)
+        var edit = try XCTUnwrap(draft.entry(1)); edit.load = "145"; edit.reps = "9"
+        try draft.edit(edit)
+        XCTAssertFalse(draft.canReplaceExercise(11), "Target's own unlogged input requires explicit review")
+        XCTAssertTrue(draft.canReplaceExercise(22), "An unrelated draft must not disable Swap")
+        XCTAssertFalse(draft.canReplaceExercise(999))
+        var remote = draft.baseline
+        remote.exercises[1] = .init(id: 22, exerciseKey: "front_squat", name: "Front squat", orderIndex: 2,
+            loadMode: "barbell", progressionType: "double", plannedSets: 1, plannedReps: 8, plannedLoad: 135,
+            targetRir: 2, notes: "", slotKey: "squat", movementPattern: "squat", originalExerciseKey: "squat",
+            originalExerciseName: "Squat", isPriming: false, sets: other.sets)
+        try draft.receive(remote, revision: draft.revision + 1)
+        let restored = try JSONDecoder().decode(WorkoutSessionDraft.self, from: JSONEncoder().encode(draft))
+        try restored.validate()
+        XCTAssertEqual(restored.entry(1)?.load, "145"); XCTAssertEqual(restored.entry(1)?.reps, "9")
+        XCTAssertEqual(restored.baseline.exercises[1].name, "Front squat"); XCTAssertNil(restored.remote)
+    }
+
     func testRealisticNinetySixSetDraftHasZeroNetworkEditsAndKeepsCapturedLocale() async throws {
         var network = 0
         let frontend = WorkoutFrontendClient(store: .init(url: file("commands.json")), send: { _, _, _ in network += 1; return try self.capabilities() }, readCredential: { self.config }, saveCredential: { _ in })

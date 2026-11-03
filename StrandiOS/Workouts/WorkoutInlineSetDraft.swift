@@ -20,6 +20,7 @@ struct WorkoutInlineSetDraft: Codable, Equatable {
         rir = text(row.rir)
     }
     var isDirty: Bool { self != Self(row: baseline, massScale: massScale, locale: Locale(identifier: localeIdentifier)) }
+    var hasEnteredResults: Bool { [load, reps, rir].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } }
     func conflicts(with row: WorkoutTrackerDashboard.SetLog) -> Bool { isDirty && row != baseline }
 
     func command(sessionID: Int, programID: Int, mode: WorkoutTrackerLoadMode, completed: Bool, locale: Locale = .current) throws -> [String: WorkoutTrackerValue] {
@@ -34,7 +35,7 @@ struct WorkoutInlineSetDraft: Codable, Equatable {
             if mode != .duration { result["actualReps"] = .null; result["rir"] = .null }
             return result
         }
-        if !completed && [load, reps, rir].contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+        if !completed && hasEnteredResults {
             throw NeedsCompletion()
         }
         func number(_ text: String, range: ClosedRange<Double>, integer: Bool = false, scale: Double = 1) throws -> WorkoutTrackerValue {

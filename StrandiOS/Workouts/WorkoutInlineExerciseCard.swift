@@ -12,6 +12,7 @@ struct WorkoutInlineExerciseCard: View {
     @ObservedObject var drafts: WorkoutSessionDraftController
     var editingEnabled = true
     var hasUnsavedEdits = false
+    @ObservedObject var frontend = WorkoutFrontendClient.shared
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showingSwap = false
     @State private var replacement = ""
@@ -27,10 +28,10 @@ struct WorkoutInlineExerciseCard: View {
                     ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
                     : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.space2))
                 layout {
-                    Text(exercise.name).font(StrandFont.headline).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(verbatim: session.displayName(for: exercise)).font(StrandFont.headline).frame(maxWidth: .infinity, alignment: .leading)
                     if revision != nil {
                         Button { showingSwap.toggle() } label: { Label("Swap", systemImage: "arrow.triangle.2.circlepath") }
-                            .buttonStyle(NoopButtonStyle(.secondary)).disabled(hasUnsavedEdits)
+                            .buttonStyle(NoopButtonStyle(.secondary))
                         Menu {
                             if let revision {
                                 if let mode, mode != .duration, !exercise.isPriming, exercise.progressionPreference != nil {
@@ -49,7 +50,7 @@ struct WorkoutInlineExerciseCard: View {
                                 }.disabled(hasUnsavedEdits)
                             }
                         } label: { Image(systemName: "ellipsis").frame(minWidth: NoopMetrics.minimumTouchTarget, minHeight: NoopMetrics.minimumTouchTarget) }
-                        .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Options for \(exercise.name)")
+                        .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel(String(format: NSLocalizedString("Options for %@", comment: ""), session.displayName(for: exercise)))
                     }
                 }
                 if let mode {
@@ -67,7 +68,13 @@ struct WorkoutInlineExerciseCard: View {
                             ForEach(alternatives) { Text($0.name).tag($0.exerciseKey) }
                         }.pickerStyle(.menu)
                         if alternatives.isEmpty { Text("No replacements are available for this movement.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary) }
-                        Text("Updates this exercise in your Life program; past completed work stays intact.")
+                        if !drafts.state.canReplaceExercise(exercise.id) {
+                            Text("Save this exercise before swapping.")
+                                .font(StrandFont.caption).foregroundStyle(StrandPalette.statusWarning)
+                        }
+                        Text(exercise.sets.contains(where: \.completed)
+                            ? "Changes future workouts; logged sets stay unchanged."
+                            : "Your other edits stay on this phone.")
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                         WorkoutFrontendSubmitSection(title: "Save replacement", action: "substitute_exercise", revision: revision, command: {
                             guard alternatives.contains(where: { $0.exerciseKey == replacement }) else {
@@ -75,8 +82,9 @@ struct WorkoutInlineExerciseCard: View {
                             }
                             return ["action": .string("substitute_exercise"), "mesocycleId": .number(Double(session.mesocycleId)),
                                 "sessionId": .number(Double(session.id)), "sessionExerciseId": .number(Double(exercise.id)), "replacementExerciseKey": .string(replacement)]
-                        }, refresh: { try await refresh(); showingSwap = false; replacement = "" })
-                        .disabled(replacement.isEmpty || hasUnsavedEdits)
+                        }, refresh: { try await refresh(); showingSwap = false; replacement = "" }, client: frontend,
+                            scope: .init(origin: drafts.state.origin, installationId: drafts.state.installationId))
+                        .disabled(replacement.isEmpty || !editingEnabled || !drafts.canEdit || !drafts.state.canReplaceExercise(exercise.id))
                         .id("replace-\(exercise.exerciseKey)-\(revision)")
                     }
                 }

@@ -1,5 +1,11 @@
 import Foundation
 
+/// The canonical connection an editor was opened against; credentials never enter view state.
+struct WorkoutFrontendScope: Equatable {
+    let origin: String
+    let installationId: UUID
+}
+
 struct WorkoutFrontendIntent: Codable, Equatable {
     var schemaVersion = 1
     let operationId: UUID
@@ -56,6 +62,7 @@ struct WorkoutFrontendCapabilities: Codable, Equatable {
     var sessionBatchSave: Bool? = nil
     var historicalSessionEditing: Bool? = nil
     var progressionPreferences: Bool? = nil
+    var customExerciseSubstitution: Bool? = nil
     func validate() throws {
         guard schemaVersion == 1, lifeRevision >= 0, actions.count <= 30,
               Set(actions).count == actions.count, Set(actions).isSubset(of: Self.supportedActions)

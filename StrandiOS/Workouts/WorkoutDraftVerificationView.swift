@@ -72,8 +72,21 @@ private final class WorkoutDraftVerificationModel: ObservableObject {
             try await Task.sleep(nanoseconds: 400_000_000)
             counts.revision = intent.expectedLifeRevision + 1
             if var saved = counts.saved {
-                saved.exercises[0].sets[0].actualLoad = 135; saved.exercises[0].sets[0].actualReps = 8
-                saved.exercises[0].sets[0].completed = true; counts.saved = saved
+                if case .array(let updates) = intent.command["sets"] {
+                    for value in updates {
+                        guard case .object(let fields) = value, case .number(let id) = fields["setId"] else { continue }
+                        for i in saved.exercises.indices {
+                            for j in saved.exercises[i].sets.indices where saved.exercises[i].sets[j].id == Int(id) {
+                                if let load = fields["actualLoad"] { if case .number(let n) = load { saved.exercises[i].sets[j].actualLoad = n } else { saved.exercises[i].sets[j].actualLoad = nil } }
+                                if let reps = fields["actualReps"] { if case .number(let n) = reps { saved.exercises[i].sets[j].actualReps = Int(n) } else { saved.exercises[i].sets[j].actualReps = nil } }
+                                if let rir = fields["rir"] { if case .number(let n) = rir { saved.exercises[i].sets[j].rir = n } else { saved.exercises[i].sets[j].rir = nil } }
+                                if case .bool(let done) = fields["completed"] { saved.exercises[i].sets[j].completed = done }
+                            }
+                        }
+                    }
+                }
+                if case .string(let status) = intent.command["status"] { saved.status = status }
+                counts.saved = saved
             }
             return try receipt(intent, state: "committed", revision: counts.revision)
         }, readCredential: { config }, saveCredential: { _ in })
@@ -129,7 +142,7 @@ private struct WorkoutDraftVerificationContent: View {
                         .font(StrandFont.caption).accessibilityIdentifier("workout-demo-operation-id")
                     ForEach(drafts.state.baseline.exercises) { exercise in
                         WorkoutInlineExerciseCard(session: drafts.state.baseline, exercise: exercise, library: [],
-                            revision: drafts.state.revision, system: .imperial, refresh: {}, drafts: drafts, hasUnsavedEdits: drafts.state.isProtected)
+                            revision: drafts.state.revision, system: .imperial, refresh: {}, drafts: drafts, hasUnsavedEdits: drafts.state.isProtected, frontend: model.frontend)
                     }
                     Text("Edits stay on your phone until you save the workout.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                 }

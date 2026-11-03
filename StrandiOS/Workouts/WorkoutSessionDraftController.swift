@@ -139,8 +139,12 @@ final class WorkoutSessionDraftController: ObservableObject {
     }
     /// Refresh before creating a NEW immutable submission. Offline reads do not prevent a durable
     /// save; a retained submission or queued Finish always keeps its existing identity and bytes.
-    func requestSaveAfterRefreshing(finishing: Bool, refresh: @escaping () async throws -> WorkoutSessionDraft.Remote) async throws {
+    func requestSaveAfterRefreshing(finishing: Bool, logEnteredSets: Bool = false,
+                                    refresh: @escaping () async throws -> WorkoutSessionDraft.Remote) async throws {
         guard !checkingLatest else { throw WorkoutFrontendClient.Failure.unresolved }
+        if logEnteredSets {
+            var next = state; try next.logEnteredSets(); try commit(next)
+        }
         if state.pending == nil {
             checkingLatest = true
             defer { checkingLatest = false }

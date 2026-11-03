@@ -44,11 +44,11 @@ struct WorkoutSessionDraftActions: View {
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space2))
                 : AnyLayout(HStackLayout(spacing: NoopMetrics.space2))
             layout {
-                Button(drafts.state.baseline.status == "completed" ? "Save corrections" : "Save workout") { save(finishing: false) }
+                Button(drafts.state.enteredUncompletedSetCount > 0 ? "Log entered sets" : drafts.state.baseline.status == "completed" ? "Save corrections" : "Save workout") { save(finishing: false) }
                     .buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
                     .disabled(!enabled || drafts.checkingLatest || !drafts.canSend || !drafts.state.hasChanges || drafts.state.pending != nil)
                 if drafts.state.baseline.status != "completed" {
-                    Button(drafts.state.finishQueued ? "Finish queued" : "Finish workout") {
+                    Button(drafts.state.finishQueued ? "Finish queued" : drafts.state.enteredUncompletedSetCount > 0 ? "Log sets & finish" : "Finish workout") {
                         save(finishing: true)
                     }.buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
                         .disabled(!enabled || drafts.checkingLatest || !drafts.canSend || !canFinish || drafts.state.finishQueued || drafts.state.pending?.finishing == true || frontend.state.capabilities?.sessionCompletion != true)
@@ -74,7 +74,7 @@ struct WorkoutSessionDraftActions: View {
     }
     private func save(finishing: Bool) {
         Task { @MainActor in
-            do { try await drafts.requestSaveAfterRefreshing(finishing: finishing, refresh: refresh) }
+            do { try await drafts.requestSaveAfterRefreshing(finishing: finishing, logEnteredSets: true, refresh: refresh) }
             catch { self.error = error.localizedDescription }
         }
     }

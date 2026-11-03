@@ -60,7 +60,7 @@ struct WorkoutTrackerProgramEditor: View {
                                 } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: NoopMetrics.space1) {
-                                            Text(entry.exercise.name).font(StrandFont.body)
+                                            Text(verbatim: entry.session.displayName(for: entry.exercise)).font(StrandFont.body)
                                             Text(entry.session.title).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
                                         }
                                         Spacer(minLength: NoopMetrics.space2)

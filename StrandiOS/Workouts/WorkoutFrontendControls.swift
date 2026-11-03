@@ -10,7 +10,8 @@ struct WorkoutFrontendSubmitSection: View {
     var lifecycle = false
     let command: () throws -> [String: WorkoutTrackerValue]
     let refresh: () async throws -> Void
-    @ObservedObject private var client = WorkoutFrontendClient.shared
+    @ObservedObject var client = WorkoutFrontendClient.shared
+    var scope: WorkoutFrontendScope? = nil
     @ObservedObject private var tracker = WorkoutTrackerClient.shared
     @State private var operationId: UUID?
     @State private var message: String?
@@ -39,8 +40,9 @@ struct WorkoutFrontendSubmitSection: View {
         }
     }
     private var sameConnection: Bool {
-        tracker.state.origin != nil && tracker.state.installationId != nil &&
-            tracker.state.origin == client.state.origin && tracker.state.installationId == client.state.installationId
+        guard let origin = scope?.origin ?? tracker.state.origin,
+              let installation = scope?.installationId ?? tracker.state.installationId else { return false }
+        return origin == client.state.origin && installation == client.state.installationId
     }
 }
 

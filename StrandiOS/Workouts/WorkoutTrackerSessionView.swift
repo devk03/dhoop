@@ -171,7 +171,7 @@ struct WorkoutTrackerSessionView: View {
             ForEach(Array(current.exercises.prefix(6))) { exercise in
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space2) {
-                        Text(exercise.name).font(StrandFont.headline)
+                        Text(verbatim: current.displayName(for: exercise)).font(StrandFont.headline)
                         Text("\(exercise.sets.filter(\.completed).count) completed sets").font(StrandFont.subhead)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }

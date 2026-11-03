@@ -15,7 +15,7 @@ struct WorkoutProgressionPreferencesView: View {
         _draft = State(initialValue: .init(exercise: exercise))
     }
     var body: some View {
-        ScreenScaffold(title: "Progression", subtitle: LocalizedStringKey(exercise.name)) {
+        ScreenScaffold(title: "Progression", subtitle: LocalizedStringKey(session.displayName(for: exercise))) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space4) {

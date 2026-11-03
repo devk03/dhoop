@@ -82,6 +82,14 @@ struct WorkoutTrackerDashboard: Codable, Equatable {
         let completedAt: String
         var exercises: [Exercise]
         let finisher: Finisher?
+        /// Workout-only names are presentation overrides; canonical catalog identity is unchanged.
+        func displayName(for exercise: Exercise) -> String {
+            guard case .object(let substitutions) = metrics["exerciseSubstitutions"],
+                  case .object(let entry) = substitutions[exercise.exerciseKey],
+                  case .string(let raw) = entry["name"] else { return exercise.name }
+            let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? exercise.name : name
+        }
     }
     struct Benchmark: Codable, Equatable, Identifiable {
         let id: Int

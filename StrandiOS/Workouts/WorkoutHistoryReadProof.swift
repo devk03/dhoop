@@ -3,7 +3,51 @@ import Foundation
 /// Explicit local read-only verification for developer-assisted installation; no credential export.
 @MainActor
 enum WorkoutHistoryReadProof {
+    /// Three reads at most, with a run identity and timings but no workout values or credentials.
+    private static func frontendReadProof() async {
+        let prefix = "--workout-read-run="
+        let run = ProcessInfo.processInfo.arguments.first { $0.hasPrefix(prefix) }
+            .flatMap { UUID(uuidString: String($0.dropFirst(prefix.count))) }?.uuidString ?? "manual"
+        var result: [String: Any] = ["runId": run, "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
+            "capturedAt": ISO8601DateFormatter().string(from: Date()), "proofWritesAttempted": false, "status": "not_verified"]
+        var stage = "capabilities"
+        func milliseconds(_ start: ContinuousClock.Instant) -> Double {
+            let d = start.duration(to: .now).components
+            return Double(d.seconds) * 1000 + Double(d.attoseconds) / 1e15
+        }
+        do {
+            let frontend = WorkoutFrontendClient.shared, tracker = WorkoutTrackerClient.shared
+            var start = ContinuousClock.now
+            try await frontend.checkCapabilities()
+            result["capabilityReadMilliseconds"] = milliseconds(start)
+            result["manualCommands"] = frontend.state.capabilities?.manualCommands == true
+            result["sessionBatchSave"] = frontend.state.capabilities?.sessionBatchSave == true
+            result["customExerciseSubstitution"] = frontend.state.capabilities?.customExerciseSubstitution == true
+            result["frontendStart"] = frontend.state.capabilities?.frontendStart == true
+            result["revision"] = frontend.state.capabilities?.lifeRevision
+            stage = "strength"; start = .now
+            let strength = try await tracker.readStrength()
+            result["strengthReadMilliseconds"] = milliseconds(start)
+            if let row = strength.nextUp {
+                stage = "exact_session"; start = .now
+                let page = try await tracker.readHistorySession(row)
+                result["exactSessionReadMilliseconds"] = milliseconds(start)
+                result["exactSessionVerified"] = page.dashboard.sessions.count == 1 && page.dashboard.sessions.first?.id == row.id
+            } else { result["exactSessionVerified"] = false; result["noNextWorkout"] = true }
+            result["status"] = "authenticated_reads_verified"
+        } catch {
+            result["stage"] = stage; result["errorType"] = String(describing: type(of: error))
+            if case WorkoutSyncTransportError.http(let code) = error { result["httpStatus"] = code }
+        }
+        result["finishedAt"] = ISO8601DateFormatter().string(from: Date())
+        if let data = try? JSONSerialization.data(withJSONObject: result, options: .sortedKeys) {
+            try? data.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("workout-frontend-read-" + run + ".json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+    }
     static func runIfRequested() async {
+        if ProcessInfo.processInfo.arguments.contains("--workout-frontend-read-proof") {
+            await frontendReadProof(); return
+        }
         guard ProcessInfo.processInfo.arguments.contains("--workout-history-proof") else { return }
         var result: [String: Any] = ["schemaVersion": 1, "status": "not_verified"]
         var stage = "history"

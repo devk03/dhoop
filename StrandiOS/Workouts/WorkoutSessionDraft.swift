@@ -27,6 +27,15 @@ struct WorkoutSessionDraft: Codable, Equatable {
     var lastAcceptedAt: Date?
     var dirtyIDs: Set<Int> { Set(edits.values.filter(\.isDirty).map { $0.baseline.id }) }
     var hasChanges: Bool { !dirtyIDs.isEmpty }
+    var enteredUncompletedSetCount: Int { edits.values.filter { !$0.completed && $0.hasEnteredResults }.count }
+    /// Called only by an explicitly labeled Log action, never by typing or a network retry.
+    mutating func logEnteredSets() throws {
+        for var entry in Array(edits.values) where !entry.completed && entry.hasEnteredResults {
+            entry.completed = true
+            try edit(entry)
+        }
+    }
+
     var hasNewerEdits: Bool {
         guard let pending else { return hasChanges }
         return Set(edits.keys).union(pending.edits.keys).contains { id in
@@ -36,6 +45,13 @@ struct WorkoutSessionDraft: Codable, Equatable {
         }
     }
     var isProtected: Bool { hasChanges || pending != nil || finishQueued }
+
+    /// A structural change may proceed while unrelated set edits remain anchored by stable IDs.
+    func canReplaceExercise(_ id: Int) -> Bool {
+        guard pending == nil, !finishQueued, remote == nil,
+              let exercise = baseline.exercises.first(where: { $0.id == id }) else { return false }
+        return !exercise.sets.contains { edits[String($0.id)]?.isDirty == true }
+    }
 
     func row(_ id: Int) -> WorkoutTrackerDashboard.SetLog? {
         baseline.exercises.lazy.flatMap(\.sets).first { $0.id == id }

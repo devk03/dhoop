@@ -30,7 +30,7 @@ struct WorkoutInlineSetRow: View {
                     var value = entry; value.completed.toggle()
                     if !value.completed { value.load = ""; value.reps = ""; value.rir = "" }
                     drafts.edit(value)
-                }, editingEnabled: editingEnabled && drafts.canEdit, showHistory: showHistory, savedLocally: true,
+                }, editingEnabled: editingEnabled && drafts.canEdit, showHistory: showHistory, savedLocally: entry.isDirty || drafts.state.pending?.edits[String(row.id)] != nil,
                 showColumnLabels: row.id == exercise.sets.first?.id)
         } else { Text("Unsupported load mode. View this set in Life.").font(StrandFont.caption) }
     }
