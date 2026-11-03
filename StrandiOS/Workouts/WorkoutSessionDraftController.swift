@@ -60,15 +60,16 @@ final class WorkoutSessionDraftController: ObservableObject {
         }
     }
     /// Capture only source identity, not a SwiftUI screen or its retained draft controller.
-    static func reader(for draft: WorkoutSessionDraft) -> () async throws -> WorkoutSessionDraft.Remote {
+    static func reader(for draft: WorkoutSessionDraft, tracker: WorkoutTrackerClient = .shared) -> () async throws -> WorkoutSessionDraft.Remote {
         let origin = draft.origin, installation = draft.installationId
         let cycleId = draft.baseline.mesocycleId, sessionId = draft.baseline.id
         return {
-            let tracker = WorkoutTrackerClient.shared
             guard tracker.state.origin == origin, tracker.state.installationId == installation, tracker.state.enabled else { throw WorkoutSyncTransportError.configuration }
-            try await tracker.refreshDashboard(mesocycleId: cycleId, sessionId: sessionId)
+            // Source uploads and broader dashboard reads must not hold the editable session behind
+            // the tracker's global mutation lock. This GET returns its own validated snapshot.
+            let page = try await tracker.readHistorySession(mesocycleId: cycleId, sessionId: sessionId)
+            try Task.checkCancellation()
             guard tracker.state.origin == origin, tracker.state.installationId == installation,
-                  let page = tracker.state.frontendPage,
                   let session = page.dashboard.sessions.first(where: { $0.id == sessionId && $0.mesocycleId == cycleId }) else { throw WorkoutTrackerContractError.invalidSnapshot }
             return .init(session: session, revision: page.lifeRevision)
         }

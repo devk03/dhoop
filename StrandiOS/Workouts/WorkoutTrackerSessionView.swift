@@ -21,6 +21,7 @@ struct WorkoutTrackerSessionView: View {
     @State private var showingSchedule = false
     @State private var showingConflict = false
     @State private var openedContext: String?
+    @State private var latestExerciseLibrary: [WorkoutTrackerDashboard.LibraryItem]?
     @AppStorage(WorkoutLastOpened.storageKey) private var lastOpenedValue = ""
     private var current: WorkoutTrackerDashboard.Session { drafts.state.baseline }
     private var system: UnitSystem { drafts.state.massScale == 1 ? .imperial : .metric }
@@ -81,7 +82,7 @@ struct WorkoutTrackerSessionView: View {
                 }
                 ForEach(current.exercises) { exercise in
                     WorkoutInlineExerciseCard(session: current, exercise: exercise,
-                        library: tracker.state.frontendPage?.dashboard.exerciseLibrary ?? exerciseLibrary,
+                        library: latestExerciseLibrary ?? tracker.state.frontendPage?.dashboard.exerciseLibrary ?? exerciseLibrary,
                         revision: drafts.state.revision, system: system, refresh: refresh, drafts: drafts,
                         editingEnabled: sameConnection, hasUnsavedEdits: drafts.state.isProtected)
                 }
@@ -155,10 +156,10 @@ struct WorkoutTrackerSessionView: View {
     private func readForSave() async throws -> WorkoutSessionDraft.Remote {
         guard sameConnection else { throw WorkoutSyncTransportError.configuration }
         let identity = connectionIdentity
-        try await tracker.refreshDashboard(mesocycleId: current.mesocycleId, sessionId: current.id)
+        let page = try await tracker.readHistorySession(mesocycleId: current.mesocycleId, sessionId: current.id)
         guard !Task.isCancelled, identity == connectionIdentity,
-              let page = tracker.state.frontendPage,
               let session = page.dashboard.sessions.first(where: { $0.id == current.id && $0.mesocycleId == current.mesocycleId }) else { throw WorkoutTrackerContractError.invalidSnapshot }
+        if page.lifeRevision >= drafts.state.revision { latestExerciseLibrary = page.dashboard.exerciseLibrary }
         return .init(session: session, revision: page.lifeRevision)
     }
     private var shareCard: some View {

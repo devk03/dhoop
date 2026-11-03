@@ -11,6 +11,39 @@ final class WorkoutTrackerDashboardTests: XCTestCase {
             "pagination":["cursor":cursor,"limit":10,"totalSessions":total,"nextCursor":next as Any? ?? NSNull()],
             "capabilities":["manualCommands":false,"frontendStart":false]])
     }
+    func testSavingReaderDoesNotWaitForAnotherDashboardReadOrRewriteItsCache() async throws {
+        let file = WorkoutTrackerFileStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("state.json"))
+        let config = WorkoutSyncConfiguration(enabled: true, origin: "https://track.kunjadia.dev", installationId: UUID(), credential: String(repeating: "a", count: 64))
+        var state = WorkoutTrackerState(); state.enabled = true; state.origin = config.origin; state.installationId = config.installationId
+        try file.save(state)
+        let cached = try page(revision: 4), exact = try page(revision: 5)
+        var release: CheckedContinuation<Void, Never>?
+        var exactReads = 0
+        let client = WorkoutTrackerClient(store: file, send: { endpoint, body, _ in
+            XCTAssertNil(body)
+            if endpoint == .dashboard(mesocycleId: nil, sessionId: nil, cursor: 0, limit: 10) {
+                await withCheckedContinuation { release = $0 }; return cached
+            }
+            XCTAssertEqual(endpoint, .dashboard(mesocycleId: 1, sessionId: 10, cursor: 0, limit: 1))
+            exactReads += 1; return exact
+        }, readCredential: { config }, saveCredential: { _ in })
+        let background = Task { try await client.refreshDashboard() }
+        for _ in 0..<100 { if release != nil { break }; await Task.yield() }
+        XCTAssertTrue(client.busy)
+        let session = try JSONDecoder().decode(WorkoutTrackerDashboard.self, from: cached).dashboard.sessions[0]
+        let draft = WorkoutSessionDraft(origin: config.origin, installationId: config.installationId,
+            baseline: session, revision: 4, massScale: 1, localeIdentifier: "en_US")
+        do {
+            let latest = try await WorkoutSessionDraftController.reader(for: draft, tracker: client)()
+            XCTAssertEqual(latest.revision, 5); XCTAssertEqual(latest.session.id, 10)
+            XCTAssertEqual(exactReads, 1); XCTAssertTrue(client.busy)
+            XCTAssertNil(client.state.frontendPage, "The scoped Save read must not replace the broader view's cache")
+        } catch { XCTFail("An unrelated read must not block the Save reader: \(error)") }
+        release?.resume(); try await background.value
+        XCTAssertEqual(client.state.frontendPage?.lifeRevision, 4)
+        XCTAssertFalse(client.busy)
+    }
+
     func testWorkoutOnlyNameSurvivesRoundTripWithoutRenamingCatalogOrOtherSessions() throws {
         let exercise = WorkoutTrackerDashboard.Exercise(id: 11, exerciseKey: "press", name: "Bench press", orderIndex: 1,
             loadMode: "barbell", progressionType: "double", plannedSets: 3, plannedReps: 8, plannedLoad: 135,
