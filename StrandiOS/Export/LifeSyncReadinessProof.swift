@@ -29,6 +29,8 @@ enum LifeSyncReadinessProof {
         let prefix = "--whoop-receipt-run="
         guard let value = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(prefix) }),
               let run = UUID(uuidString: String(value.dropFirst(prefix.count))) else { return }
+        ScreenIdle.hold(.supportCapture, true)
+        defer { ScreenIdle.hold(.supportCapture, false) }
         let collection = WhoopCollectionModel()
         func capture(_ phase: String) async {
             await model.ble.flushStandardHRForLifecycle(reason: .explicit)
@@ -56,11 +58,24 @@ enum LifeSyncReadinessProof {
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
         }
-        model.startRealtimeHR()
-        defer { model.stopRealtimeHR() }
-        for phase in ["midpoint", "after"] {
-            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
-            await capture(phase)
+        do {
+            model.startRealtimeHR()
+            defer { model.stopRealtimeHR() }
+            let started = Date()
+            for (phase, offset) in [("midpoint", 30.0), ("after", 60.0)] {
+                let remaining = max(0, started.addingTimeInterval(offset).timeIntervalSinceNow)
+                do { try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) } catch { return }
+                await capture(phase)
+            }
+        }
+        if ProcessInfo.processInfo.arguments.contains("--whoop-collection-settings") {
+            model.ble.probeBodyLocationAndStatus()
+            model.ble.send(.getDataRange, payload: [0x00])
+            do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+            // Explicit manual retry after live HR has been released, bypassing only the normal sync cooldown.
+            model.ble.syncNow()
+            do { try await Task.sleep(nanoseconds: 65_000_000_000) } catch { return }
+            await capture("historyAfter")
         }
     }
 

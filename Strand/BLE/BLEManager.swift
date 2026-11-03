@@ -2442,6 +2442,8 @@ public final class BLEManager: NSObject, ObservableObject {
                 // only by probeDeviceConfigValues() (user-initiated, Test Centre gated).
                 || (DeviceConfigReadProbe.isReadOnlyOpcode(command.rawValue) && deviceConfigReport != nil)
                 || command == .sendHistoricalData || command == .historicalDataResult
+                // Explicit support run: read the existing WHOOP 5 range before retrying history.
+                || (command == .getDataRange && ProcessInfo.processInfo.arguments.contains("--whoop-collection-settings"))
                 || command == .setClock || command == .getClock
                 // Bounded Raw Data Collector only. These writes remain impossible unless the explicit
                 // user-started capture window is in flight; normal sync never enables this gate.
