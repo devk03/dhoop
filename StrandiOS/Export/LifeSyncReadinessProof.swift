@@ -43,6 +43,19 @@ enum LifeSyncReadinessProof {
         }
         await capture("before")
         guard model.live.connected, model.live.activeIsWhoop else { return }
+        if ProcessInfo.processInfo.arguments.contains("--whoop-collection-settings") {
+            model.ble.probeDeviceConfigValues(collectionSettings: true)
+            // The fixed read plan has ten steps with an eight-second per-step timeout.
+            for _ in 0..<90 {
+                if let report = model.live.deviceConfigProbe,
+                   report != BLEManager.deviceConfigProbeWaiting {
+                    let file = FileManager.default.temporaryDirectory.appendingPathComponent("whoop-settings-" + run.uuidString + ".txt")
+                    try? Data(report.utf8).write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+                    break
+                }
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+            }
+        }
         model.startRealtimeHR()
         defer { model.stopRealtimeHR() }
         for phase in ["midpoint", "after"] {

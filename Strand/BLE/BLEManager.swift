@@ -4223,6 +4223,7 @@ public final class BLEManager: NSObject, ObservableObject {
     private var deviceConfigReport: DeviceConfigReadProbeReport?
     /// The step whose reply we are waiting for, nil between steps.
     private var deviceConfigAwaiting: DeviceConfigReadProbeReport.Step?
+    private var deviceConfigAwaitingSequence: UInt8?
     /// Monotonic step counter so a late timeout from an earlier step can't cancel a live walk.
     private var deviceConfigStep = 0
 
@@ -4241,14 +4242,16 @@ public final class BLEManager: NSObject, ObservableObject {
     /// of guessed oxygen key names. Result goes to `LiveState.deviceConfigProbe` (the Devices dialog) and
     /// to the strap log — no new storage. User-initiated only, Test Centre → Connection gated. Twin of
     /// Android `probeDeviceConfigValues()`.
-    public func probeDeviceConfigValues() {
+    public func probeDeviceConfigValues(collectionSettings: Bool = false) {
         guard state.connected else {
             log("Device-config read probe (#103) ignored — not connected")
             return
         }
         // Defence in depth: the menu entry is already Test-Centre gated, but the sender re-checks so no
         // other path can start a probe on a default install.
-        guard TestCentre.active(.connection) else {
+        let supportRead = collectionSettings && selectedModel.deviceFamily == .whoop5
+            && ProcessInfo.processInfo.arguments.contains("--whoop-collection-settings")
+        guard TestCentre.active(.connection) || supportRead else {
             log("Device-config read probe (#103) ignored — Test Centre → Connection is off")
             return
         }
@@ -4266,8 +4269,9 @@ public final class BLEManager: NSObject, ObservableObject {
         deviceConfigReport = DeviceConfigReadProbeReport(
             family: selectedModel.deviceFamily,
             // Include names observed on the strap without changing the R22 write sequence.
-            knownFlagKeys: flagKeys,
-            candidateKeys: DeviceConfigReadProbe.oxygenCandidateKeys)
+            knownFlagKeys: supportRead ? ["enable_r22_packets", "enable_r22_v9_packets", "disable_pip_r26_packets"] : flagKeys,
+            candidateKeys: supportRead ? ["cont_collection_mode", "max_collection_backlog", "sigproc_wear_detect",
+                "whoop_live_hr_in_adv_ind_pkt", "whoop_live_2_hrm_devices"] : DeviceConfigReadProbe.oxygenCandidateKeys)
         state.deviceConfigProbe = BLEManager.deviceConfigProbeWaiting
         log("Device-config read probe (#103): asking for config VALUES via GET_DEVICE_CONFIG_VALUE(121) + GET_FF_VALUE(128) on family=\(selectedModel.deviceFamily); read-only (SET_FF_VALUE/120 and SET_DEVICE_CONFIG_VALUE/119 are never sent from this path)")
         advanceDeviceConfigProbe()
@@ -4290,6 +4294,7 @@ public final class BLEManager: NSObject, ObservableObject {
         deviceConfigStep &+= 1
         deviceConfigAwaiting = step
         let armed = deviceConfigStep
+        deviceConfigAwaitingSequence = seq &+ 1
         send(command, payload: DeviceConfigReadProbe.requestBody(key: step.key))
         // BLE callbacks + this timer both run on the main queue, so the guard-then-advance is race-free:
         // a reply that already landed advanced `deviceConfigStep`, and this stale closure no-ops.
@@ -4324,8 +4329,15 @@ public final class BLEManager: NSObject, ObservableObject {
     /// instead of being decoded.
     private func handleDeviceConfigProbeResponse(_ frame: [UInt8], isWhoop5: Bool) {
         guard deviceConfigReport != nil, let step = deviceConfigAwaiting else { return }
-        deviceConfigAwaiting = nil
         let family: DeviceFamily = isWhoop5 ? .whoop5 : .whoop4
+        // Keep the current request through PENDING and ignore unrelated/late replies. A
+        // previous request must not advance the plan or attribute its value to another key.
+        if isWhoop5 {
+            guard verifyFrame(frame, family: family).ok, frame.count > 12,
+                  frame[10] == step.opcode, frame[11] == deviceConfigAwaitingSequence else { return }
+            if frame[12] == 2 { return }
+        }
+        deviceConfigAwaiting = nil
         switch DeviceConfigReadProbe.parse(frame: frame, family: family, expecting: step.opcode) {
         case .success(let r): deviceConfigReport?.noteReply(r, for: step)
         case .failure(let f): deviceConfigReport?.noteFailure(f, for: step)
