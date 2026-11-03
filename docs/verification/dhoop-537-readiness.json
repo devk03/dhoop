@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "build": 537,
+  "signatureVerified": true,
+  "stableBundleTeamAppGroupVerified": true,
+  "cameraUsagePresent": true,
+  "executableSHA256": "7691f4c11e7ff37d8862f6352cfdcd67baabc123834eeb9047ddb516bbb07777",
+  "codeCommit": "63652af9eb3e48a3412e005a039e22d1234d454a",
+  "iosSignedReleaseBuild": "passed",
+  "iosSimulatorBuild": "passed",
+  "unchangedCoreRegressionEvidence": {
+    "build": 536,
+    "passed": 76,
+    "failed": 0,
+    "manifest": "docs/verification/dhoop-536-readiness.json"
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "physicalIPhoneInstallation": "verified_in_place_build_537",
+  "latestPhysicalReadAttempt": {
+    "launchReturnedSuccess": true,
+    "matchingFreshReportsFound": false,
+    "iOSPasscodeRequired": true,
+    "status": "not_verified"
+  },
+  "MacSimulatorControl": "blocked_by_Mac_lock",
+  "nativeSyntheticVisuals": {
+    "narrowSwapWordWrapReproduced": true,
+    "narrowHeaderRepairVerifiedUpperAndLower": true,
+    "normalPhoneFramebufferInspected": true,
+    "gallery": "docs/design/dhoop-workout-health-v2/implementation-workout-537",
+    "capturesRetouched": false
+  },
+  "simulatorWorkflowFixturePrepared": {
+    "upperAndLower": true,
+    "twoExercises": true,
+    "eligibleLibrary": true,
+    "persistentDemoReceipts": true,
+    "lostReplyScenario": true,
+    "interactionMatrixExecuted": false
+  },
+  "authenticatedProductionMCPReadEvidence": "docs/verification/dhoop-536-mcp-reads.json",
+  "installerArchive": "build/DhoopInstallers/Dhoop-537.zip",
+  "databaseMigration": false,
+  "credentialsOrSigningIdentifiersChanged": false,
+  "productionSyntheticOwnerWritesAttempted": false,
+  "goalComplete": false,
+  "remainingGoalWork": [
+    "Interactive exercise library/custom swap save/relaunch on native UI",
+    "Interactive Upper/Lower workflow matrix, including 2-second delay and failed-save recovery",
+    "Health full interactive save/photo selection and camera checks",
+    "Keyboard/loading states and VoiceOver navigation",
+    "30 actual visible interactions with p95 feedback within 100ms",
+    "Fresh physical-iPhone read-only endpoint timings and native responsiveness verification"
+  ]
+}

@@ -148,3 +148,49 @@ Build 536 was signed, installed in place and version-verified on the physical iP
 could not launch because iOS reported the phone locked. Mac simulator control is also blocked by the
 Mac lock screen. Remaining interactive/physical gates from build 535 still apply; the full goal is
 not complete. See [build-536 readiness](../../verification/dhoop-536-readiness.json).
+
+
+## Build 537 — readable controls on narrow cards
+
+The same Lower fixture at 320pt exposed the Swap label wrapping inside its word. The header now
+keeps controls at their natural width and moves them below the exercise name when necessary.
+Accessibility sizes retain a vertical header. Fonts, spacing, touch targets and surfaces use the
+existing StrandDesign tokens. No set state or command behavior changed in this layout repair.
+
+| Before · 320pt component render | After · 320pt component render |
+| --- | --- |
+| [![Wrapped Swap label](implementation-workout-537/before/lower-320.png)](implementation-workout-537/before/lower-320.png) | [![Readable Swap label](implementation-workout-537/after/lower-320.png)](implementation-workout-537/after/lower-320.png) |
+
+| Upper · 320pt component render | Lower · 390pt component render | Native simulator framebuffer · 1206 × 2622px |
+| --- | --- | --- |
+| [![Upper](implementation-workout-537/after/upper-320.png)](implementation-workout-537/after/upper-320.png) | [![Lower](implementation-workout-537/after/lower-390.png)](implementation-workout-537/after/lower-390.png) | [![Native simulator](implementation-workout-537/after/lower-device-1206.png)](implementation-workout-537/after/lower-device-1206.png) |
+
+These are unchanged, unretouched native component/workflow-fixture captures with synthetic data.
+The diagnostic counter text belongs to the fixture, not the shipped workout screen. Offscreen
+hierarchy renders verify layout; they do not replace interactive scroll, keyboard or frame-timing
+checks. The framebuffer image shows the actual simulator display. Accessibility3 captures are
+retained alongside each normal capture; scrolling through their rows still needs interactive QA.
+
+The simulator-only fixture now supplies two exercises and an eligible library for either workout:
+
+```sh
+xcrun simctl launch SIMULATOR_ID com.devkunjadia.zhoop.loshi.noop \
+  --workout-draft-ui-proof --workout-ui-run=NEW_UUID --workout-ui-lower
+```
+
+Omit `--workout-ui-lower` for Upper. Add `--workout-sheet-render-proof` to capture the normal/narrow/
+accessibility layouts under `tmp/dhoop-workout-sheets` in the app data container. Use a distinct run
+UUID for each of three repetitions. The Lower variant has its own session and retained folder.
+Fresh runs have separate synthetic connection IDs; existing runs preserve their connection ID.
+For interruption scenarios, use the SAME run UUID across restarts:
+
+- `--workout-ui-slow`: asynchronous 2-second command response.
+- `--workout-ui-offline`: unavailable read/write transport; remove it to test reconnection.
+- `--workout-ui-stale-once`: rejected older revision; inspect the retained conflict before resaving.
+- `--workout-ui-drop-reply-once`: save and persist the demo receipt, then lose its first response.
+  Recovery must read that receipt without applying the same change again.
+
+Demo receipts, canonical fixture results and reusable library entries persist in the isolated
+fixture folder. These flags are preparation for interactive tests, not claims those tests passed.
+No actual HTTP client, owner credential store, production medical record or production workout is
+used by these injected clients. The completed model regression evidence remains in build 536.
