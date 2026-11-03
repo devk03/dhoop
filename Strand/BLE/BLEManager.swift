@@ -4112,7 +4112,9 @@ public final class BLEManager: NSObject, ObservableObject {
         }
         state.bodyLocationProbe = BLEManager.bodyLocationProbeWaiting
         log("Body-location probe (#690): sending GET_BODY_LOCATION_AND_STATUS(84, read-only) on family=\(selectedModel.deviceFamily); the raw COMMAND_RESPONSE is surfaced when it lands")
-        send(.getBodyLocationAndStatus)
+        // WHOOP 5's revisioned read rejects legacy revision 0 and returns an initialized
+        // zero body. Preserve the WHOOP 4 request; use revision 1 for the documented 5/MG read.
+        send(.getBodyLocationAndStatus, payload: selectedModel.deviceFamily == .whoop5 ? [0x01] : [0x00])
         // No-reply timeout: silence is itself the verdict (the strap doesn't serve 0x54 on this firmware).
         // BLE callbacks + this timer both run on the main queue, so the guard-then-set is race-free.
         DispatchQueue.main.asyncAfter(deadline: .now() + BLEManager.bodyLocationProbeTimeout) { [weak self] in

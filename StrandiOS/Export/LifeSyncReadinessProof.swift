@@ -46,6 +46,12 @@ enum LifeSyncReadinessProof {
         }
         await capture("before")
         guard model.live.connected, model.live.activeIsWhoop else { return }
+        if ProcessInfo.processInfo.arguments.contains("--whoop-status-only") {
+            model.ble.probeBodyLocationAndStatus()
+            do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+            await capture("statusAfter")
+            return
+        }
         if ProcessInfo.processInfo.arguments.contains("--whoop-collection-settings") {
             model.ble.probeDeviceConfigValues(collectionSettings: true)
             // The fixed read plan has ten steps with an eight-second per-step timeout.
