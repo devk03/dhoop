@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "build": 533,
+  "codeCommit": "7298af5b6ee4092fe2da7618b6c51e0f36e89ba2",
+  "iosReleaseBuild": "passed",
+  "signatureAndStableIdentityVerified": true,
+  "executableSHA256": "d7fdf13aff9b6a2d2f543788fca53ccd1546f7cb9731cafdc67e964aad242b16",
+  "localArchive": "build/DhoopInstallers/Dhoop-533.zip",
+  "targetedSyncTests": {
+    "passed": 25,
+    "failed": 0
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "physicalIPhoneInstallation": "verified_in_place_2026_11_02",
+  "physicalIPhoneInstalledVersionVerified": 533,
+  "physicalIPhoneLaunch": "verified_with_opt_in_support_flags",
+  "matchingNonceInitialReportVerified": true,
+  "matchingNonceSecondReportVerified": false,
+  "proteinCandidateComparison": "uses_same_calorie_setting_as_production_export",
+  "historicalCollection": "repeated_timeouts_without_banked_records_observed_in_strap_logs",
+  "vendorNotificationErrors": "observed_without_sufficient_error_detail_to_identify_cause",
+  "freshMeasuredHRPersistenceVerified": false,
+  "newLifeSummaryReceiptVerified": false,
+  "overnightCapturePreferenceChanged": false,
+  "existingDataOrManualValuesEdited": false,
+  "databaseMigration": false,
+  "strapProtocolOrAlarmChanges": false,
+  "credentialsChanged": false,
+  "scope": "ios_local_support_diagnostics_not_a_claim_of_collection_repair",
+  "remainingLimitations": [
+    "second_scheduled_support_report_not_observed",
+    "history_collection_failure_not_resolved",
+    "no_new_summary_available_for_end_to_end_delivery_verification"
+  ]
+}
