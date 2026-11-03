@@ -39,6 +39,7 @@ enum LifeSyncReadinessProof {
             "sleepMessage": checkpoint.message, "proteinMessage": checkpoint.proteinMessage ?? "Not enabled",
             "lifeSummaryDeliveryInvoked": false]
         if let synced = model.live.successfulSyncAt(for: sourceId) { result["lastSuccessfulStrapSyncAt"] = synced }
+        if let error = model.live.lastSyncError { result["syncError"] = error }
         if let value = delivery.pending?.event { result["sleepPendingEventId"] = value.eventId; result["sleepPendingWakeDate"] = value.wakeDate; result["sleepPendingRevision"] = value.revision }
         if let value = delivery.proteinPending?.event { result["proteinPendingEventId"] = value.eventId; result["proteinPendingDay"] = value.day; result["proteinPendingRevision"] = value.revision }
         if let value = delivery.lastAcceptedEvent { result["sleepAcceptedEventId"] = value.eventId; result["sleepAcceptedWakeDate"] = value.wakeDate; result["sleepAcceptedRevision"] = value.revision }
@@ -50,7 +51,7 @@ enum LifeSyncReadinessProof {
             result["completedProteinThroughDay"] = days.through
             result["sleepWakeThroughDay"] = SleepWebhookPolicy.sleepWakeDays(now: now).through
             let entries = try ProteinWebhookProjection.savedEntries(includeCalories: checkpoint.caloriesEnabled == true)
-            let candidates = try ProteinWebhookProjection.summaries(entries: entries, acknowledged: delivery.proteinAcknowledged ?? [:], from: days.from, to: days.through)
+            let candidates = try ProteinWebhookProjection.summaries(entries: entries, acknowledged: delivery.proteinAcknowledged ?? [:], from: days.from, to: days.through, includeCalories: checkpoint.caloriesEnabled == true)
             result["proteinSavedDays"] = Array(Set(entries.map(\.day))).sorted()
             result["proteinCandidateDays"] = candidates.filter { $0.day <= days.through && delivery.proteinAcknowledged?[$0.day] != $0 }.map(\.day)
             if let store = await model.repo.storeHandle() {
