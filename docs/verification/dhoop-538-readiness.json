@@ -1,0 +1,22 @@
+{
+  "build": 538,
+  "change": "WHOOP Hello lifecycle logging and opt-in bounded iPhone collection support capture",
+  "validation": {
+    "iosReleaseBuild": "passed",
+    "macOSAppBuild": "passed",
+    "targetedProtocolTests": {
+      "executed": 40,
+      "failures": 0
+    },
+    "physicalIPhoneInstall": "passed",
+    "stableBundleTeamAndAppGroup": "verified",
+    "helloLifecycle": "Correlated Pending then Success observed on hardware",
+    "notificationSubscriptions": "Transient failures followed by active subscriptions",
+    "boundedLiveCheck": "Completed automatically; live request released at end; no received or persisted HR observed",
+    "historicalOffload": "Timed out without banking records"
+  },
+  "conclusion": "A stuck Hello response is not supported by the fresh capture. Data collection is not restored. Earlier Pending-only logs omitted successful responses.",
+  "scope": "Diagnostic-only. No connection-gating changes, firmware changes, schema migrations, or strap configuration changes. Support capture uses existing realtime request and local storage flush.",
+  "platformScope": "Apple logging; iPhone-only support launch path. No decoder or stored-value changes.",
+  "evidencePrivacy": "Raw device logs and capture files retained locally outside git."
+}
