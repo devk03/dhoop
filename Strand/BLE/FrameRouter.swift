@@ -134,6 +134,13 @@ public final class FrameRouter {
             }
 
         case "COMMAND_RESPONSE":
+            // Sparse receipt evidence: ordinary logging omits SUCCESS, so a Pending-only log
+            // cannot establish that Hello never completed. Do not expose its identity/key body.
+            if family == .whoop5, parsed.cmdName?.hasPrefix("GET_HELLO(") == true {
+                let origin = parsed.parsed["resp_seq"]?.intValue.map(String.init) ?? "unknown"
+                let result = parsed.parsed["result"]?.stringValue ?? "unknown"
+                state.append(log: "WHOOP Hello receipt: origin=\(origin) result=\(result) frameBytes=\(frame.count)")
+            }
             if let sequence = parsed.parsed["resp_seq"]?.intValue,
                let result = parsed.parsed["result"]?.stringValue,
                let name = parsed.cmdName, let suffix = name.split(separator: "(").last,

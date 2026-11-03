@@ -6,6 +6,10 @@ import Foundation
 @MainActor
 enum LifeSyncReadinessProof {
     static func runIfRequested(model: AppModel) async {
+        if ProcessInfo.processInfo.arguments.contains("--whoop-receipt-check") {
+            await checkWhoopReceipt(model: model)
+            return
+        }
         guard ProcessInfo.processInfo.arguments.contains("--life-sync-readiness") else { return }
         let arguments = ProcessInfo.processInfo.arguments
         let runPrefix = "--life-sync-readiness-run="
@@ -19,6 +23,34 @@ enum LifeSyncReadinessProof {
             await capture(model: model, runId: runId, phase: "after", requestSync: true)
         }
     }
+    /// Explicit support run using the existing live-HR request, with bounded waiting and
+    /// private count/timestamp captures. Does not alter collection preferences or wake alarms.
+    private static func checkWhoopReceipt(model: AppModel) async {
+        let prefix = "--whoop-receipt-run="
+        guard let value = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix(prefix) }),
+              let run = UUID(uuidString: String(value.dropFirst(prefix.count))) else { return }
+        let collection = WhoopCollectionModel()
+        func capture(_ phase: String) async {
+            await model.ble.flushStandardHRForLifecycle(reason: .explicit)
+            await collection.refresh(repo: model.repo, live: model.live)
+            guard let data = try? JSONEncoder().encode(collection.proof(live: model.live, now: Date())) else { return }
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent("whoop-receipt-" + run.uuidString + "-" + phase + ".json")
+            try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        }
+        for _ in 0..<20 {
+            if model.live.connected && model.live.historyReady { break }
+            do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+        }
+        await capture("before")
+        guard model.live.connected, model.live.activeIsWhoop else { return }
+        model.startRealtimeHR()
+        defer { model.stopRealtimeHR() }
+        for phase in ["midpoint", "after"] {
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+            await capture(phase)
+        }
+    }
+
     private static func capture(model: AppModel, runId: String, phase: String, requestSync: Bool) async {
         let client = SleepWebhookClient.shared
         let sourceId = model.repo.deviceId
