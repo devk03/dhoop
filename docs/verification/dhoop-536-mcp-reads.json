@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "scope": "Authenticated production read-only MCP verification; private values omitted",
+  "nextWorkout": {
+    "schemaVersion": 1,
+    "readTransport": "authenticated Life MCP on Mac; not iPhone HTTP timings",
+    "explicitMutationCalls": 0,
+    "strengthRoundTripMilliseconds": 990,
+    "exactSessionRoundTripMilliseconds": 318,
+    "revisionConsistent": true,
+    "oneActiveLiftingProgram": true,
+    "exactSessionVerified": true,
+    "strengthKindVerified": true,
+    "setIdentitiesUnique": true,
+    "actualValuesWellFormed": true
+  },
+  "completedWorkout": {
+    "historyReadSucceeded": true,
+    "exactDetailVerified": true,
+    "statusCompleted": true,
+    "summaryCompletedCountMatchesDetail": true,
+    "summaryTotalCountMatchesDetail": true,
+    "hasStoredActualResults": true,
+    "allLoggedValuesFinite": true,
+    "explicitMutationCalls": 0
+  }
+}

@@ -124,3 +124,27 @@ entry reads passing with `inlineTopicCreation:true`. One finite Mac CLI repeat m
 work, not server-only or iPhone timings. No owner workout or Health test writes were performed.
 Interactive swap/create, keyboard/delay/loading states, VoiceOver navigation, 30 visible interactions
 and physical-phone verification remain required before the full goal can be declared complete.
+
+
+## Build 536 reliability follow-up
+
+The Save reader now uses an independent exact-session GET instead of the tracker's shared mutation
+lock and broader dashboard cache. A regression reproduced `deliveryInProgress` while an unrelated
+read held that lock; after the fix the Save reader returns its own verified revision and leaves the
+other cache unchanged. The screen refresh uses the same scoped read and retains its corresponding
+exercise library. The layout is unchanged from the labeled build-535 captures above.
+
+All 76 selected regressions passed: Health 29, command/client 19, workout draft 22, dashboard 6.
+A real two-second asynchronous response fixture kept 30 durable local edits available without a
+second submission; newer values survived relaunch after the original save completed. Model-edit
+p95 was 0.437333ms on the Mac test runner. This is not visible UI or physical-phone timing.
+
+Authenticated read-only Life MCP checks also verified one active lifting program, the next session,
+and an existing completed session with stored actual results. Completed/total summary counts matched
+the detail, and set identities were unique. No private values are published in the sanitized
+[read proof](../../verification/dhoop-536-mcp-reads.json); no mutation tools were called.
+
+Build 536 was signed, installed in place and version-verified on the physical iPhone. The fresh probe
+could not launch because iOS reported the phone locked. Mac simulator control is also blocked by the
+Mac lock screen. Remaining interactive/physical gates from build 535 still apply; the full goal is
+not complete. See [build-536 readiness](../../verification/dhoop-536-readiness.json).

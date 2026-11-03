@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "build": 536,
+  "signatureVerified": true,
+  "stableBundleTeamAppGroupVerified": true,
+  "cameraUsagePresent": true,
+  "executableSHA256": "2f19867b48cebe8198d956b99be8a44fea6de2ed4c116bb63cc903729a31c66f",
+  "codeCommit": "1594abe11a953f3acd5360adcdae9589fad26451",
+  "iosSignedReleaseBuild": "passed",
+  "iosSimulatorBuild": "passed",
+  "macOSSharedAppBuild": "passed",
+  "targetedRegressionTests": {
+    "passed": 76,
+    "failed": 0,
+    "health": 29,
+    "workoutCommandClient": 19,
+    "workoutDraft": 22,
+    "workoutDashboard": 6
+  },
+  "strandDesignTests": {
+    "passed": 130,
+    "failed": 0
+  },
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "physicalIPhoneInstallation": "verified_in_place_build_536",
+  "physicalReadOnlyProbe": "fresh_build_536_launch_blocked_by_phone_lock",
+  "simulatorUIControl": "blocked_by_Mac_lock",
+  "bootedSimulators": 1,
+  "unusedSimulatorsShutDownWithoutErasing": true,
+  "upperLowerModelWorkflows": {
+    "upper": 3,
+    "lower": 3,
+    "saveFinishReopenRelaunch": "passed",
+    "untouchedSetsRemainUnlogged": true
+  },
+  "retainedInputAndReceiptTests": "passed",
+  "concurrentCapabilityRegressionFailedBeforeFix": true,
+  "modelEditSample": {
+    "durableEdits": 30,
+    "totalMilliseconds": 9,
+    "HTTPRequests": 0,
+    "device": "Mac test runner",
+    "visibleUILatencyMeasured": false
+  },
+  "lifeHealthDeployment": {
+    "workerVersion": "0a1d48d0-103b-4742-985d-719c33ca421a",
+    "evidence": "coordinated Life thread report",
+    "authenticatedCapabilitiesHTTP": 200,
+    "inlineTopicCreation": true,
+    "limitOneEntriesHTTP": 200,
+    "singleMacCLIRequestMilliseconds": {
+      "capabilities": 774,
+      "entries": 113.5
+    },
+    "ownerHealthWritesAttempted": false
+  },
+  "simulatorSyntheticRenders": [
+    "Health dark/light/320pt/accessibility3/editor/detail/empty/error",
+    "Reusable exercise 320pt/390pt"
+  ],
+  "installerArchive": "build/DhoopInstallers/Dhoop-536.zip",
+  "productionSyntheticOwnerWritesAttempted": false,
+  "databaseMigration": false,
+  "credentialsOrSigningIdentifiersChanged": false,
+  "goalComplete": false,
+  "remainingGoalWork": [
+    "Interactive exercise library/custom swap save/relaunch on native UI",
+    "Interactive Upper/Lower workflow matrix, including 2-second delay and failed-save recovery",
+    "Health full interactive save/photo selection and camera checks",
+    "Keyboard/loading states and VoiceOver navigation",
+    "30 actual visible interactions with p95 feedback within 100ms",
+    "Fresh physical-iPhone read-only endpoint timings and native responsiveness verification"
+  ],
+  "saveReaderGlobalBusyRegression": {
+    "failedBeforeFix": "deliveryInProgress",
+    "passedAfterFix": true,
+    "broaderCacheUnchanged": true
+  },
+  "twoSecondPendingSaveTest": {
+    "passed": true,
+    "localEdits": 30,
+    "simulatedResponseDelayMilliseconds": 2000,
+    "modelEditP95Milliseconds": 0.437333,
+    "HTTPSubmissions": 1,
+    "newerEditsDurableAfterRelaunch": true,
+    "visibleUIOrPhoneLatencyMeasured": false
+  },
+  "authenticatedMCPReadProof": "docs/verification/dhoop-536-mcp-reads.json"
+}
