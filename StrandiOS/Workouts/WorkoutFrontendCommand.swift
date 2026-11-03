@@ -142,3 +142,40 @@ struct WorkoutFrontendFileStore {
         try data.write(to:url,options:.atomic)
     }
 }
+
+/// Reusable exercises share Life's catalog. Definitions are explicit and frozen with the command.
+struct WorkoutCustomExerciseDefinition: Codable, Equatable {
+    var name: String
+    let movementPattern: String
+    let loadMode: String
+    let unit: String
+    let increment: Double
+    let repMin: Int
+    let repMax: Int
+    let notes: String
+    static let loadModes = ["barbell", "machine", "dumbbell_each", "bodyweight_added", "bodyweight", "duration"]
+    func normalized() throws -> Self {
+        var value = self; value.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (1...200).contains(value.name.utf16.count), (1...100).contains(movementPattern.utf16.count),
+              Self.loadModes.contains(loadMode), unit == "lb", increment.isFinite, increment > 0, increment <= 500,
+              (1...100).contains(repMin), (repMin...100).contains(repMax), notes.utf16.count <= 2000 else { throw Invalid() }
+        return value
+    }
+    var value: WorkoutTrackerValue {
+        .object(["name": .string(name), "movementPattern": .string(movementPattern), "loadMode": .string(loadMode),
+                 "unit": .string(unit), "increment": .number(increment), "repMin": .number(Double(repMin)),
+                 "repMax": .number(Double(repMax)), "notes": .string(notes)])
+    }
+    struct Invalid: LocalizedError {
+        var errorDescription: String? { "Review the exercise name, load type, increment and rep range before saving." }
+    }
+    static func normalize(command: [String: WorkoutTrackerValue]) throws -> [String: WorkoutTrackerValue] {
+        guard let value = command["replacementExercise"] else { return command }
+        guard command["action"] == .string("substitute_exercise"),
+              case .string(let key) = command["replacementExerciseKey"], key.hasPrefix("custom:"),
+              let id = UUID(uuidString: String(key.dropFirst(7))), key == "custom:" + id.uuidString.lowercased() else { throw Invalid() }
+        let data = try JSONEncoder().encode(value)
+        let definition = try JSONDecoder().decode(Self.self, from: data).normalized()
+        var result = command; result["replacementExercise"] = definition.value; return result
+    }
+}

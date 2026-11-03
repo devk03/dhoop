@@ -71,6 +71,7 @@ final class WorkoutFrontendClient: ObservableObject {
     }
     @discardableResult
     func prepare(command:[String:WorkoutTrackerValue],revision:Int,operationId:UUID = UUID()) throws -> UUID {
+        let command = try WorkoutCustomExerciseDefinition.normalize(command: command)
         if let existing = state.operations.first(where: { $0.id == operationId }) {
             let config = try credentials()
             guard !storageUnavailable, existing.origin == config.origin, existing.installationId == config.installationId,
@@ -83,6 +84,7 @@ final class WorkoutFrontendClient: ObservableObject {
             guard action == "update_session", state.capabilities?.sessionBatchSave == true else { throw Failure.disabled }
         }
         if action == "update_progression_preferences", state.capabilities?.progressionPreferences != true { throw Failure.disabled }
+        if command["replacementExercise"] != nil, state.capabilities?.customExerciseSubstitution != true { throw Failure.disabled }
         let manualCompletion = action == "update_session" && state.capabilities?.sessionCompletion == true &&
             [WorkoutTrackerValue.string("completed"), .string("planned")].contains(command["status"] ?? .null)
         if manualCompletion && command["date"] != nil { throw Failure.disabled }
@@ -160,6 +162,8 @@ final class WorkoutFrontendClient: ObservableObject {
             if action == "update_session", recovered.intent.command["date"] != nil,
                state.capabilities?.sessionDateScheduling != true { throw Failure.disabled }
             if action == "update_progression_preferences", state.capabilities?.progressionPreferences != true { throw Failure.disabled }
+            if recovered.intent.command["replacementExercise"] != nil,
+               state.capabilities?.customExerciseSubstitution != true { throw Failure.disabled }
             do { try await submit(id) }
             catch {
                 // A valid rejected envelope can also be returned directly (including a replay).

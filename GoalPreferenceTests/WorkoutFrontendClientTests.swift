@@ -35,6 +35,55 @@ final class WorkoutFrontendClientTests: XCTestCase {
         return try JSONSerialization.data(withJSONObject: object)
     }
 
+    func testCustomExerciseNormalizesNameBeforeFreezingAndRequiresCapability() async throws {
+        let key = "custom:" + UUID().uuidString.lowercased()
+        let definition = WorkoutCustomExerciseDefinition(name: "  Cable press ", movementPattern: "horizontal_push",
+            loadMode: "machine", unit: "lb", increment: 5, repMin: 8, repMax: 12, notes: "Owner-defined")
+        let command: [String: WorkoutTrackerValue] = ["action": .string("substitute_exercise"),
+            "mesocycleId": .number(1), "sessionId": .number(10), "sessionExerciseId": .number(11),
+            "replacementExerciseKey": .string(key), "replacementExercise": definition.value]
+        for allowed in [false, true] {
+            let file = store()
+            var sent: [Data] = []
+            let client = WorkoutFrontendClient(store: file, send: { endpoint, body, _ in
+                if endpoint == .frontendCapabilities {
+                    return try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "manualCommands": true,
+                        "frontendStart": false, "customExerciseSubstitution": allowed, "lifeRevision": 4, "actions": ["substitute_exercise"]])
+                }
+                sent.append(try XCTUnwrap(body)); throw URLError(.timedOut)
+            }, readCredential: { self.config }, saveCredential: { _ in })
+            try await enable(client)
+            if !allowed {
+                XCTAssertThrowsError(try client.prepare(command: command, revision: 4)); XCTAssertTrue(client.state.operations.isEmpty)
+                continue
+            }
+            let id = try client.prepare(command: command, revision: 4)
+            XCTAssertEqual(try client.prepare(command: command, revision: 4, operationId: id), id)
+            let item = try XCTUnwrap(client.unresolved)
+            var normalized = definition; normalized.name = "Cable press"
+            XCTAssertEqual(item.intent.command["replacementExercise"], normalized.value)
+            XCTAssertEqual(item.intent.command["replacementExerciseKey"], .string(key))
+            do { try await client.submit(id); XCTFail("Expected timeout") } catch { }
+            let reopened = WorkoutFrontendClient(store: file, readCredential: { self.config }, saveCredential: { _ in })
+            XCTAssertEqual(reopened.unresolved?.bytes, sent.first)
+            XCTAssertEqual(reopened.unresolved?.intent.command, item.intent.command)
+        }
+    }
+
+    func testCustomExerciseRejectsInvalidDefinitionsWithoutCreatingOperation() throws {
+        let definition = WorkoutCustomExerciseDefinition(name: "Press", movementPattern: "horizontal_push",
+            loadMode: "machine", unit: "lb", increment: 5, repMin: 8, repMax: 12, notes: "")
+        var blank = definition; blank.name = " \n "
+        XCTAssertThrowsError(try blank.normalized())
+        XCTAssertThrowsError(try WorkoutCustomExerciseDefinition(name: "Press", movementPattern: "horizontal_push",
+            loadMode: "machine", unit: "kg", increment: 5, repMin: 8, repMax: 12, notes: "").normalized())
+        XCTAssertThrowsError(try WorkoutCustomExerciseDefinition(name: "Press", movementPattern: "horizontal_push",
+            loadMode: "machine", unit: "lb", increment: 0, repMin: 8, repMax: 7, notes: "").normalized())
+        let bad: [String: WorkoutTrackerValue] = ["action": .string("substitute_exercise"),
+            "replacementExerciseKey": .string("custom:unstable"), "replacementExercise": definition.value]
+        XCTAssertThrowsError(try WorkoutCustomExerciseDefinition.normalize(command: bad))
+    }
+
     func testSchedulingRequiresExplicitCapabilityAndDoesNotRequireWorkoutStartPermission() async throws {
         for allowed in [false, true] {
             let client = WorkoutFrontendClient(store: store(), send: { endpoint, body, _ in
