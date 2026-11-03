@@ -160,6 +160,7 @@ targets:
       - StrandiOS/Workouts/WorkoutSetObservation.swift
       - StrandiOS/Workouts/WorkoutSyncEndpoint.swift
       - StrandiOS/Workouts/WorkoutSyncTransport.swift
+      - StrandiOS/Export/BoundedHTTPDataRequest.swift
       - StrandiOS/Workouts/WorkoutTrackerState.swift
       - StrandiOS/Workouts/WorkoutTrackerDashboard.swift
       - StrandiOS/Workouts/WorkoutHistoryPage.swift

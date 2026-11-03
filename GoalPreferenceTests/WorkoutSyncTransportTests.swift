@@ -3,6 +3,8 @@ import XCTest
 
 private final class WorkoutMockProtocol: URLProtocol, @unchecked Sendable {
     static var handler: ((URLRequest) -> (Int, [String: String], Data))?
+    static var waitAfterHeaders = false
+    static var stopped: (() -> Void)?
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -12,14 +14,18 @@ private final class WorkoutMockProtocol: URLProtocol, @unchecked Sendable {
         let (status, headers, body) = handler(request)
         guard let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers) else { return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if Self.waitAfterHeaders { return }
         client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }
-    override func stopLoading() {}
+    override func stopLoading() { Self.stopped?() }
 }
 
 final class WorkoutSyncTransportTests: XCTestCase {
-    override func tearDown() { WorkoutMockProtocol.handler = nil; super.tearDown() }
+    override func tearDown() {
+        WorkoutMockProtocol.handler = nil; WorkoutMockProtocol.waitAfterHeaders = false
+        WorkoutMockProtocol.stopped = nil; super.tearDown()
+    }
     private func config() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [WorkoutMockProtocol.self]
@@ -28,6 +34,47 @@ final class WorkoutSyncTransportTests: XCTestCase {
     private func credentials() -> WorkoutSyncConfiguration {
         WorkoutSyncConfiguration(enabled: true, origin: "https://track.kunjadia.dev", installationId: UUID(), credential: String(repeating: "a", count: 64))
     }
+    func testActualBodyLimitWithoutContentLength() async {
+        WorkoutMockProtocol.handler = { _ in
+            (200, ["Content-Type": "application/json"], Data(repeating: 120, count: WorkoutSyncTransport.responseLimit + 1))
+        }
+        do {
+            _ = try await WorkoutSyncTransport().send(to: .catalog, credentials: credentials(), configuration: config())
+            XCTFail("A missing Content-Length must not bypass the actual body limit")
+        } catch WorkoutSyncTransportError.responseTooLarge { }
+        catch { XCTFail("Unexpected transport result: \(error)") }
+    }
+    func testCancellingReadStopsTheUnderlyingRequest() async throws {
+        let started = expectation(description: "Request started"), stopped = expectation(description: "Network task cancelled")
+        WorkoutMockProtocol.waitAfterHeaders = true
+        WorkoutMockProtocol.stopped = { stopped.fulfill() }
+        WorkoutMockProtocol.handler = { _ in
+            started.fulfill(); return (200, ["Content-Type": "application/json"], Data())
+        }
+        let configuration = config(), credential = credentials()
+        let task = Task { try await WorkoutSyncTransport().send(to: .catalog, credentials: credential, configuration: configuration) }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        do { _ = try await task.value; XCTFail("Cancelled reads cannot succeed") }
+        catch is CancellationError { }
+        catch let error as URLError { XCTAssertEqual(error.code, .cancelled) }
+        await fulfillment(of: [stopped], timeout: 2)
+    }
+
+    func testLargeDashboardReadPreservesBodyAndReportsLocalReadTime() async throws {
+        let body = Data(("{\"fixture\":\"" + String(repeating: "x", count: 256 * 1024) + "\"}").utf8)
+        WorkoutMockProtocol.handler = { _ in (200, ["Content-Type": "application/json"], body) }
+        var elapsed: [Double] = []
+        for _ in 0..<3 {
+            let start = ContinuousClock.now
+            let result = try await WorkoutSyncTransport().send(to: .catalog, credentials: credentials(), configuration: config())
+            XCTAssertEqual(result, body)
+            let duration = start.duration(to: .now).components
+            elapsed.append(Double(duration.seconds) * 1000 + Double(duration.attoseconds) / 1e15)
+        }
+        print("WORKOUT_BODY_READ_256K_MS=\(elapsed)")
+    }
+
     func testConfiguredReadUsesOnlyDedicatedAuthAndInstallationHeaders() async throws {
         let credentials = credentials()
         let observed = expectation(description: "Intercepted configured request")

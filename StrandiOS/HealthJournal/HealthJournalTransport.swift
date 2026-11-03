@@ -44,20 +44,16 @@ final class HealthJournalTransport: NSObject, URLSessionTaskDelegate, @unchecked
         let settings = URLSessionConfiguration.ephemeral
         settings.httpShouldSetCookies = false; settings.httpCookieStorage = nil; settings.urlCredentialStorage = nil; settings.urlCache = nil
         settings.requestCachePolicy = .reloadIgnoringLocalCacheData; settings.timeoutIntervalForRequest = 20; settings.timeoutIntervalForResource = 45
-        let session = URLSession(configuration: settings, delegate: self, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
-        let (stream,response) = try await session.bytes(for: request)
-        guard let response = response as? HTTPURLResponse else { throw HealthJournalFailure.invalidResponse }
+        let reader = BoundedHTTPDataRequest(invalidResponse: HealthJournalFailure.invalidResponse, validate: { response in
+            let success = response.statusCode == 200
+            guard response.mimeType?.lowercased() == (success ? input.expectedImage?.contentType ?? "application/json" : "application/json") else {
+                throw HealthJournalFailure.http(response.statusCode)
+            }
+            return success ? (input.expectedImage == nil ? 8 * 1024 * 1024 : HealthJournalMedia.limit) : 8192
+        }, overflow: { _ in HealthJournalFailure.invalidResponse })
+        let (data, response) = try await reader.read(request, configuration: settings)
+        try Task.checkCancellation()
         let success = response.statusCode == 200
-        let limit = success ? (input.expectedImage == nil ? 8 * 1024 * 1024 : HealthJournalMedia.limit) : 8192
-        guard response.expectedContentLength <= limit else { throw HealthJournalFailure.invalidResponse }
-        guard response.mimeType?.lowercased() == (success ? input.expectedImage?.contentType ?? "application/json" : "application/json") else {
-            throw HealthJournalFailure.http(response.statusCode)
-        }
-        var data = Data()
-        for try await byte in stream {
-            try Task.checkCancellation(); guard data.count < limit else { throw HealthJournalFailure.invalidResponse }; data.append(byte)
-        }
         if !success {
             struct Problem: Decodable { let code: String }
             let code = try? JSONDecoder().decode(Problem.self, from: data).code

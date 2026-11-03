@@ -28,8 +28,6 @@ final class WorkoutSyncTransport: NSObject, URLSessionTaskDelegate, @unchecked S
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.timeoutIntervalForRequest = 12
         configuration.timeoutIntervalForResource = 20
-        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-        defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url)
         request.httpMethod = endpoint.method; request.httpBody = body
         request.setValue("Bearer " + credentials.credential, forHTTPHeaderField: "Authorization")
@@ -41,36 +39,32 @@ final class WorkoutSyncTransport: NSObject, URLSessionTaskDelegate, @unchecked S
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("DhoopWorkout/1.0", forHTTPHeaderField: "User-Agent")
         if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-        let (stream, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw WorkoutSyncTransportError.invalidResponse }
-        if http.statusCode != 200 {
-            // A small JSON conflict code is useful for review; HTML, unknown codes and details are not.
-            if [404, 409].contains(http.statusCode), http.mimeType?.lowercased() == "application/json", response.expectedContentLength <= 4096 {
-                var errorBody = Data()
-                for try await byte in stream {
-                    try Task.checkCancellation()
-                    guard errorBody.count < 4096 else { throw WorkoutSyncTransportError.http(http.statusCode) }
-                    errorBody.append(byte)
+        let reader = BoundedHTTPDataRequest(invalidResponse: WorkoutSyncTransportError.invalidResponse, validate: { http in
+            if http.statusCode != 200 {
+                guard [404, 409].contains(http.statusCode), http.mimeType?.lowercased() == "application/json" else {
+                    throw WorkoutSyncTransportError.http(http.statusCode)
                 }
-                struct Rejection: Decodable { let error: String }
-                if let body = try? JSONDecoder().decode(Rejection.self, from: errorBody) {
-                    if http.statusCode == 404, case .captures = endpoint, body.error == "capture_not_found" {
-                        throw WorkoutSyncTransportError.captureNotFound
-                    }
-                    if http.statusCode == 409, let reason = WorkoutSyncRejection(rawValue: body.error) {
-                        throw WorkoutSyncTransportError.rejected(reason)
-                    }
+                return 4096
+            }
+            guard http.mimeType?.lowercased() == "application/json" else { throw WorkoutSyncTransportError.invalidResponse }
+            return Self.responseLimit
+        }, overflow: { http in
+            http.statusCode == 200 ? WorkoutSyncTransportError.responseTooLarge : WorkoutSyncTransportError.http(http.statusCode)
+        })
+        let (result, http) = try await reader.read(request, configuration: configuration)
+        try Task.checkCancellation()
+        if http.statusCode != 200 {
+            // Only reviewed codes survive; private response details never enter the UI.
+            struct Rejection: Decodable { let error: String }
+            if let body = try? JSONDecoder().decode(Rejection.self, from: result) {
+                if http.statusCode == 404, case .captures = endpoint, body.error == "capture_not_found" {
+                    throw WorkoutSyncTransportError.captureNotFound
+                }
+                if http.statusCode == 409, let reason = WorkoutSyncRejection(rawValue: body.error) {
+                    throw WorkoutSyncTransportError.rejected(reason)
                 }
             }
             throw WorkoutSyncTransportError.http(http.statusCode)
-        }
-        guard http.mimeType?.lowercased() == "application/json" else { throw WorkoutSyncTransportError.invalidResponse }
-        guard response.expectedContentLength <= Self.responseLimit else { throw WorkoutSyncTransportError.responseTooLarge }
-        var result = Data()
-        for try await byte in stream {
-            try Task.checkCancellation()
-            guard result.count < Self.responseLimit else { throw WorkoutSyncTransportError.responseTooLarge }
-            result.append(byte)
         }
         return result
     }
