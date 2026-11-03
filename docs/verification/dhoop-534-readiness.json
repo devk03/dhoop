@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "build": 534,
+  "codeCommit": "0d3321bbbdf5df957e0db09f242e2bf592b7f96c",
+  "iosReleaseBuild": "passed",
+  "iosSimulatorDebugBuild": "passed",
+  "signatureAndStableIdentityVerified": true,
+  "executableSHA256": "264ab92121b9208cff46783a30b7d6cbb624349e5009d79194e4b5f392449421",
+  "localArchive": "build/DhoopInstallers/Dhoop-534.zip",
+  "physicalIPhoneInstallation": "verified_in_place",
+  "physicalConnectionProbe": "awaiting_unlock",
+  "targetedTransportAndHealthTests": {
+    "passed": 26,
+    "failed": 0
+  },
+  "targetedWorkoutDraftAndDashboardTests": {
+    "passed": 25,
+    "failed": 0
+  },
+  "nameOverlayRegressionFailedBeforeFix": true,
+  "simulatorOriginalSaveFailureReproduced": true,
+  "simulatorExplicitLogAndLocalRelaunchVerified": true,
+  "simulatorUntouchedRowsRemainUnlogged": true,
+  "localResponseReadBenchmark": "docs/design/dhoop-workout-health-v2/transport-benchmark.md",
+  "localizationGate": "passed",
+  "docCommentLint": "passed",
+  "productionWorkoutWritesAttempted": false,
+  "databaseMigration": false,
+  "credentialsOrSigningIdentifiersChanged": false,
+  "scope": "workout_editing_and_bounded_response_reader_milestone",
+  "remainingGoalWork": [
+    "native_reusable_custom_exercise_ui",
+    "Health_composer_and_visual_timeline",
+    "full_Upper_Lower_three_run_scenarios",
+    "physical_read_only_endpoint_timings",
+    "30_interaction_UI_latency_validation",
+    "narrow_accessibility_keyboard_and_delayed_request_UI_checks"
+  ]
+}
