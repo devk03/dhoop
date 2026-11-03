@@ -34,6 +34,7 @@ enum LifeSyncReadinessProof {
         let collection = WhoopCollectionModel()
         func capture(_ phase: String) async {
             await model.ble.flushStandardHRForLifecycle(reason: .explicit)
+            await model.ble.flushPuffinCaptures()
             await collection.refresh(repo: model.repo, live: model.live)
             guard let data = try? JSONEncoder().encode(collection.proof(live: model.live, now: Date())) else { return }
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("whoop-receipt-" + run.uuidString + "-" + phase + ".json")
@@ -69,6 +70,12 @@ enum LifeSyncReadinessProof {
             }
         }
         if ProcessInfo.processInfo.arguments.contains("--whoop-collection-settings") {
+            if ProcessInfo.processInfo.arguments.contains("--whoop-raw-receipt-check"),
+               !UserDefaults.standard.bool(forKey: "enableRawCapture") {
+                model.ble.captureRawAccel(seconds: 10)
+                do { try await Task.sleep(nanoseconds: 15_000_000_000) } catch { return }
+                await capture("rawAfter")
+            }
             model.ble.probeBodyLocationAndStatus()
             model.ble.send(.getDataRange, payload: [0x00])
             do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }

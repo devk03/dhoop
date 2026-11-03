@@ -137,7 +137,8 @@ public final class FrameRouter {
             // Sparse receipt evidence: ordinary logging omits SUCCESS, so a Pending-only log
             // cannot establish that Hello never completed. Do not expose its identity/key body.
             if family == .whoop5, let command = parsed.cmdName,
-               ["GET_HELLO(", "TOGGLE_REALTIME_HR(", "SEND_HISTORICAL_DATA(", "GET_DATA_RANGE("].contains(where: { command.hasPrefix($0) }) {
+               ["GET_HELLO(", "TOGGLE_REALTIME_HR(", "SEND_HISTORICAL_DATA(", "GET_DATA_RANGE(",
+                "START_RAW_DATA(", "STOP_RAW_DATA(", "TOGGLE_IMU_MODE("].contains(where: { command.hasPrefix($0) }) {
                 let origin = parsed.parsed["resp_seq"]?.intValue.map(String.init) ?? "unknown"
                 let result = parsed.parsed["result"]?.stringValue ?? "unknown"
                 state.append(log: "WHOOP collection response: command=\(command) origin=\(origin) result=\(result) frameBytes=\(frame.count)")
