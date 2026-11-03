@@ -90,6 +90,55 @@ final class WorkoutSessionDraftTests: XCTestCase {
         }
     }
 
+    func testTypingDuringTwoSecondSaveRetainsNewerInputWithoutAnotherSubmission() async throws {
+        var posts = 0, receiving = false, delivered = false
+        var original: WorkoutFrontendIntent?
+        let commands = WorkoutFrontendFileStore(url: file("commands.json")), draftFile = WorkoutSessionDraftFileStore(url: file("draft.json"))
+        let frontend = WorkoutFrontendClient(store: commands, send: { endpoint, body, _ in
+            if endpoint == .frontendCapabilities { return try self.capabilities() }
+            XCTAssertEqual(endpoint, .frontendCommand)
+            posts += 1; original = try JSONDecoder().decode(WorkoutFrontendIntent.self, from: XCTUnwrap(body))
+            receiving = true
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            delivered = true
+            return try self.receipt(try XCTUnwrap(original))
+        }, readCredential: { self.config }, saveCredential: { _ in })
+        try await enable(frontend)
+        let controller = WorkoutSessionDraftController(initial: initial(), store: draftFile, frontend: frontend)
+        var first = try XCTUnwrap(controller.state.entry(1)); first.load = "135"; first.reps = "8"; first.completed = true
+        controller.edit(first)
+        try controller.requestSave(finishing: false, refresh: { .init(session: self.session(load: 135, reps: 8), revision: 5) })
+        for _ in 0..<100 { if receiving { break }; await Task.yield() }
+        XCTAssertTrue(receiving); XCTAssertFalse(delivered); XCTAssertTrue(frontend.busy); XCTAssertTrue(controller.canEdit)
+        var durations: [Double] = []
+        for index in 1...30 {
+            let start = ContinuousClock.now
+            var edit = try XCTUnwrap(controller.state.entry(2)); edit.load = String(100 + index); edit.reps = "9"
+            controller.edit(edit)
+            let elapsed = start.duration(to: .now).components
+            durations.append(Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15)
+            XCTAssertEqual(controller.state.entry(2)?.load, String(100 + index))
+            XCTAssertTrue(controller.canEdit)
+            await Task.yield()
+        }
+        XCTAssertEqual(posts, 1)
+        XCTAssertFalse(delivered, "Local model edits must finish while the 2-second response is still pending")
+        let pending = try XCTUnwrap(controller.state.pending)
+        let beforeRelaunch = try XCTUnwrap(draftFile.load())
+        XCTAssertEqual(beforeRelaunch.entry(2)?.load, "130"); XCTAssertEqual(beforeRelaunch.entry(2)?.reps, "9")
+        await controller.waitForDelivery()
+        XCTAssertTrue(delivered); XCTAssertEqual(posts, 1); XCTAssertNil(controller.state.pending)
+        XCTAssertTrue(controller.state.hasChanges); XCTAssertEqual(controller.state.entry(2)?.load, "130")
+        XCTAssertFalse(controller.state.baseline.exercises[0].sets[1].completed)
+        XCTAssertEqual(original?.operationId, pending.id)
+        XCTAssertEqual(original?.command["sets"], .array([.object(["setId": .number(1), "actualLoad": .number(135), "actualReps": .number(8), "completed": .bool(true)])]))
+        let reopened = WorkoutSessionDraftController(initial: .init(origin: config.origin, installationId: config.installationId,
+            baseline: session(load: 135, reps: 8), revision: 5, massScale: 1, localeIdentifier: "en_US"), store: draftFile, frontend: frontend)
+        XCTAssertEqual(reopened.state.entry(2)?.load, "130"); XCTAssertEqual(reopened.state.entry(2)?.reps, "9")
+        XCTAssertEqual(reopened.state.entry(1)?.load, "135"); XCTAssertEqual(frontend.state.operations.count, 1)
+        print("Delayed-save model: 30 local edits, p95=\(durations.sorted()[28])ms, one POST, 2000ms simulated response delay; visible UI not measured")
+    }
+
     func testRapidLocalEditsAndChecksMakeZeroRequestsAndSurviveRelaunch() async throws {
         var network = 0
         let frontend = WorkoutFrontendClient(store: .init(url: file("commands.json")), send: { _, _, _ in network += 1; return try self.capabilities() }, readCredential: { self.config }, saveCredential: { _ in })
