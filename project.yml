@@ -21,7 +21,7 @@ settings:
     # iOS build number (CFBundleVersion). GLOBAL so the iOS app AND its widget extension inherit the
     # SAME value — they must match or iOS warns "extension version must match parent app" (#416).
     # macOS sets its own CFBundleVersion on the Strand target and is unaffected by this.
-    CURRENT_PROJECT_VERSION: "534"
+    CURRENT_PROJECT_VERSION: "535"
     SWIFT_VERSION: "5.0"
     # Emit localizable strings so Xcode auto-extracts every LocalizedStringKey into the
     # String Catalog on build (the English (US) base entries).
@@ -427,6 +427,7 @@ targets:
         CFBundleDisplayName: Dhoop
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSCameraUsageDescription: "Dhoop uses the camera when you choose to add a photo to your private Health journal."
         NSAlarmKitUsageDescription: "Dhoop can schedule optional phone alarms to back up the WHOOP alarms you create."
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.dhoop.workout-metadata

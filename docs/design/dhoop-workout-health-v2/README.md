@@ -38,3 +38,44 @@ xcrun simctl io SIMULATOR_ID screenshot /absolute/output/workout-state.png
 
 The real UI was inspected using computer use. Narrow-screen, accessibility, delay/offline scenarios,
 Lower workflows, the Health redesign and physical-device evidence remain separate pending checks.
+
+
+## Actual implementation — Health build 535
+
+Native SwiftUI renders with isolated synthetic data. Widths are logical points; images are at 2×.
+The generated forearm is fictional, created with imagegen for this fixture (SHA-256
+`00510a9d51f35799304c12da9d7179032e28ae789d6146add4d9b8ab79348157`). No owner photo,
+credential or medical record is included. Original-file storage is unchanged; thumbnails are
+in-memory downsampled previews. These captures verify layout, not production delivery.
+
+| Timeline · dark · 390pt | First entry · 390pt |
+| --- | --- |
+| [![Health timeline](implementation-health-535/timeline-dark-390.png)](implementation-health-535/timeline-dark-390.png) | [![First entry](implementation-health-535/first-entry-390.png)](implementation-health-535/first-entry-390.png) |
+
+| Light · 390pt | Narrow · 320pt | Accessibility3 · 390pt |
+| --- | --- | --- |
+| [![Light](implementation-health-535/timeline-light-390.png)](implementation-health-535/timeline-light-390.png) | [![Narrow](implementation-health-535/timeline-narrow-320.png)](implementation-health-535/timeline-narrow-320.png) | [![Dynamic Type](implementation-health-535/timeline-accessibility.png)](implementation-health-535/timeline-accessibility.png) |
+
+| Detail · 390pt | Editor · 390pt | Empty · 390pt | Error · 390pt |
+| --- | --- | --- | --- |
+| [![Detail](implementation-health-535/detail-390.png)](implementation-health-535/detail-390.png) | [![Editor](implementation-health-535/editor-390.png)](implementation-health-535/editor-390.png) | [![Empty](implementation-health-535/empty-390.png)](implementation-health-535/empty-390.png) | [![Error](implementation-health-535/error-390.png)](implementation-health-535/error-390.png) |
+
+Repeat using a Debug simulator build and the pinned demo photo copied into its data container's
+`tmp/health-journal-demo.png` (the fixture rejects a mismatched digest):
+
+```sh
+xcrun simctl launch SIMULATOR_ID com.devkunjadia.zhoop.loshi.noop \
+  --health-journal-ui-proof --health-journal-render-proof --health-render-run=NEW_UUID
+```
+
+Captures and the run/build manifest are written to the app data container's `tmp/dhoop-health-ui-v1`.
+Use `xcrun simctl get_app_container SIMULATOR_ID com.devkunjadia.zhoop.loshi.noop data` to locate them.
+For interactive checks use `--health-journal-ui-proof --health-ui-run=NEW_UUID`; add
+`--health-ui-empty`, `--health-ui-offline` or `--health-ui-slow` for those states. Fixtures never use
+HTTP or production credentials. Optional `--health-ui-seed-photo` prepares the known demo image
+through the public draft attachment API; this is not evidence of PhotosPicker selection.
+
+Verified: 29 Health contract/client/storage tests, 130 StrandDesign tests, simulator iOS and macOS
+app builds, translation audit, and the renders above. Interactive New entry/typing was inspected
+before the Mac locked. System photo selection, camera capture, complete interactive save flow,
+keyboard/loading captures and physical-device Health checks remain pending.

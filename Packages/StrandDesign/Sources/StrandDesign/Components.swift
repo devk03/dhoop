@@ -108,6 +108,9 @@ public enum NoopMetrics {
     public static let space8:  CGFloat = 32
     public static let space10: CGFloat = 40
 
+    /// Square preview shared by private Health timeline cards and attachment strips.
+    public static let healthJournalThumbnailSize: CGFloat = 96
+
     // MARK: Named layout constants — the canonical margins/heights screens compose with.
     /// Horizontal page margin (the gutter on the left/right edge of a screen). Use via `.screenPadding()`.
     public static let screenHPadding: CGFloat = NoopVisualStyle.pagePadding

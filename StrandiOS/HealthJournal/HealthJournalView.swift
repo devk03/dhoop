@@ -19,10 +19,11 @@ struct HealthJournalView: View {
                     .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Filter Health entries")
                 Button { settings = true } label: { Image(systemName: "gearshape") }
                     .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Health connection")
-                Button { createEntry() } label: { Image(systemName: "plus") }
-                    .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("New Health entry")
             }
         }) {
+            Button { createEntry() } label: { Label("New entry", systemImage: "plus") }
+                .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
+                .accessibilityIdentifier("health-new-entry")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: NoopMetrics.space2) {
                     Button("All") { Task { await client.refresh(.init(from: client.filter.from, through: client.filter.through)) } }
@@ -70,18 +71,21 @@ struct HealthJournalView: View {
                     }.buttonStyle(NoopFeedbackButtonStyle())
                 }
             }
+            if let at = client.savedCopyReadAt {
+                LabeledContent("Saved copy", value: at.formatted(.dateTime.month().day().hour().minute()))
+                    .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            }
             if client.loading { ProgressView("Reading Health…").font(StrandFont.body).frame(maxWidth: .infinity) }
             if client.loaded, client.document.observations.isEmpty, client.error == nil {
                 NoopCard {
                     VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                         Text("No entries in this range").font(StrandFont.headline)
                         Text("Start with a note. Photos are optional.").font(StrandFont.body).foregroundStyle(StrandPalette.textSecondary)
-                        Button("New Health entry") { createEntry() }.buttonStyle(NoopButtonStyle(.primary))
                     }
                 }
             }
             ForEach(client.document.observations) { row in
-                NavigationLink(value: HealthJournalRoute.entry(row.id)) { HealthJournalEntryCard(entry: row, topic: title(row.topicId)) }
+                NavigationLink(value: HealthJournalRoute.entry(row.id)) { HealthJournalEntryCard(client: client, entry: row, topic: title(row.topicId)) }
                 .buttonStyle(NoopFeedbackButtonStyle())
             }
             if client.document.nextOffset != nil {
@@ -91,10 +95,16 @@ struct HealthJournalView: View {
         .navigationDestination(for: HealthJournalRoute.self) { route in
             switch route { case .entry(let id): HealthJournalDetail(client: client, observationId: id) }
         }
-        .task { client.reloadWhenAccessible(); if client.connection != nil { await client.refresh() } }
+        .task {
+            client.reloadWhenAccessible()
+            if client.connection != nil {
+                async let capability: Void = client.refreshCapabilities()
+                await client.refresh(); await capability
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { client.reloadWhenAccessible() }
-            else { client.flush() }
+            else { client.flush(); HealthJournalPreviews.clear() }
         }
         .sheet(item: $editor) { route in NavigationStack { HealthJournalEditor(client: client, draftId: route.id) } }
         .sheet(isPresented: $settings) { NavigationStack { HealthJournalConnectionView(client: client) } }
@@ -103,31 +113,40 @@ struct HealthJournalView: View {
     }
     private func title(_ id: String?) -> String { client.document.topics.first { $0.id == id }?.title ?? NSLocalizedString("Health entry", comment: "") }
     private func createEntry() {
-        guard let topic = client.document.topics.first(where: { $0.id == client.filter.topicId }) ?? client.document.topics.first(where: { $0.status == "open" }) else { topics = true; return }
-        do { editor = .init(id: try client.create(.entry(topicId: topic.id))) } catch { localError = HealthJournalClient.message(error) }
+        do { editor = .init(id: try client.createEntry(topicId: client.filter.topicId)) }
+        catch { localError = HealthJournalClient.message(error) }
     }
 }
 enum HealthJournalRoute: Hashable { case entry(String) }
 struct HealthJournalEditorRoute: Identifiable { let id: UUID }
 
 struct HealthJournalEntryCard: View {
+    @ObservedObject var client: HealthJournalClient
     let entry: HealthJournalObservation
     let topic: String
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         NoopCard {
-            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
-                HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
-                    Text(verbatim: topic).font(StrandFont.headline)
-                    Spacer(minLength: NoopMetrics.space1)
-                    Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
-                Text(verbatim: HealthJournalDates.display(entry.observedAt, zone: entry.timeZone)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                if !entry.notes.isEmpty { Text(verbatim: entry.notes).font(StrandFont.body).lineLimit(4) }
-                if !entry.symptoms.isEmpty { Text(verbatim: entry.symptoms).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary).lineLimit(2) }
-                if !(entry.images ?? []).isEmpty {
-                    Label("\(entry.images?.count ?? 0) photos", systemImage: "photo.on.rectangle").font(StrandFont.caption).foregroundStyle(StrandPalette.metricPurple)
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: NoopMetrics.space3))
+                : AnyLayout(HStackLayout(alignment: .top, spacing: NoopMetrics.space3))
+            layout {
+                if let image = entry.images?.first { HealthJournalThumbnail(client: client, source: .remote(image)) }
+                VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+                    HStack(alignment: .firstTextBaseline, spacing: NoopMetrics.space2) {
+                        Text(verbatim: topic).font(StrandFont.headline).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: NoopMetrics.space1)
+                        Image(systemName: "chevron.right").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    }
+                    Text(verbatim: HealthJournalDates.display(entry.observedAt, zone: entry.timeZone))
+                        .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                    if !entry.notes.isEmpty { Text(verbatim: entry.notes).font(StrandFont.body).lineLimit(3) }
+                    if !entry.symptoms.isEmpty { Text(verbatim: entry.symptoms).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary).lineLimit(2) }
+                    if let photos = entry.images, !photos.isEmpty {
+                        Label("\(photos.count) photos", systemImage: "photo.on.rectangle").font(StrandFont.caption).foregroundStyle(StrandPalette.metricPurple)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }
         }.foregroundStyle(StrandPalette.textPrimary).accessibilityElement(children: .combine)
     }
 }

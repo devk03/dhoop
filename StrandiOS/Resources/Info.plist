@@ -108,5 +108,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Dhoop uses the camera when you choose to add a photo to your private Health journal.</string>
 </dict>
 </plist>

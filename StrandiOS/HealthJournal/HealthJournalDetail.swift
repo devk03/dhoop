@@ -39,15 +39,11 @@ struct HealthJournalDetail: View {
                 }
                 if let images=entry.images,!images.isEmpty {
                     Text("Photos").font(StrandFont.headline)
-                    ForEach(images) {photo in
-                        Button {image=photo} label:{
-                            HStack(spacing:NoopMetrics.space3) {
-                                Image(systemName:"photo").foregroundStyle(StrandPalette.metricPurple)
-                                Text(verbatim:photo.filename).font(StrandFont.body).lineLimit(2).truncationMode(.middle)
-                                Spacer(minLength:NoopMetrics.space1)
-                                Image(systemName:"chevron.right").foregroundStyle(StrandPalette.textSecondary)
-                            }.frame(minHeight:NoopMetrics.minimumTouchTarget).padding(NoopMetrics.space3)
-                        }.buttonStyle(NoopFeedbackButtonStyle())
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: NoopMetrics.healthJournalThumbnailSize), spacing: NoopMetrics.space3)], spacing: NoopMetrics.space3) {
+                        ForEach(images) { photo in
+                            Button { image = photo } label: { HealthJournalThumbnail(client: client, source: .remote(photo)) }
+                                .buttonStyle(NoopFeedbackButtonStyle()).accessibilityLabel("Open Health photo")
+                        }
                     }
                 }
                 Button(showHistory ? "Hide correction history":"Correction history") {showHistory.toggle()}.buttonStyle(NoopButtonStyle(.secondary))

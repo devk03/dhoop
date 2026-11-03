@@ -1,6 +1,8 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 import PhotosUI
+import AVFoundation
 import StrandDesign
 
 struct HealthJournalEditor: View {
@@ -13,112 +15,207 @@ struct HealthJournalEditor: View {
     @State private var importing = false
     @State private var localError: String?
     @State private var reviewing = false
+    @State private var camera = false
+    @State private var cameraAccessDenied = false
+    @State private var retainedNewTopic: HealthJournalNewTopic?
+    @State private var retainedNewTopicId: String?
     private var draft: HealthJournalDraft? { client.draft(draftId) }
     private func text(_ key: WritableKeyPath<HealthJournalMutation,String?>) -> Binding<String> {
         Binding(get: { draft?.mutation[keyPath:key] ?? "" }, set: { value in
             guard var mutation=draft?.mutation else {return};mutation[keyPath:key]=value;client.edit(draftId,mutation:mutation)
         })
     }
+    private func newTopicText(_ key: WritableKeyPath<HealthJournalNewTopic, String>) -> Binding<String> {
+        Binding(get: { draft?.mutation.newTopic?[keyPath: key] ?? "" }, set: { value in
+            guard var mutation = draft?.mutation, mutation.newTopic != nil else { return }
+            mutation.newTopic?[keyPath: key] = value; client.edit(draftId, mutation: mutation)
+        })
+    }
     var body: some View {
-        ScreenScaffold(title:nil) {
+        ScreenScaffold(title: nil) {
             if let draft {
                 if draft.mutation.action == "topic" { topicFields(draft) } else { entryFields(draft) }
-                if let error=localError ?? draft.lastError { HealthJournalNotice(message:error) }
-                if client.storageError { HealthJournalNotice(message:HealthJournalFailure.storage.localizedDescription) }
-                Text(LocalizedStringKey(draft.status)).font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                if draft.conflict && !draft.bodyAccepted {
-                    Button("Review latest version") { reviewing=true }.buttonStyle(NoopButtonStyle(.secondary))
-                } else if draft.needsEditing && !draft.bodyAccepted {
-                    NoopAsyncButton("Edit retained draft",systemImage:"square.and.pencil",kind:.secondary) {
-                        do { try await client.review(draftId) } catch { localError=HealthJournalClient.message(error) }
-                    }
-                } else if !draft.completed {
-                    NoopAsyncButton(draft.queued ? "Retry save":"Save entry",systemImage:"checkmark",fullWidth:true) {
-                        focused=nil;await client.send(draftId)
-                        guard client.draft(draftId)?.completed == true else {
-                            let message=client.draft(draftId)?.lastError ?? client.error ?? HealthJournalFailure.http(503).localizedDescription
-                            throw NSError(domain:"DhoopHealth",code:1,userInfo:[NSLocalizedDescriptionKey:NSLocalizedString(message,comment:"")])
-                        }
-                        dismiss()
-                    }.disabled(client.sending || importing || client.connection == nil || client.storageError)
-                }
+                if let error = localError ?? draft.lastError { HealthJournalNotice(message: error) }
+                if client.storageError { HealthJournalNotice(message: HealthJournalFailure.storage.localizedDescription) }
             }
         }
-        .navigationTitle(draft?.mutation.action == "topic" ? "Topic":"Health entry")
+        .safeAreaInset(edge: .bottom) { if let draft { saveActions(draft) } }
+        .navigationTitle(draft?.mutation.action == "topic" ? "Topic" : draft?.mutation.action == "correct" ? "Edit entry" : "New entry")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { focused=nil;client.flush();dismiss() } } }
+        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { focused = nil; client.flush(); dismiss() } } }
         .keyboardDoneToolbar($focused)
-        .onDisappear {client.flush()}
-        .onChange(of:picked) {_,items in
-            importing=true;focused=nil
+        .onDisappear { client.flush() }
+        .onChange(of: picked) { _, items in
+            importing = true; focused = nil
             Task {
-                defer {importing=false;picked=[]}
+                defer { importing = false; picked = [] }
                 for item in items {
                     do {
-                        guard let bytes=try await item.loadTransferable(type:Data.self) else {throw HealthJournalFailure.media}
-                        try await client.addPhoto(bytes,draftId:draftId,existingCount:existingPhotos)
-                    }catch {localError=HealthJournalClient.message(error);break}
+                        guard let bytes = try await item.loadTransferable(type: Data.self) else { throw HealthJournalFailure.media }
+                        try await client.addPhoto(bytes, draftId: draftId, existingCount: existingPhotos)
+                    } catch { localError = HealthJournalClient.message(error); break }
                 }
             }
         }
-        .sheet(isPresented:$reviewing) {NavigationStack {HealthJournalConflictView(client:client,draftId:draftId)}}
+        .sheet(isPresented: $reviewing) { NavigationStack { HealthJournalConflictView(client: client, draftId: draftId) } }
+        .sheet(isPresented: $camera) { HealthJournalCamera(completion: receivedCameraImage).ignoresSafeArea() }
+        .alert("Camera access", isPresented: $cameraAccessDenied) {
+            Button("Open Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) } }
+            Button("Cancel", role: .cancel) { }
+        } message: { Text("Allow camera access in iPhone Settings, or choose Photos.") }
     }
-    @ViewBuilder private func entryFields(_ draft:HealthJournalDraft) -> some View {
+    private func saveActions(_ draft: HealthJournalDraft) -> some View {
+        VStack(alignment: .leading, spacing: NoopMetrics.space2) {
+            Label(LocalizedStringKey(draft.status), systemImage: draft.completed ? "checkmark.circle" : "lock")
+                .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+            if draft.conflict && !draft.bodyAccepted {
+                Button("Review latest version") { reviewing = true }.buttonStyle(NoopButtonStyle(.secondary, fullWidth: true))
+            } else if draft.needsEditing && !draft.bodyAccepted {
+                NoopAsyncButton("Edit retained draft", systemImage: "square.and.pencil", kind: .secondary, fullWidth: true) {
+                    do { try await client.review(draftId) } catch { localError = HealthJournalClient.message(error) }
+                }
+            } else if !draft.completed {
+                NoopAsyncButton(draft.queued ? "Retry save" : "Save entry", systemImage: "checkmark", fullWidth: true) {
+                    focused = nil; await client.send(draftId)
+                    guard client.draft(draftId)?.completed == true else {
+                        let message = client.draft(draftId)?.lastError ?? client.error ?? HealthJournalFailure.http(503).localizedDescription
+                        throw NSError(domain: "DhoopHealth", code: 1, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString(message, comment: "")])
+                    }
+                    dismiss()
+                }.disabled(client.sending || importing || client.connection == nil || client.storageError)
+                .accessibilityIdentifier("health-save-entry")
+            }
+        }.padding(NoopMetrics.space3).background(StrandPalette.surfaceBase)
+    }
+    @ViewBuilder private func entryFields(_ draft: HealthJournalDraft) -> some View {
+        photos(draft)
         NoopCard {
-            VStack(alignment:.leading,spacing:NoopMetrics.space3) {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                Text("Notes").font(StrandFont.headline)
+                TextField("What did you notice?", text: text(\.notes), axis: .vertical)
+                    .lineLimit(4...10).focused($focused, equals: "notes").font(StrandFont.body)
+                    .accessibilityIdentifier("health-entry-notes")
+                DisclosureGroup("Symptoms · Optional") {
+                    TextField("Add symptoms", text: text(\.symptoms), axis: .vertical)
+                        .lineLimit(2...6).focused($focused, equals: "symptoms").font(StrandFont.body)
+                }.font(StrandFont.subhead)
+            }.disabled(!draft.editable)
+        }
+        NoopCard {
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
                 if draft.mutation.action == "observe" {
-                    Picker("Topic",selection:text(\.topicId)) {
-                        ForEach(client.document.topics) {topic in Text(verbatim:topic.title).tag(topic.id)}
-                    }.disabled(!draft.editable).pickerStyle(.menu).font(StrandFont.headline)
+                    Picker("Topic", selection: Binding(get: { draft.mutation.newTopic == nil ? draft.mutation.topicId ?? "" : "new" }, set: selectTopic)) {
+                        ForEach(client.document.topics) { topic in Text(verbatim: topic.title).tag(topic.id) }
+                        Text("New topic").tag("new")
+                    }.pickerStyle(.menu).font(StrandFont.headline)
+                    if draft.mutation.newTopic != nil {
+                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                            Text("Topic name").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            TextField("Topic name", text: newTopicText(\.title)).font(StrandFont.body).focused($focused, equals: "topicTitle")
+                        }
+                        VStack(alignment: .leading, spacing: NoopMetrics.space1) {
+                            Text("Body area").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                            TextField("Body area", text: newTopicText(\.bodyArea)).font(StrandFont.body).focused($focused, equals: "bodyArea")
+                        }
+                        Picker("Side", selection: newTopicText(\.side)) {
+                            Text("Unspecified").tag("unspecified"); Text("Left").tag("left"); Text("Right").tag("right")
+                            Text("Both").tag("both"); Text("Center").tag("center")
+                        }.font(StrandFont.body)
+                    }
                 }
                 if draft.editable {
-                    DatePicker("Observed",selection:Binding(get:{HealthJournalDates.instant(draft.mutation.observedAt ?? "") ?? Date()},set:{date in
-                        var mutation=draft.mutation;mutation.observedAt=HealthJournalDates.timestamp(date,zone:mutation.timeZone ?? TimeZone.current.identifier)
-                        client.edit(draftId,mutation:mutation)
-                    })).environment(\.timeZone,TimeZone(identifier:draft.mutation.timeZone ?? "") ?? .current).font(StrandFont.body)
-                    TextField("Timezone",text:text(\.timeZone)).font(StrandFont.subhead).textInputAutocapitalization(.never).autocorrectionDisabled().focused($focused,equals:"zone")
-                    Button("Use current timezone") {
-                        var mutation=draft.mutation;let date=HealthJournalDates.instant(mutation.observedAt ?? "") ?? Date()
-                        mutation.timeZone=TimeZone.current.identifier;mutation.observedAt=HealthJournalDates.timestamp(date,zone:TimeZone.current.identifier)
-                        client.edit(draftId,mutation:mutation)
-                    }.buttonStyle(NoopFeedbackButtonStyle()).font(StrandFont.caption).frame(minHeight:NoopMetrics.minimumTouchTarget)
-                }else {
-                    Text(verbatim:HealthJournalDates.display(draft.mutation.observedAt ?? "",zone:draft.mutation.timeZone ?? "")).font(StrandFont.body)
-                    Text(verbatim:draft.mutation.timeZone ?? "").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-                }
-            }.frame(maxWidth:.infinity,alignment:.leading)
+                    DatePicker("Observed", selection: Binding(get: { HealthJournalDates.instant(draft.mutation.observedAt ?? "") ?? Date() }, set: { date in
+                        var mutation = draft.mutation; mutation.observedAt = HealthJournalDates.timestamp(date, zone: mutation.timeZone ?? TimeZone.current.identifier)
+                        client.edit(draftId, mutation: mutation)
+                    })).environment(\.timeZone, TimeZone(identifier: draft.mutation.timeZone ?? "") ?? .current).font(StrandFont.body)
+                    DisclosureGroup("Time zone") {
+                        TextField("Timezone", text: text(\.timeZone)).font(StrandFont.subhead)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled().focused($focused, equals: "zone")
+                        Button("Use current timezone") {
+                            var mutation = draft.mutation; let date = HealthJournalDates.instant(mutation.observedAt ?? "") ?? Date()
+                            mutation.timeZone = TimeZone.current.identifier; mutation.observedAt = HealthJournalDates.timestamp(date, zone: TimeZone.current.identifier)
+                            client.edit(draftId, mutation: mutation)
+                        }.buttonStyle(NoopFeedbackButtonStyle()).font(StrandFont.caption).frame(minHeight: NoopMetrics.minimumTouchTarget)
+                    }.font(StrandFont.subhead)
+                } else { Text(verbatim: HealthJournalDates.display(draft.mutation.observedAt ?? "", zone: draft.mutation.timeZone ?? "")).font(StrandFont.body) }
+            }.frame(maxWidth: .infinity, alignment: .leading).disabled(!draft.editable)
         }
+    }
+    private func photos(_ draft: HealthJournalDraft) -> some View {
         NoopCard {
-            VStack(alignment:.leading,spacing:NoopMetrics.space3) {
-                Text("Notes").font(StrandFont.headline)
-                TextField("What did you notice?",text:text(\.notes),axis:.vertical).lineLimit(4...12).focused($focused,equals:"notes").font(StrandFont.body).disabled(!draft.editable)
-                Divider()
-                Text("Symptoms · Optional").font(StrandFont.headline)
-                TextField("Add symptoms",text:text(\.symptoms),axis:.vertical).lineLimit(2...6).focused($focused,equals:"symptoms").font(StrandFont.body).disabled(!draft.editable)
-            }
-        }
-        NoopCard {
-            VStack(alignment:.leading,spacing:NoopMetrics.space3) {
-                Text("Photos · Optional").font(StrandFont.headline)
-                ForEach(draft.photos) {photo in
-                    HStack(spacing:NoopMetrics.space2) {
-                        Image(systemName:photo.accepted ? "checkmark.circle":"photo").foregroundStyle(StrandPalette.metricPurple)
-                        Text(verbatim:photo.filename).font(StrandFont.caption).lineLimit(1).truncationMode(.middle)
-                        Spacer(minLength:NoopMetrics.space1)
-                        if draft.editable {
-                            Button {do {try client.removePhoto(photo.id,draftId:draftId)}catch {localError=HealthJournalClient.message(error)}} label:{Image(systemName:"xmark")}
-                                .buttonStyle(NoopIconButtonStyle()).accessibilityLabel("Remove selected photo")
+            VStack(alignment: .leading, spacing: NoopMetrics.space3) {
+                if !draft.photos.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: NoopMetrics.space2) {
+                            ForEach(draft.photos) { photo in
+                                VStack(spacing: NoopMetrics.space1) {
+                                    HealthJournalThumbnail(client: client, source: .local(photo))
+                                    if draft.editable {
+                                        Button { do { try client.removePhoto(photo.id, draftId: draftId) } catch { localError = HealthJournalClient.message(error) } } label: { Label("Remove", systemImage: "xmark") }
+                                            .buttonStyle(NoopFeedbackButtonStyle()).font(StrandFont.caption)
+                                            .frame(minHeight: NoopMetrics.minimumTouchTarget).accessibilityLabel("Remove selected photo")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                if importing {ProgressView("Preparing original photos…").font(StrandFont.body)}
-                if draft.editable,draft.photos.count+existingPhotos < 8 {
-                    PhotosPicker(selection:$picked,maxSelectionCount:8-draft.photos.count-existingPhotos,matching:.images,preferredItemEncoding:.current) {
-                        Label("Add photos",systemImage:"plus").frame(minHeight:NoopMetrics.minimumTouchTarget)
-                    }.buttonStyle(NoopButtonStyle(.secondary)).disabled(importing)
+                if importing { ProgressView("Preparing original photos…").font(StrandFont.body) }
+                if draft.editable, draft.photos.count + existingPhotos < 8 {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: NoopMetrics.space3) { cameraButton; photoPicker(draft) }
+                        VStack(alignment: .leading, spacing: NoopMetrics.space2) { cameraButton; photoPicker(draft) }
+                    }.disabled(importing)
                 }
-                Text("Original photos may include location metadata.").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
-            }.frame(maxWidth:.infinity,alignment:.leading)
+                Text("Photos · Optional").font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
+                if !draft.photos.isEmpty { Text("Original photos may include location metadata.").font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+    private var cameraButton: some View {
+        Button { requestCamera() } label: { Label("Camera", systemImage: "camera").frame(minHeight: NoopMetrics.minimumTouchTarget) }
+            .buttonStyle(NoopButtonStyle(.secondary)).disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+            .accessibilityIdentifier("health-entry-camera")
+    }
+    private func photoPicker(_ draft: HealthJournalDraft) -> some View {
+        PhotosPicker(selection: $picked, maxSelectionCount: 8 - draft.photos.count - existingPhotos, matching: .images, preferredItemEncoding: .current) {
+            Label("Add photos", systemImage: "photo.on.rectangle").frame(minHeight: NoopMetrics.minimumTouchTarget)
+        }.buttonStyle(NoopButtonStyle(.secondary)).accessibilityIdentifier("health-entry-photos")
+    }
+    private func selectTopic(_ id: String) {
+        guard var mutation = draft?.mutation, draft?.editable == true else { return }
+        if id == "new" {
+            mutation.topicId = retainedNewTopicId ?? UUID().uuidString.lowercased()
+            mutation.newTopic = retainedNewTopic ?? HealthJournalMutation.newEntry().newTopic
+        } else {
+            if let value = mutation.newTopic { retainedNewTopic = value; retainedNewTopicId = mutation.topicId }
+            mutation.topicId = id; mutation.newTopic = nil
+        }
+        client.edit(draftId, mutation: mutation)
+    }
+    private func requestCamera() {
+        focused = nil
+        Task { @MainActor in
+            switch AVCaptureDevice.authorizationStatus(for: .video) {
+            case .authorized: camera = true
+            case .notDetermined:
+                if await AVCaptureDevice.requestAccess(for: .video) { camera = true } else { cameraAccessDenied = true }
+            default: cameraAccessDenied = true
+            }
+        }
+    }
+    private func receivedCameraImage(_ image: UIImage?) {
+        camera = false
+        guard let image else { return }
+        importing = true
+        Task {
+            defer { importing = false }
+            do {
+                let data = try await Task.detached(priority: .utility) {
+                    guard let data = image.jpegData(compressionQuality: 0.95) else { throw HealthJournalFailure.media }; return data
+                }.value
+                try await client.addPhoto(data, draftId: draftId, existingCount: existingPhotos)
+            } catch { localError = HealthJournalClient.message(error) }
         }
     }
     private func topicFields(_ draft:HealthJournalDraft) -> some View {

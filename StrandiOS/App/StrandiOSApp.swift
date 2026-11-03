@@ -235,6 +235,7 @@ struct StrandiOSApp: App {
     @ViewBuilder private var rootContent: some View {
         #if DEBUG && targetEnvironment(simulator)
         if ProcessInfo.processInfo.arguments.contains("--workout-draft-ui-proof") { WorkoutDraftVerificationView() }
+        else if ProcessInfo.processInfo.arguments.contains("--health-journal-ui-proof") { HealthJournalDemoScreen() }
         else { iOSRootView() }
         #else
         iOSRootView()
