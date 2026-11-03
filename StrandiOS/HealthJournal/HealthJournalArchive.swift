@@ -37,6 +37,13 @@ struct HealthJournalState: Codable {
     var drafts: [HealthJournalDraft] = []
 }
 
+struct HealthJournalSnapshot: Codable {
+    let installationId: UUID
+    let document: HealthJournalDocument
+    let filter: HealthJournalFilter
+    let readAt: Date
+}
+
 /// Separate original files avoid rewriting photo bytes whenever the owner types a note.
 struct HealthJournalArchive {
     let folder: URL
@@ -57,6 +64,21 @@ struct HealthJournalArchive {
         let state = try JSONDecoder().decode(HealthJournalState.self, from: Data(contentsOf: file))
         guard state.schemaVersion == 1, Set(state.drafts.map(\.id)).count == state.drafts.count else { throw HealthJournalFailure.storage }
         return state
+    }
+    func readSnapshot() throws -> HealthJournalSnapshot? {
+        let file = folder.appendingPathComponent("snapshot.json")
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        let data = try Data(contentsOf: file)
+        guard data.count <= 2 * 1024 * 1024 else { throw HealthJournalFailure.invalidResponse }
+        let snapshot = try JSONDecoder().decode(HealthJournalSnapshot.self, from: data)
+        try snapshot.document.validate(); guard snapshot.filter.valid else { throw HealthJournalFailure.invalidResponse }
+        return snapshot
+    }
+    func saveSnapshot(_ snapshot: HealthJournalSnapshot) throws {
+        try snapshot.document.validate(); guard snapshot.filter.valid else { throw HealthJournalFailure.invalidResponse }
+        let data = try JSONEncoder().encode(snapshot)
+        guard data.count <= 2 * 1024 * 1024 else { throw HealthJournalFailure.invalidResponse }
+        try prepare(); try protectedWrite(data, to: folder.appendingPathComponent("snapshot.json"))
     }
     func save(_ state: HealthJournalState) throws { try prepare(); try protectedWrite(JSONEncoder().encode(state), to: folder.appendingPathComponent("drafts.json")) }
     func savePhoto(_ data: Data, observationId: String) throws -> HealthJournalPendingPhoto {

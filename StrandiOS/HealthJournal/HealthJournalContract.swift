@@ -91,6 +91,34 @@ struct HealthJournalFilter: Codable, Equatable {
     }
 }
 
+struct HealthJournalCapabilities: Decodable {
+    let schemaVersion: Int
+    let read: Bool
+    let write: Bool
+    let imagesOptional: Bool
+    let correctionHistory: Bool
+    var inlineTopicCreation: Bool? = nil
+    var valid: Bool { schemaVersion == 1 && read && write && imagesOptional && correctionHistory }
+}
+
+struct HealthJournalNewTopic: Codable, Equatable {
+    var title: String
+    var bodyArea: String
+    var side: String
+    var status: String
+    var normalized: Self {
+        .init(title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+              bodyArea: bodyArea.trimmingCharacters(in: .whitespacesAndNewlines), side: side, status: status)
+    }
+    func validate() throws {
+        let value = normalized
+        guard !value.title.isEmpty, value.title.utf16.count <= 120,
+              !value.bodyArea.isEmpty, value.bodyArea.utf16.count <= 120,
+              ["left", "right", "both", "center", "unspecified"].contains(side),
+              ["open", "closed"].contains(status) else { throw HealthJournalFailure.validation }
+    }
+}
+
 /// All optional fields are omitted by Codable, matching Life's strict discriminated schema.
 struct HealthJournalMutation: Codable, Equatable {
     var action: String
@@ -106,8 +134,12 @@ struct HealthJournalMutation: Codable, Equatable {
     var timeZone: String?
     var notes: String?
     var symptoms: String?
+    var newTopic: HealthJournalNewTopic? = nil
     func validate() throws {
         guard UUID(uuidString: id) != nil, UUID(uuidString: requestId) != nil else { throw HealthJournalFailure.validation }
+        if let newTopic {
+            guard action == "observe" else { throw HealthJournalFailure.validation }; try newTopic.validate()
+        }
         if action == "topic" {
             guard let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.utf16.count <= 120,
                   let bodyArea, !bodyArea.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, bodyArea.utf16.count <= 120,
@@ -128,6 +160,11 @@ struct HealthJournalMutation: Codable, Equatable {
     static func entry(topicId: String, now: Date = Date(), zone: String = TimeZone.current.identifier) -> Self {
         .init(action: "observe", requestId: UUID().uuidString.lowercased(), id: UUID().uuidString.lowercased(), topicId: topicId,
               observedAt: HealthJournalDates.timestamp(now, zone: zone), timeZone: zone, notes: "", symptoms: "")
+    }
+    static func newEntry(now: Date = Date(), zone: String = TimeZone.current.identifier) -> Self {
+        var result = entry(topicId: UUID().uuidString.lowercased(), now: now, zone: zone)
+        result.newTopic = .init(title: NSLocalizedString("General", comment: ""), bodyArea: NSLocalizedString("Unspecified", comment: ""), side: "unspecified", status: "open")
+        return result
     }
     static func correction(_ entry: HealthJournalObservation) -> Self {
         .init(action: "correct", requestId: UUID().uuidString.lowercased(), id: entry.id, expectedVersion: entry.version,
@@ -167,7 +204,7 @@ enum HealthJournalDates {
     static func display(_ text: String, zone: String) -> String {
         guard let date = instant(text), let zone = TimeZone(identifier: zone) else { return text }
         let f = DateFormatter(); f.locale = .current; f.timeZone = zone; f.dateStyle = .medium; f.timeStyle = .short
-        return f.string(from: date)
+        return f.string(from: date) + " " + (zone.abbreviation(for: date) ?? zone.identifier)
     }
 }
 
@@ -191,9 +228,10 @@ enum HealthJournalMedia {
 }
 
 enum HealthJournalFailure: Error, LocalizedError, Equatable {
-    case configuration, invalidResponse, validation, media, storage, conflict, http(Int)
+    case configuration, invalidResponse, validation, media, storage, conflict, inlineTopicUnavailable, http(Int)
     var errorDescription: String? {
         switch self {
+        case .inlineTopicUnavailable: return "New topic creation is unavailable. Your entry stays on this phone."
         case .configuration: return "Connect Health to Life. Your drafts are kept."
         case .invalidResponse: return "Health data could not be verified. Refresh to try again."
         case .validation: return "Check the topic, date, notes and symptoms. Your draft is kept."

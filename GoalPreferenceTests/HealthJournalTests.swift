@@ -14,6 +14,200 @@ final class HealthJournalTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: ["topics": [["id":topicID,"title":"Face","bodyArea":"face","side":"unspecified","status":"open","version":1,"createdAt":"2026-10-30T13:00:00Z","updatedAt":"2026-10-30T13:00:00Z"]],
             "observations": [["id":entryID,"topicId":topicID,"observedAt":"2026-10-30T09:00:00-04:00","timeZone":"America/New_York","recordedAt":"2026-10-30T13:00:00Z","notes":notes,"symptoms":"","source":"agent","version":version,"updatedAt":"2026-10-30T13:00:00Z","images":[]]],"nextOffset":NSNull(),"revisions":[],"nextBeforeVersion":NSNull()])
     }
+    func testVerifiedSnapshotRestoresOfflineWithoutChangingDraftsOrConnectionScope() async throws {
+        let store = archive(), config = configuration
+        let first = HealthJournalClient(archive: store, read: { config }, save: { _ in }, send: { _,_ in try self.document() })
+        await first.refresh(); let id = try first.createEntry(topicId: topicID)
+        var mutation = try XCTUnwrap(first.draft(id)?.mutation); mutation.notes = "Retained offline note"; first.edit(id, mutation: mutation)
+        let before = try Data(contentsOf: store.folder.appendingPathComponent("drafts.json"))
+        let offline = HealthJournalClient(archive: store, read: { config }, save: { _ in }, send: { _,_ in throw URLError(.notConnectedToInternet) })
+        XCTAssertTrue(offline.loaded); XCTAssertNotNil(offline.savedCopyReadAt)
+        XCTAssertEqual(offline.document.observations.first?.notes, "Original")
+        await offline.refresh()
+        XCTAssertEqual(offline.document.observations.first?.notes, "Original"); XCTAssertNotNil(offline.error)
+        XCTAssertEqual(offline.draft(id)?.mutation.notes, "Retained offline note")
+        XCTAssertEqual(try Data(contentsOf: store.folder.appendingPathComponent("drafts.json")), before)
+        let other = configuration
+        let separate = HealthJournalClient(archive: store, read: { other }, save: { _ in })
+        XCTAssertFalse(separate.loaded); XCTAssertTrue(separate.document.observations.isEmpty)
+    }
+    func testSnapshotWriteFailureDoesNotDisableDraftStorage() async throws {
+        let store = archive(), config = configuration; try store.prepare()
+        try FileManager.default.createDirectory(at: store.folder.appendingPathComponent("snapshot.json"), withIntermediateDirectories: true)
+        let client = HealthJournalClient(archive: store, read: { config }, save: { _ in }, send: { _,_ in try self.document() })
+        await client.refresh(); XCTAssertTrue(client.loaded); XCTAssertFalse(client.storageError)
+        let id = try client.createEntry(topicId: topicID)
+        XCTAssertNotNil(client.draft(id)); XCTAssertFalse(client.storageError)
+    }
+    func testSnapshotKeepsExactFirstPageCursorInsteadOfSkippingOlderEntries() async throws {
+        let store = archive(), config = configuration
+        let client = HealthJournalClient(archive: store, read: { config }, save: { _ in }, send: { request,_ in
+            let offset = Int(request.query.first(where: { $0.name == "offset" })?.value ?? "0") ?? 0
+            var object = try XCTUnwrap(JSONSerialization.jsonObject(with: self.document()) as? [String: Any])
+            let row = try XCTUnwrap((object["observations"] as? [[String: Any]])?.first)
+            object["observations"] = (offset..<(offset + 20)).map { i -> [String: Any] in
+                var value = row; value["id"] = String(format: "00000000-0000-4000-8000-%012d", i + 10); return value
+            }
+            object["nextOffset"] = offset == 0 ? 20 : NSNull()
+            return try JSONSerialization.data(withJSONObject: object)
+        })
+        await client.refresh(); await client.refresh(more: true)
+        XCTAssertEqual(client.document.observations.count, 40)
+        let restored = HealthJournalClient(archive: store, read: { config }, save: { _ in })
+        XCTAssertEqual(restored.document.observations.count, 20); XCTAssertEqual(restored.document.nextOffset, 20)
+    }
+    func testUploadedOriginalIsVerifiedAndReusedWithoutRedownloading() async throws {
+        let store = archive(), config = configuration; var imageGets = 0
+        let png = Data([137,80,78,71,13,10,26,10] + Array(repeating: 0, count: 24))
+        let client = HealthJournalClient(archive: store, read: { config }, save: { _ in }, send: { request,_ in
+            if let photo = request.image { return try self.photoReceipt(photo) }
+            if request.expectedImage != nil { imageGets += 1; return png }
+            if let body = request.body { return self.receipt(try JSONDecoder().decode(HealthJournalMutation.self, from: body)) }
+            return self.empty
+        })
+        let id = try client.create(.entry(topicId: topicID)); try await client.addPhoto(png, draftId: id); await client.send(id)
+        let photo = try XCTUnwrap(client.draft(id)?.photos.first)
+        let image = HealthJournalImage(id: photo.id, observationId: photo.observationId, contentType: photo.contentType,
+            bytes: photo.bytes, sha256: photo.sha256, filename: photo.filename, recordedAt: "2026-10-30T13:00:00Z", source: "dhoop", url: "/api/integrations/dhoop/health/images/" + photo.id)
+        let original = try await client.image(image); XCTAssertEqual(original, png); XCTAssertEqual(imageGets, 0)
+        try Data("corrupt test fixture".utf8).write(to: store.photoURL(photo))
+        let fallback = try await client.image(image); XCTAssertEqual(fallback, png); XCTAssertEqual(imageGets, 1)
+    }
+    func testCapabilityReadsCoalesceAndCacheWithoutBlockingEntryCreation() async throws {
+        let config = configuration; var reads = 0
+        let client = HealthJournalClient(archive: archive(), read: { config }, save: { _ in }, send: { _,_ in
+            reads += 1; try await Task.sleep(nanoseconds: 30_000_000); return self.inlineCapabilities(true)
+        })
+        async let first: Void = client.refreshCapabilities()
+        async let second: Void = client.refreshCapabilities()
+        let id = try client.createEntry(); XCTAssertNotNil(client.draft(id))
+        _ = await (first, second); XCTAssertEqual(reads, 1)
+        await client.refreshCapabilities(); XCTAssertEqual(reads, 1)
+        XCTAssertTrue(client.capabilities?.inlineTopicCreation == true)
+    }
+
+    func testCancellingQueuedPhotoReadDoesNotConsumeOrLeakAnActivePermit() async throws {
+        let reads = HealthJournalPhotoReads()
+        try await reads.acquire(); try await reads.acquire()
+        let cancelled = Task { try await reads.acquire() }
+        await Task.yield(); cancelled.cancel()
+        do { try await cancelled.value; XCTFail("A cancelled queued preview must not start") }
+        catch is CancellationError { }
+        reads.release()
+        try await reads.acquire()
+        reads.release(); reads.release()
+        try await reads.acquire(); try await reads.acquire()
+        reads.release(); reads.release()
+    }
+    func testPhotoReadsTransferOnlyOnePermitAtATime() async throws {
+        let reads = HealthJournalPhotoReads(); try await reads.acquire(); try await reads.acquire()
+        var started = 0
+        let queued = Task { try await reads.acquire(); started += 1 }
+        await Task.yield(); XCTAssertEqual(started, 0)
+        reads.release(); try await queued.value; XCTAssertEqual(started, 1)
+        reads.release(); reads.release()
+    }
+
+    private func inlineCapabilities(_ supported: Bool) -> Data {
+        Data("{\"schemaVersion\":1,\"read\":true,\"write\":true,\"imagesOptional\":true,\"correctionHistory\":true,\"inlineTopicCreation\":\(supported)}".utf8)
+    }
+    func testNewEntryWithoutTopicsOpensDurableComposerWithoutNetworkOrTopicScreen() throws {
+        let store = archive(); var requests = 0
+        let client = HealthJournalClient(archive: store, read: { nil }, save: { _ in }, send: { _,_ in requests += 1; return self.empty })
+        let id = try client.createEntry()
+        let draft = try XCTUnwrap(client.draft(id))
+        XCTAssertEqual(requests, 0); XCTAssertEqual(draft.mutation.action, "observe")
+        XCTAssertEqual(draft.mutation.newTopic?.title, "General")
+        XCTAssertEqual(draft.mutation.newTopic?.bodyArea, "Unspecified")
+        XCTAssertNotEqual(draft.mutation.topicId, draft.mutation.id)
+        let reloaded = HealthJournalClient(archive: store, read: { nil }, save: { _ in })
+        XCTAssertEqual(reloaded.draft(id)?.mutation, draft.mutation)
+        XCTAssertTrue(try XCTUnwrap(reloaded.draft(id)).editable)
+    }
+    func testInlineTopicSaveNormalizesOnlyDefinitionAndUsesOneEntryPost() async throws {
+        let config = configuration; var posts: [HealthJournalMutation] = []; var paths: [String] = []
+        let client = HealthJournalClient(archive: archive(), read: { config }, save: { _ in }, send: { request,_ in
+            paths.append(request.path)
+            if request.path == "capabilities" { return self.inlineCapabilities(true) }
+            if let body = request.body {
+                let mutation = try JSONDecoder().decode(HealthJournalMutation.self, from: body)
+                posts.append(mutation); return self.receipt(mutation)
+            }
+            return self.empty
+        })
+        let id = try client.createEntry(); var mutation = try XCTUnwrap(client.draft(id)?.mutation)
+        mutation.newTopic?.title = "  Left arm  "; mutation.newTopic?.bodyArea = "  Forearm  "
+        mutation.notes = "  Keep this note exactly.\n"; client.edit(id, mutation: mutation)
+        await client.send(id)
+        XCTAssertTrue(try XCTUnwrap(client.draft(id)).completed)
+        XCTAssertEqual(posts.count, 1); XCTAssertEqual(posts[0].topicId, mutation.topicId)
+        XCTAssertEqual(posts[0].newTopic?.title, "Left arm"); XCTAssertEqual(posts[0].newTopic?.bodyArea, "Forearm")
+        XCTAssertEqual(posts[0].notes, mutation.notes); XCTAssertEqual(posts[0].observedAt, mutation.observedAt)
+        XCTAssertEqual(paths, ["capabilities", "entries", "entries"])
+    }
+    func testInlineTopicUncertainReceiptReplaysExactBodyAndIdentityAfterRelaunch() async throws {
+        let config = configuration, store = archive(); var sent: [Data] = []
+        let first = HealthJournalClient(archive: store, read: { config }, save: { _ in }, send: { request,_ in
+            if request.path == "capabilities" { return self.inlineCapabilities(true) }
+            if let body = request.body { sent.append(body); throw URLError(.networkConnectionLost) }
+            return self.empty
+        })
+        let id = try first.createEntry(); await first.send(id)
+        XCTAssertFalse(try XCTUnwrap(first.draft(id)).bodyAccepted)
+        let replay = HealthJournalClient(archive: store, read: { config }, save: { _ in }, send: { request,_ in
+            if let body = request.body {
+                sent.append(body); return self.receipt(try JSONDecoder().decode(HealthJournalMutation.self, from: body))
+            }
+            XCTAssertEqual(request.path, "entries", "A frozen replay must not change based on a newer capability read")
+            return self.empty
+        })
+        await replay.send(id)
+        XCTAssertTrue(try XCTUnwrap(replay.draft(id)).completed)
+        XCTAssertEqual(sent.count, 2); XCTAssertEqual(sent[0], sent[1])
+    }
+    func testUnsupportedInlineTopicRetainsEditableDraftAndRetryChecksNewCapability() async throws {
+        let config = configuration; var supported = false; var posts = 0
+        let client = HealthJournalClient(archive: archive(), read: { config }, save: { _ in }, send: { request,_ in
+            if request.path == "capabilities" { return self.inlineCapabilities(supported) }
+            if let body = request.body { posts += 1; return self.receipt(try JSONDecoder().decode(HealthJournalMutation.self, from: body)) }
+            return self.empty
+        })
+        let id = try client.createEntry(); await client.send(id)
+        XCTAssertEqual(posts, 0); XCTAssertTrue(try XCTUnwrap(client.draft(id)).editable)
+        XCTAssertNil(client.draft(id)?.body); XCTAssertNotNil(client.draft(id)?.lastError)
+        supported = true; await client.send(id)
+        XCTAssertEqual(posts, 1); XCTAssertTrue(try XCTUnwrap(client.draft(id)).completed)
+    }
+    func testFailedCapabilityReadDoesNotClaimInlineTopicIsUnsupported() async throws {
+        let config = configuration
+        let client = HealthJournalClient(archive: archive(), read: { config }, save: { _ in }, send: { _,_ in throw URLError(.notConnectedToInternet) })
+        let id = try client.createEntry(); await client.send(id)
+        XCTAssertTrue(try XCTUnwrap(client.draft(id)).editable)
+        XCTAssertEqual(client.draft(id)?.lastError, HealthJournalClient.message(URLError(.notConnectedToInternet)))
+        XCTAssertNotEqual(client.draft(id)?.lastError, HealthJournalFailure.inlineTopicUnavailable.localizedDescription)
+    }
+
+    func testInlineTopicIsObserveOnlyAndExistingTopicEntryDoesNotAddDefinition() async throws {
+        var mutation = HealthJournalMutation.newEntry(); try mutation.validate()
+        mutation.action = "correct"; mutation.topicId = nil; mutation.expectedVersion = 1
+        XCTAssertThrowsError(try mutation.validate())
+        mutation = .newEntry(); mutation.newTopic?.side = "invalid"
+        XCTAssertThrowsError(try mutation.validate())
+        mutation = .newEntry(); mutation.newTopic?.title = String(repeating: "😀", count: 61)
+        XCTAssertThrowsError(try mutation.validate())
+        let config = configuration
+        let client = HealthJournalClient(archive: archive(), read: { config }, save: { _ in }, send: { _,_ in try self.document() })
+        await client.refresh(); let id = try client.createEntry(topicId: topicID)
+        XCTAssertEqual(client.draft(id)?.mutation.topicId, topicID)
+        XCTAssertNil(client.draft(id)?.mutation.newTopic)
+    }
+
+    func testRepeatedDSTHourHasDifferentVisibleTimestampForEachActualInstant() {
+        let first = HealthJournalDates.display("2026-11-01T01:30:00-04:00", zone: "America/New_York")
+        let second = HealthJournalDates.display("2026-11-01T01:30:00-05:00", zone: "America/New_York")
+        XCTAssertNotEqual(first, second, "Two different health observations must not have identical ambiguous timestamps")
+    }
+
     func testTimeZoneAndDSTOffsetArePreservedAndValidated() throws {
         XCTAssertTrue(HealthJournalDates.valid("2026-11-01T01:30:00-04:00", zone:"America/New_York"))
         XCTAssertTrue(HealthJournalDates.valid("2026-11-01T01:30:00-05:00", zone:"America/New_York"))
