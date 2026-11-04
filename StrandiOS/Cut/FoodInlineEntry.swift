@@ -18,8 +18,8 @@ struct FoodInlineEntry: View {
     }
     private var canSave: Bool {
         let protein = grams.isEmpty ? 0 : number(grams)
-        return protein.map { $0 <= 1000 && ($0 > 0 || !calories.isEmpty) } == true
-            && (calories.isEmpty || number(calories).map { $0 <= 20000 } == true) && !store.storageUnavailable
+        return protein.map { $0 <= 1000 } == true
+            && number(calories).map { $0 <= 20000 } == true && !store.storageUnavailable
     }
     var body: some View {
         NoopCard {
@@ -35,7 +35,7 @@ struct FoodInlineEntry: View {
                     NoopAsyncButton("", systemImage: "plus", fullWidth: typeSize >= .xxxLarge) { try save() }
                         .accessibilityLabel("Add food").disabled(!canSave)
                 }
-                Text(LocalizedStringKey(message ?? "Calories are optional. Blank estimates stay unknown."))
+                Text(LocalizedStringKey(message ?? "Calories are required. Protein is optional."))
                     .font(StrandFont.caption).foregroundStyle(failed ? StrandPalette.statusWarning : StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let error = store.storageError {
@@ -73,7 +73,7 @@ struct FoodInlineEntry: View {
     private func save() throws {
         do {
             guard canSave else { throw ProteinLogStore.Failure.invalidEntry }
-            try store.add(grams: grams.isEmpty ? 0 : number(grams)!, name: name, day: day, calories: calories.isEmpty ? nil : number(calories))
+            try store.add(grams: grams.isEmpty ? 0 : number(grams)!, name: name, day: day, calories: number(calories))
             grams = ""; calories = ""; name = ""; focused = nil; failed = false; message = "Saved on this phone"
         } catch { failed = true; message = error.localizedDescription; throw error }
     }
