@@ -1,0 +1,99 @@
+{
+  "build": "549",
+  "purpose": "Isolate WHOOP live collection from historical transfer without changing normal collection preferences",
+  "changes": [
+    "Correct WHOOP 5 command-response payload slicing to use its format/declared-length header, on Apple and Android.",
+    "Use real checksummed WHOOP 5 envelopes in existing Android advertising-name fixtures; the former WHOOP 4-style fixtures masked the length bug.",
+    "Add explicit support-only passive/live/released/history phases, notification-subscription evidence and non-identifying candidate preparation/status fields.",
+    "Defer automatic offloads only during the explicit isolated probe; clear on completion with a six-minute fail-safe.",
+    "Support an explicit non-destructive history cancellation/retry comparison using the existing curated command."
+  ],
+  "verification": {
+    "appleTestsPassed": 49,
+    "appleTestsFailed": 0,
+    "appleSuites": [
+      "WhoopCollectionSupportTests",
+      "FrameRouterRebootAckTests",
+      "ClientHelloOutcomeTests",
+      "AlarmReadbackDecodeTests"
+    ],
+    "androidFullDebugCompilation": "passed",
+    "androidTargetedTestsPassed": 11,
+    "androidTargetedTestsFailed": 0,
+    "androidSuites": [
+      "Whoop5ResponsePayloadOracleTest",
+      "AdvertisingNameProbeTest"
+    ],
+    "standaloneParity": "Actual Swift and Kotlin payload helpers produce byte-identical output over eight short, malformed and multi-byte length cases.",
+    "iOSReleaseBuild": "passed",
+    "macOSAppBuild": "passed",
+    "sourceCommentLint": "passed",
+    "bundleSigningAndAppGroup": "verified unchanged",
+    "physicalIPhoneInstalled": true
+  },
+  "hardware": {
+    "firmware": "50.43.2.0",
+    "passiveWindow": {
+      "elapsedSeconds": 30.1,
+      "readableHRCallbacks": 30,
+      "insertedHRRows": 26
+    },
+    "liveWindow": {
+      "elapsedSeconds": 60.45,
+      "readableHRCallbacks": 61,
+      "insertedHRRows": 52,
+      "usableRRIncrease": 30
+    },
+    "releasedWindow": {
+      "elapsedSeconds": 31.88,
+      "readableHRCallbacks": 32,
+      "insertedHRRows": 26,
+      "usableRRIncrease": 39
+    },
+    "backgroundReceiptAndPersistence": "Observed with appState=background in the live, released and history captures.",
+    "lockedReceiptAndPersistence": "Observed separately on build547 between two locked-state readouts; fresh HR and successful database flushes continued. This is a short observation, not an overnight guarantee.",
+    "knownPuffinNotificationsActiveBeforeManualHistory": 4,
+    "connectionEpochStableAcrossIsolatedPhases": true,
+    "rejectedFrames": 0,
+    "reassemblyDrops": 0,
+    "hello": "Pending followed by Success, current clock candidate and zero preparation bits under the documented 50.42 layout; offsets are not asserted universal.",
+    "range": "The candidate write cursor and most recent timestamp advanced between reads; metadata does not validate the contents or recoverability of every stored page.",
+    "manualHistory": "Issued after range with no overlapping offload. Success response carried body prefix 0b0000, but no historical sensor or metadata frame arrived.",
+    "abortRetry": "Abort acknowledged, candidate read cursor reset without a trim acknowledgement; subsequent offload again returned 0b0000 and no history frames.",
+    "overnightCapturePreferences": "Enabled and overnight-only persisted; power-saving master is off.",
+    "interpretation": "Live collection and persistence work in these checks. The remaining observed failure is delivery from the strap historical-transfer path, before sensor bytes reach the application."
+  },
+  "leadingHypothesis": {
+    "description": "Firmware membership/certificate authorization, based on an independent exact-firmware report where reactivation restored WHOOP and NOOP sync. Not directly proven on this strap; state byte11 has no verified interpretation here.",
+    "source": "https://github.com/ryanbr/noop/issues/2894#issuecomment-6659952342",
+    "accountVerification": "Official WHOOP sign-in is required to inspect the owner account; no membership change authorized or performed."
+  },
+  "limitations": [
+    "The response-slicing defect was real but fixing it did not restore historical transfer.",
+    "No exact interpretation of history state11 or direct proof of a membership lock.",
+    "No physiological accuracy claim; synthetic tests and successful Bluetooth replies are distinct from measured collection.",
+    "No continuous overnight or force-quit reliability claim.",
+    "Firmware alarm and haptic actions were not exercised in this collection investigation."
+  ],
+  "safety": {
+    "databaseMigrations": false,
+    "healthRecordsDeleted": false,
+    "firmwareChanged": false,
+    "pairingChanged": false,
+    "certificatesChanged": false,
+    "wakeAlarmConfigurationChanged": false,
+    "historyTrimOrReadPointerCommandsSent": false,
+    "normalLaunchRestored": true,
+    "membershipOrBillingChanged": false
+  },
+  "sourceSHA256": {
+    "Strand/BLE/BLEManager.swift": "81022b3b213cbde36831e014bf88da2a8f559626807ec3b3f6d56cad9c0a7f7d",
+    "Strand/BLE/FrameRouter.swift": "5cf92eca1737668e5f516753ae21f93a778e150aeab6ae5a0928fbf95faaa217",
+    "StrandiOS/Export/LifeSyncReadinessProof.swift": "5623834877746a0f39dcb5aae4f38714442a36aa62c3839a2fb6fe58bf687421",
+    "StrandTests/WhoopCollectionSupportTests.swift": "a53b57133327d02ef6aa6dbf664cb81845255348f81ea321cb7865990539c8fd",
+    "android/app/src/main/java/com/noop/ble/WhoopBleClient.kt": "5122c5418ec258b8e98e789a9460b6928179e725ad75691350756ce507e23dcf",
+    "android/app/src/test/java/com/noop/ble/Whoop5ResponsePayloadOracleTest.kt": "5d6af666ef5c437d2d351773b887eae551948ca7a575811caf1193c3fee3da73",
+    "android/app/src/test/java/com/noop/ble/AdvertisingNameProbeTest.kt": "f8474eb827bf12e21a691f2faaebbd5cb7f5271ee7ac3ed606c4082ed771674a",
+    "project.yml": "259307d64371093264ecbf5c4f0782f7e63379a8d7ad7a2fcc6e6b205eb31dbd"
+  }
+}
