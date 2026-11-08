@@ -39,7 +39,7 @@ enum SleepComparisonHealthReader {
         return result
     }
 
-    static func read(window: MetricDateWindow) async throws -> [SleepComparisonProvider] {
+    static func read(window: MetricDateWindow, calendar: Calendar = .current) async throws -> [SleepComparisonProvider] {
         guard HKHealthStore.isHealthDataAvailable(), HealthKitBridge.hasHealthKitEntitlement,
               let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
         let observedThrough = Date()
@@ -73,7 +73,7 @@ enum SleepComparisonHealthReader {
             store.execute(query)
         }
         return await Task.detached(priority: .userInitiated) {
-            SleepComparisonProjection.healthProviders(samples, window: window, observedThrough: observedThrough)
+            SleepComparisonProjection.healthProviders(samples, window: window, calendar: calendar, observedThrough: observedThrough)
         }.value
     }
 }

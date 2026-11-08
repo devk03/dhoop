@@ -84,6 +84,25 @@ final class SleepWebhookClient: ObservableObject {
             }
         }
     }
+    static func readEightSleep(from: String, through: String, now: Date) async throws -> [SleepWebhookSummary] {
+        let calendar = SleepWebhookPolicy.destinationCalendar()
+        let formatter = DateFormatter(); formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
+        guard let start = formatter.date(from: from), let end = formatter.date(from: through) else {
+            throw SleepWebhookFailure.invalidSummary
+        }
+        var selection = MetricRangeSelection(now: now)
+        selection.preset = .custom; selection.customStart = start; selection.customEnd = end
+        let window = selection.window(now: now, calendar: calendar)
+        let providers = try await SleepComparisonHealthReader.read(window: window, calendar: calendar)
+        // Generic apple-health daily totals may mix providers and cannot be labeled 8sleep.
+        let groups = providers.filter(\.isEightSleep).sorted { $0.id < $1.id }.map(\.days)
+        return SleepComparisonProjection.preferred(groups, window: window).map {
+            SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.total, method: "healthkit_import",
+                timeZone: "America/Los_Angeles", source: "8sleep")
+        }
+    }
+
     struct ActionFailure: LocalizedError {
         let message: String
         var errorDescription: String? { message }
@@ -115,6 +134,8 @@ final class SleepWebhookClient: ObservableObject {
         let ticket = generation
         defer { isSending = false; SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled) }
         var success = true
+        var eightSleep: [SleepWebhookSummary]?
+        var fallbackReadFailed = false
         // Newest first, then oldest outstanding: four bounded requests at most. The second slot
         // prevents old corrections starving when one new completed day arrives every day.
         for (protein, oldestFirst) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -162,6 +183,13 @@ final class SleepWebhookClient: ObservableObject {
                         ? "Received by Life · manual protein preserved" : "Protein received by Life"
                 } else {
                     if next.delivery.pending == nil {
+                        if eightSleep == nil {
+                            do { eightSleep = try await Self.readEightSleep(from: sleepDays.from, through: sleepDays.through, now: selectionTime) }
+                            catch { eightSleep = []; fallbackReadFailed = true }
+                        }
+                        try Task.checkCancellation()
+                        guard ticket == generation, checkpoint.enabled else { return false }
+                        next = checkpoint
                         let before = SleepExportReadiness(computing: model.intelligence.computing,
                             rescoreOwed: RescoreBackgroundScheduler.isRescoreOwed, generation: RescoreBackgroundScheduler.currentOwedToken,
                             completedPass: RescoreBackgroundScheduler.isOwedAfterCompletedPass)
@@ -175,14 +203,18 @@ final class SleepWebhookClient: ObservableObject {
                             rescoreOwed: RescoreBackgroundScheduler.isRescoreOwed, generation: RescoreBackgroundScheduler.currentOwedToken,
                             completedPass: RescoreBackgroundScheduler.isOwedAfterCompletedPass)
                         let waiting = rows.contains { $0.estimated && !before.allows(estimated: true, after: after) }
-                        let candidates = rows.reversed().filter { before.allows(estimated: $0.estimated, after: after) }.map { SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
+                        let readyWhoop = rows.reversed().filter { before.allows(estimated: $0.estimated, after: after) }.map { SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
                             method: $0.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles") }
+                        let candidates = SleepWebhookSourceSelection.candidates(readyWhoop: readyWhoop,
+                            presentWhoopDays: Set(rows.map(\.day)), eightSleep: eightSleep ?? [],
+                            acknowledged: next.delivery.acknowledged)
                         let differences = candidates.filter { next.delivery.acknowledged[$0.wakeDate] != $0 }
                         next.sleepBacklog = differences.count > 1 || waiting
                         guard let candidate = oldestFirst ? differences.last : differences.first else {
                             next.failures = 0; next.nextAttempt = nil
                             if waiting { next.message = "Waiting for sleep processing" }
-                            else { next.message = "No new sleep summaries ready" }
+                            else if fallbackReadFailed { next.message = "8sleep could not be read. Check Health sleep access." }
+                            else { next.message = "No new verified WHOOP or 8sleep summaries ready" }
                             try commit(next); continue
                         }
                         _ = try next.delivery.prepare(candidate); next.message = "Sending verified sleep summary"

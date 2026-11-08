@@ -139,7 +139,7 @@ enum LifeSyncReadinessProof {
         if let error = model.live.lastSyncError { result["syncError"] = error }
         if let value = delivery.pending?.event { result["sleepPendingEventId"] = value.eventId; result["sleepPendingWakeDate"] = value.wakeDate; result["sleepPendingRevision"] = value.revision }
         if let value = delivery.proteinPending?.event { result["proteinPendingEventId"] = value.eventId; result["proteinPendingDay"] = value.day; result["proteinPendingRevision"] = value.revision }
-        if let value = delivery.lastAcceptedEvent { result["sleepAcceptedEventId"] = value.eventId; result["sleepAcceptedWakeDate"] = value.wakeDate; result["sleepAcceptedRevision"] = value.revision }
+        if let value = delivery.lastAcceptedEvent { result["sleepAcceptedEventId"] = value.eventId; result["sleepAcceptedWakeDate"] = value.wakeDate; result["sleepAcceptedRevision"] = value.revision; result["sleepAcceptedSource"] = value.source; result["sleepAcceptedMethod"] = value.method }
         if let value = delivery.lastAcceptedProtein { result["proteinAcceptedEventId"] = value.eventId; result["proteinAcceptedDay"] = value.day; result["proteinAcceptedRevision"] = value.revision }
         if let value = delivery.lastOutcome { result["sleepOutcome"] = value }
         if let value = delivery.proteinOutcome { result["proteinOutcome"] = value }
@@ -174,9 +174,16 @@ enum LifeSyncReadinessProof {
                     completedPass: RescoreBackgroundScheduler.isOwedAfterCompletedPass)
                 result["sleepReadinessBlockedDays"] = rows.filter { !before.allows(estimated: $0.estimated, after: after) }.map(\.day)
                 result["verifiedSleepDays"] = rows.map { ["day": $0.day, "estimated": $0.estimated] as [String: Any] }
-                result["sleepCandidateDays"] = rows.filter { before.allows(estimated: $0.estimated, after: after) }.filter {
-                    delivery.acknowledged[$0.day] != SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes, method: $0.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles")
-                }.map(\.day)
+                let ready = rows.filter { before.allows(estimated: $0.estimated, after: after) }.map {
+                    SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
+                        method: $0.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles")
+                }
+                let eight = try await SleepWebhookClient.readEightSleep(from: sleepDays.from, through: sleepDays.through, now: now)
+                result["verifiedEightSleepDays"] = eight.map(\.wakeDate)
+                let selected = SleepWebhookSourceSelection.candidates(readyWhoop: ready,
+                    presentWhoopDays: Set(rows.map(\.day)), eightSleep: eight, acknowledged: delivery.acknowledged)
+                result["sleepCandidateDays"] = selected.filter { delivery.acknowledged[$0.wakeDate] != $0 }.map(\.wakeDate)
+                result["sleepCandidateSources"] = selected.map { ["day": $0.wakeDate, "source": $0.effectiveSource] }
             }
         } catch { result["readErrorType"] = String(describing: type(of: error)) }
         result["activeSourceChangedDuringRead"] = sourceId != model.repo.deviceId
