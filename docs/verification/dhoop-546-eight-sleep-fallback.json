@@ -1,0 +1,27 @@
+{
+  "build": "546",
+  "purpose": "Provider-specific 8sleep fallback for the owner-configured Life sleep export",
+  "verification": {
+    "targetedTestsPassed": 39,
+    "targetedTestsFailed": 0,
+    "iOSReleaseBuild": "passed",
+    "sourceCommentLint": "passed",
+    "bundleSigningAndAppGroup": "verified unchanged",
+    "installedOnPhysicalIPhone": true,
+    "realFallbackReceiptsConfirmedByLife": 5,
+    "manualValuesPreserved": true,
+    "outboxBacklog": false
+  },
+  "receiver": {
+    "commit": "1cbf373",
+    "deployment": "614e8c49-a189-47ee-abcf-b54ed4a4d0f8",
+    "schemaMigration": false
+  },
+  "limitations": [
+    "WHOOP overnight capture still supplied no readable HR/RR during the enabled overnight window.",
+    "Morning standard HR was received and persisted; history requests acknowledged but returned no historical records.",
+    "A newly computed morning HR-only sleep episode was identified as a separate source-selection concern; it is not evidence of a captured night.",
+    "Compilation, Bluetooth acknowledgements and source-aware delivery do not validate physiological accuracy."
+  ],
+  "androidScope": "iOS-only HealthKit personal export; no shared analytics, stored health values or schemas changed."
+}
