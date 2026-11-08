@@ -179,9 +179,12 @@ enum LifeSyncReadinessProof {
                         method: $0.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles")
                 }
                 let eight = try await SleepWebhookClient.readEightSleep(from: sleepDays.from, through: sleepDays.through, now: now)
-                result["verifiedEightSleepDays"] = eight.map(\.wakeDate)
+                result["verifiedEightSleepDays"] = eight.summaries.map(\.wakeDate)
+                let disjoint = try await SleepWebhookClient.disjointWhoopEstimates(rows: rows, eightSleep: eight, store: store)
+                result["disjointWhoopEstimateDays"] = disjoint.sorted()
                 let selected = SleepWebhookSourceSelection.candidates(readyWhoop: ready,
-                    presentWhoopDays: Set(rows.map(\.day)), eightSleep: eight, acknowledged: delivery.acknowledged)
+                    presentWhoopDays: Set(rows.map(\.day)), eightSleep: eight.summaries,
+                    acknowledged: delivery.acknowledged, disjointWhoopEstimateDays: disjoint)
                 result["sleepCandidateDays"] = selected.filter { delivery.acknowledged[$0.wakeDate] != $0 }.map(\.wakeDate)
                 result["sleepCandidateSources"] = selected.map { ["day": $0.wakeDate, "source": $0.effectiveSource] }
             }

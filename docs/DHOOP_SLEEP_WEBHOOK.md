@@ -65,8 +65,16 @@ Do not relabel Dhoop estimates as official WHOOP values or combine them with App
 The agreed 8sleep extension retains schema version 1 and the existing acknowledgement fields.
 For each wake date, verified WHOOP takes priority; 8sleep fills dates with no recorded WHOOP night.
 A recorded WHOOP estimate awaiting processing withholds fallback. A higher-revision WHOOP event may
-replace automatic 8sleep later; 8sleep may never downgrade automatic WHOOP. Manual values and clears
-remain protected. A stale lower-priority event is consumed with an exact `accepted`/`stale` receipt.
+replace automatic 8sleep later. Manual values and clears remain protected. A stale lower-priority
+event is consumed with an exact `accepted`/`stale` receipt.
+The sole correction exception is optional `supersedesWhoopEstimate: true` on an 8sleep event. Build
+547 emits it only when an HR-only local estimate has known sleep periods wholly disjoint from the
+verified 8sleep asleep intervals for that wake date. This prevents an inferred morning rest episode
+from blocking the actual night's fallback. Missing/invalid periods, any overlap, user-edited sessions,
+unfinished processing and official WHOOP imports retain WHOOP priority. No estimate or raw data is
+deleted. The receiver can supersede an automatic `dhoop_estimate` only at a higher revision; an official
+`whoop_import` and manual ownership remain protected. Omit the field normally; false is invalid. It
+participates in immutable event identity when present, without changing hashes of earlier events.
 The sender's prior WHOOP checkpoints omit an optional source field and continue to default to WHOOP;
 in-flight event bytes are never regenerated to adopt the new contract.
 No raw HR, R–R, sleep-stage traces, serial numbers, MAC addresses, weight or protein are sent.
@@ -196,7 +204,9 @@ claiming end-to-end delivery. Deployment status must be reported separately from
 Settings → Life sync provides the default-off toggle, connection setup, pending/accepted status,
 and Send now. The one-week source scan uses `verifiedWhoopSleepTotals`, which resolves each stored
 sleep total and computed input provenance in one database snapshot. Imported WHOOP records take
-priority; computed estimates must have WHOOP input provenance. Apple Health is never a fallback.
+priority; computed estimates must have WHOOP input provenance. Since build 546, provider-specific
+8sleep records fill dates without a recorded WHOOP night. The separate HealthKit provider query uses
+the same Pacific day boundaries; generic Apple Health daily totals remain ineligible.
 This is an iOS-specific personal-fork export; Android retains its independent upstream raw-stream push.
 No analytics formula, stored health value or database schema is changed by this feature.
 

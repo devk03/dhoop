@@ -135,6 +135,56 @@ final class SleepWebhookDeliveryTests: XCTestCase {
         XCTAssertTrue(selected([], present: [], ack: [whoop.wakeDate: whoop]).isEmpty, "A transient read gap cannot downgrade an acknowledged WHOOP night")
         XCTAssertEqual(selected([whoop], present: [whoop.wakeDate], ack: [eight.wakeDate: eight]), [whoop])
     }
+    func testDisjointEvidenceRequiresKnownHRonlyPeriodsAndPreservesAnyOverlap() {
+        typealias Period = SleepWebhookSourceSelection.Period
+        func disjoint(_ whoop: [Period], _ eight: [Period], hrOnly: Bool = true) -> Bool {
+            SleepWebhookSourceSelection.disjointHRonlyEstimate(hrOnly: hrOnly, whoop: whoop, eightSleep: eight)
+        }
+        let night = [Period(start: 0, end: 3600)]
+        XCTAssertTrue(disjoint([Period(start: 7200, end: 10_800)], night))
+        XCTAssertTrue(disjoint([Period(start: 3600, end: 7200)], night), "Touching bounds have no shared sleep time")
+        XCTAssertFalse(disjoint([Period(start: 3599, end: 7200)], night))
+        XCTAssertFalse(disjoint([Period(start: 7200, end: 10_800), Period(start: 3000, end: 3200)], night))
+        XCTAssertFalse(disjoint([], night)); XCTAssertFalse(disjoint(night, []))
+        XCTAssertFalse(disjoint([Period(start: .nan, end: 10_800)], night))
+        XCTAssertFalse(disjoint([Period(start: 7200, end: 7200)], night))
+        XCTAssertFalse(disjoint([Period(start: 7200, end: 10_800)], night, hrOnly: false))
+    }
+    func testDisjointCorrectionDoesNotBypassImportOrProcessingGuards() throws {
+        let eight = fallback(), whoop = summary, day = summary.wakeDate
+        func selected(_ ready: [SleepWebhookSummary], ack: SleepWebhookSummary? = nil) -> [SleepWebhookSummary] {
+            SleepWebhookSourceSelection.candidates(readyWhoop: ready, presentWhoopDays: [day],
+                eightSleep: [eight], acknowledged: ack.map { [day: $0] } ?? [:], disjointWhoopEstimateDays: [day])
+        }
+        let correction = try XCTUnwrap(selected([whoop], ack: whoop).first)
+        XCTAssertEqual(correction.effectiveSource, "8sleep"); XCTAssertEqual(correction.supersedesWhoopEstimate, true)
+        XCTAssertEqual(selected([whoop], ack: correction), [correction], "The same temporal correction is stable across checks")
+        XCTAssertTrue(selected([]).isEmpty, "Pending processing cannot authorize a correction")
+        let imported = SleepWebhookSummary(wakeDate: day, sleepMinutes: 480, method: "whoop_import", timeZone: summary.timeZone)
+        XCTAssertEqual(selected([imported]), [imported])
+        XCTAssertEqual(selected([whoop], ack: imported), [whoop], "A temporarily absent import cannot authorize an 8sleep downgrade")
+    }
+    func testExplicitCorrectionIsValidatedAndRetryBytesRemainImmutable() throws {
+        var correction = fallback(); correction.supersedesWhoopEstimate = true
+        XCTAssertTrue(correction.isValid)
+        var invalid = summary; invalid.supersedesWhoopEstimate = true; XCTAssertFalse(invalid.isValid)
+        invalid = fallback(); invalid.supersedesWhoopEstimate = false; XCTAssertFalse(invalid.isValid)
+        var delivery = SleepWebhookDelivery(); try delivery.configure(endpoint: endpoint)
+        let normal = try XCTUnwrap(delivery.prepare(fallback(), now: now))
+        let normalJSON = try XCTUnwrap(try JSONSerialization.jsonObject(with: normal.bytes) as? [String: Any])
+        XCTAssertNil(normalJSON["supersedesWhoopEstimate"])
+        XCTAssertEqual(try delivery.prepare(correction)?.bytes, normal.bytes)
+        try delivery.accept(receipt(normal.event))
+        let revised = try XCTUnwrap(delivery.prepare(correction, now: now))
+        let revisedJSON = try XCTUnwrap(try JSONSerialization.jsonObject(with: revised.bytes) as? [String: Any])
+        XCTAssertEqual(revisedJSON["supersedesWhoopEstimate"] as? Bool, true)
+        XCTAssertGreaterThan(revised.event.revision, normal.event.revision)
+        var restored = try JSONDecoder().decode(SleepWebhookDelivery.self, from: JSONEncoder().encode(delivery))
+        try restored.validate()
+        XCTAssertEqual(try restored.prepare(summary)?.bytes, revised.bytes)
+        try restored.accept(receipt(revised.event))
+        XCTAssertNil(try restored.prepare(correction))
+    }
 
     func testSealedSetupRoundTripAndWrongPhoneTamperExpiryRejected() throws {
         let key = P256.KeyAgreement.PrivateKey()

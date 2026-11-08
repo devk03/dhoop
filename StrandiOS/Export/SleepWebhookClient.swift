@@ -2,6 +2,7 @@
 import Foundation
 import Combine
 import CryptoKit
+import WhoopStore
 
 @MainActor
 final class SleepWebhookClient: ObservableObject {
@@ -84,7 +85,11 @@ final class SleepWebhookClient: ObservableObject {
             }
         }
     }
-    static func readEightSleep(from: String, through: String, now: Date) async throws -> [SleepWebhookSummary] {
+    struct EightSleepRead {
+        var summaries: [SleepWebhookSummary] = []
+        var periods: [String: [SleepWebhookSourceSelection.Period]] = [:]
+    }
+    static func readEightSleep(from: String, through: String, now: Date) async throws -> EightSleepRead {
         let calendar = SleepWebhookPolicy.destinationCalendar()
         let formatter = DateFormatter(); formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
@@ -97,10 +102,39 @@ final class SleepWebhookClient: ObservableObject {
         let providers = try await SleepComparisonHealthReader.read(window: window, calendar: calendar)
         // Generic apple-health daily totals may mix providers and cannot be labeled 8sleep.
         let groups = providers.filter(\.isEightSleep).sorted { $0.id < $1.id }.map(\.days)
-        return SleepComparisonProjection.preferred(groups, window: window).map {
+        let days = SleepComparisonProjection.preferred(groups, window: window)
+        let summaries = days.map {
             SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.total, method: "healthkit_import",
                 timeZone: "America/Los_Angeles", source: "8sleep")
         }
+        let periods = Dictionary(uniqueKeysWithValues: days.map { day in
+            (day.day, day.timelines.flatMap(\.intervals).filter { $0.stage != .awake }.map {
+                SleepWebhookSourceSelection.Period(start: $0.start, end: $0.end)
+            })
+        })
+        return EightSleepRead(summaries: summaries, periods: periods)
+    }
+    /// Only positive, nonoverlapping temporal evidence can disqualify an HR-only estimate.
+    /// No analytic values or stored sessions are rewritten; edited periods remain authoritative.
+    static func disjointWhoopEstimates(rows: [VerifiedSleepTotal], eightSleep: EightSleepRead,
+                                       store: WhoopStore) async throws -> Set<String> {
+        let calendar = SleepWebhookPolicy.destinationCalendar()
+        let formatter = DateFormatter(); formatter.calendar = calendar; formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
+        var result = Set<String>()
+        for row in rows where row.estimated && !(eightSleep.periods[row.day] ?? []).isEmpty {
+            guard let start = formatter.date(from: row.day), let end = calendar.date(byAdding: .day, value: 1, to: start),
+                  let daily = try await store.dailyMetrics(deviceId: row.sourceId, from: row.day, to: row.day).first,
+                  daily.sleepHrOnly == true else { continue }
+            let sessions = try await store.sleepSessionsByWake(deviceId: row.sourceId,
+                from: Int(start.timeIntervalSince1970), to: Int(end.timeIntervalSince1970) - 1)
+            guard !sessions.contains(where: \.userEdited) else { continue }
+            let periods = sessions.map { SleepWebhookSourceSelection.Period(start: Double($0.effectiveStartTs), end: Double($0.endTs)) }
+            if SleepWebhookSourceSelection.disjointHRonlyEstimate(hrOnly: true, whoop: periods, eightSleep: eightSleep.periods[row.day] ?? []) {
+                result.insert(row.day)
+            }
+        }
+        return result
     }
 
     struct ActionFailure: LocalizedError {
@@ -134,7 +168,7 @@ final class SleepWebhookClient: ObservableObject {
         let ticket = generation
         defer { isSending = false; SleepWebhookScheduler.update(enabled: checkpoint.anyEnabled) }
         var success = true
-        var eightSleep: [SleepWebhookSummary]?
+        var eightSleep: EightSleepRead?
         var fallbackReadFailed = false
         // Newest first, then oldest outstanding: four bounded requests at most. The second slot
         // prevents old corrections starving when one new completed day arrives every day.
@@ -185,7 +219,7 @@ final class SleepWebhookClient: ObservableObject {
                     if next.delivery.pending == nil {
                         if eightSleep == nil {
                             do { eightSleep = try await Self.readEightSleep(from: sleepDays.from, through: sleepDays.through, now: selectionTime) }
-                            catch { eightSleep = []; fallbackReadFailed = true }
+                            catch { eightSleep = EightSleepRead(); fallbackReadFailed = true }
                         }
                         try Task.checkCancellation()
                         guard ticket == generation, checkpoint.enabled else { return false }
@@ -196,6 +230,7 @@ final class SleepWebhookClient: ObservableObject {
                         guard let healthStore = await model.repo.storeHandle() else { throw SleepWebhookFailure.storage }
                         let ids = await model.repo.sleepComparisonSourceIds().filter { !$0.hasSuffix("-noop") }
                         let rows = try await healthStore.verifiedWhoopSleepTotals(rawSourceIds: ids, from: sleepDays.from, to: sleepDays.through)
+                        let disjoint = try await Self.disjointWhoopEstimates(rows: rows, eightSleep: eightSleep ?? EightSleepRead(), store: healthStore)
                         try Task.checkCancellation()
                         guard ticket == generation, checkpoint.enabled else { return false }
                         next = checkpoint
@@ -206,8 +241,9 @@ final class SleepWebhookClient: ObservableObject {
                         let readyWhoop = rows.reversed().filter { before.allows(estimated: $0.estimated, after: after) }.map { SleepWebhookSummary(wakeDate: $0.day, sleepMinutes: $0.minutes,
                             method: $0.estimated ? "dhoop_estimate" : "whoop_import", timeZone: "America/Los_Angeles") }
                         let candidates = SleepWebhookSourceSelection.candidates(readyWhoop: readyWhoop,
-                            presentWhoopDays: Set(rows.map(\.day)), eightSleep: eightSleep ?? [],
-                            acknowledged: next.delivery.acknowledged)
+                            presentWhoopDays: Set(rows.map(\.day)), eightSleep: eightSleep?.summaries ?? [],
+                            acknowledged: next.delivery.acknowledged,
+                            disjointWhoopEstimateDays: disjoint)
                         let differences = candidates.filter { next.delivery.acknowledged[$0.wakeDate] != $0 }
                         next.sleepBacklog = differences.count > 1 || waiting
                         guard let candidate = oldestFirst ? differences.last : differences.first else {

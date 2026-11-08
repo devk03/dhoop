@@ -7,6 +7,7 @@ struct SleepWebhookSummary: Codable, Equatable, Sendable {
     let method: String
     let timeZone: String
     var source: String? = nil
+    var supersedesWhoopEstimate: Bool? = nil
     var effectiveSource: String { source ?? "whoop" }
 
     var isValid: Bool {
@@ -21,6 +22,8 @@ struct SleepWebhookSummary: Codable, Equatable, Sendable {
             && ((effectiveSource == "whoop" && ["dhoop_estimate", "whoop_import"].contains(method))
                 || (effectiveSource == "8sleep" && method == "healthkit_import"))
             && timeZone == "America/Los_Angeles"
+            && (supersedesWhoopEstimate == nil
+                || (supersedesWhoopEstimate == true && effectiveSource == "8sleep" && method == "healthkit_import"))
     }
 }
 
@@ -35,10 +38,11 @@ struct SleepWebhookEvent: Codable, Equatable, Sendable {
     let method: String
     let timeZone: String
     let generationDate: String
+    var supersedesWhoopEstimate: Bool? = nil
 
     var summary: SleepWebhookSummary {
         SleepWebhookSummary(wakeDate: wakeDate, sleepMinutes: sleepMinutes, method: method, timeZone: timeZone,
-            source: source == "whoop" ? nil : source)
+            source: source == "whoop" ? nil : source, supersedesWhoopEstimate: supersedesWhoopEstimate)
     }
 }
 
@@ -109,7 +113,8 @@ struct SleepWebhookDelivery: Codable, Sendable {
         let event = SleepWebhookEvent(schemaVersion: 1, eventId: UUID().uuidString.lowercased(),
             installationId: installationId, revision: revision, wakeDate: summary.wakeDate,
             sleepMinutes: summary.sleepMinutes, source: summary.effectiveSource, method: summary.method,
-            timeZone: summary.timeZone, generationDate: ISO8601DateFormatter().string(from: now))
+            timeZone: summary.timeZone, generationDate: ISO8601DateFormatter().string(from: now),
+            supersedesWhoopEstimate: summary.supersedesWhoopEstimate)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let next = Pending(event: event, bytes: try encoder.encode(event))
         pending = next
@@ -236,14 +241,31 @@ enum SleepWebhookPolicy {
     }
 }
 
-/// One automatic source per wake date. Recorded WHOOP wins even while its processing is pending;
-/// temporary read gaps must not downgrade a previously acknowledged WHOOP night to a fallback.
+/// One automatic source per wake date. A known HR-only episode wholly outside the provider's sleep
+/// cannot stand in for that night. Missing evidence and pending processing retain WHOOP priority.
 enum SleepWebhookSourceSelection {
+    struct Period: Sendable {
+        let start: Double
+        let end: Double
+        var isValid: Bool { start.isFinite && end.isFinite && end > start }
+    }
+    static func disjointHRonlyEstimate(hrOnly: Bool, whoop: [Period], eightSleep: [Period]) -> Bool {
+        guard hrOnly, !whoop.isEmpty, !eightSleep.isEmpty,
+              whoop.allSatisfy(\.isValid), eightSleep.allSatisfy(\.isValid) else { return false }
+        return !whoop.contains { lhs in eightSleep.contains { rhs in max(lhs.start, rhs.start) < min(lhs.end, rhs.end) } }
+    }
     static func candidates(readyWhoop: [SleepWebhookSummary], presentWhoopDays: Set<String>,
-                           eightSleep: [SleepWebhookSummary], acknowledged: [String: SleepWebhookSummary]) -> [SleepWebhookSummary] {
+                           eightSleep: [SleepWebhookSummary], acknowledged: [String: SleepWebhookSummary],
+                           disjointWhoopEstimateDays: Set<String> = []) -> [SleepWebhookSummary] {
         var days: [String: SleepWebhookSummary] = [:]
         for row in readyWhoop where row.isValid && row.effectiveSource == "whoop" { days[row.wakeDate] = row }
-        for row in eightSleep where row.isValid && row.effectiveSource == "8sleep" {
+        for var row in eightSleep where row.isValid && row.effectiveSource == "8sleep" {
+            if disjointWhoopEstimateDays.contains(row.wakeDate), days[row.wakeDate]?.method == "dhoop_estimate",
+               acknowledged[row.wakeDate]?.method != "whoop_import" {
+                row.supersedesWhoopEstimate = true
+                days[row.wakeDate] = row
+                continue
+            }
             guard days[row.wakeDate] == nil, !presentWhoopDays.contains(row.wakeDate),
                   acknowledged[row.wakeDate]?.effectiveSource != "whoop" else { continue }
             days[row.wakeDate] = row
