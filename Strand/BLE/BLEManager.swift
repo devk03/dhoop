@@ -746,6 +746,14 @@ public final class BLEManager: NSObject, ObservableObject {
     private var inboundFrames = 0
     private var inboundBytes = 0
     private var cmdChannelFrames = 0
+    // Opt-in transport evidence before parsing; no payloads or peripheral identifiers.
+    private let supportTransportEnabled = ProcessInfo.processInfo.arguments.contains("--whoop-receipt-check")
+    private var supportRxBytes: [String: Int] = [:]
+    private var supportRxCalls: [String: Int] = [:]
+    private var supportReadErrors: [String: Int] = [:]
+    private var supportCompletedFrameBytes = 0
+    private var supportFrameTypes: [String: Int] = [:]
+    private var supportTransportEpoch = 0
     /// #1635: rows ACCEPTED on this link, split by PATH. The realtime decoder yields only hr/rr/events/
     /// battery; gravity, resp, skinTemp, SpO2 and steps arrive solely through the offload, so counting one
     /// path and naming streams from the other prints a constant rather than a finding. Cleared with the
@@ -1699,6 +1707,16 @@ public final class BLEManager: NSObject, ObservableObject {
     /// Kept on BLEManager so the app lifecycle reaches the live Collector owned by this connection.
     func flushStandardHRForLifecycle(reason: LivePersistTrace.StandardHRFlushReason) async {
         await collector?.flushStandardHR(reason: reason)
+    }
+
+    func collectionTransportEvidence() -> [String: Any] {
+        ["capturedAt": Date().timeIntervalSince1970, "epoch": supportTransportEpoch,
+         "connected": state.connected, "receivedBytesByCharacteristic": supportRxBytes,
+         "receivedCallbacksByCharacteristic": supportRxCalls, "readErrorsByCharacteristic": supportReadErrors,
+         "completedVendorFrameBytes": supportCompletedFrameBytes, "completedFrameTypes": supportFrameTypes,
+         "reassemblyHeaderDrops": reassembler.headerChecksumDrops,
+         "reassemblyMinimumLengthDrops": reassembler.belowMinimumLengthDrops,
+         "rejectedFramesByReason": Dictionary(uniqueKeysWithValues: router.rejectTally.counts.map { ($0.key.rawValue, $0.value) })]
     }
 
     /// USER-initiated connect (the Connect button, the scan flow, Add-a-WHOOP). The ONLY entry that
@@ -5930,6 +5948,8 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         // #1809: this link's inbound tally starts empty; the epitaph on disconnect reports exactly what
         // arrived between here and there.
         inboundFrames = 0; inboundBytes = 0; cmdChannelFrames = 0
+        supportRxBytes.removeAll(); supportRxCalls.removeAll(); supportReadErrors.removeAll()
+        supportCompletedFrameBytes = 0; supportFrameTypes.removeAll(); supportTransportEpoch += 1
         // #2397: and the per-link signal shape, for the same reason.
         rssiReads = 0; rssiWorstDbm = nil; rssiSumDbm = 0
         // #1635: same guarantee for the banked tally. Clearing only on teardown would be enough if every
@@ -6162,6 +6182,8 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         }
         // Clear the tally with the link, so a second teardown for the same drop cannot re-report it.
         inboundFrames = 0; inboundBytes = 0; cmdChannelFrames = 0
+        supportRxBytes.removeAll(); supportRxCalls.removeAll(); supportReadErrors.removeAll()
+        supportCompletedFrameBytes = 0; supportFrameTypes.removeAll(); supportTransportEpoch += 1
         rssiReads = 0; rssiWorstDbm = nil; rssiSumDbm = 0
         liveHr = 0; liveRr = 0; offloadHr = 0; offloadRr = 0
         offloadGravity = 0; offloadResp = 0; offloadSkinTemp = 0; offloadSpo2 = 0; offloadChunks = 0
@@ -7239,6 +7261,7 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
             // A DIS refusal is a FINDING, not noise — report it specifically and latch it, or a capture
             // cannot tell a refusal from a read that was never issued (#490, #1635).
             noteDisReadFailure(characteristic.uuid, error)
+            if supportTransportEnabled { supportReadErrors[characteristic.uuid.uuidString, default: 0] += 1 }
             log("Notify update failed for \(characteristic.uuid): \(error.localizedDescription)")
             return
         }
@@ -7249,6 +7272,10 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
         // frame including ones no branch consumes - the epitaph must answer "did anything arrive at all".
         inboundFrames += 1
         inboundBytes += bytes.count
+        if supportTransportEnabled {
+            supportRxCalls[characteristic.uuid.uuidString, default: 0] += 1
+            supportRxBytes[characteristic.uuid.uuidString, default: 0] += bytes.count
+        }
         if characteristic.uuid == BLEManager.cmdNotifyChar { cmdChannelFrames += 1 }
 
         switch characteristic.uuid {
@@ -7322,6 +7349,13 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
             // into the connection's reject tally right after the feed that may have grown it —
             // otherwise it would disappear without trace.
             let completedFrames = reassembler.feed(bytes)
+            if supportTransportEnabled {
+                supportCompletedFrameBytes += completedFrames.reduce(0) { $0 + $1.count }
+                for frame in completedFrames {
+                    let offset = selectedModel.deviceFamily == .whoop5 ? 8 : 4
+                    if frame.count > offset { supportFrameTypes[String(frame[offset]), default: 0] += 1 }
+                }
+            }
             router.noteReassemblerDrops(reassembler.belowMinimumLengthDrops)
             router.noteReassemblerHeaderDrops(reassembler.headerChecksumDrops)
             for frame in completedFrames {
@@ -7451,6 +7485,13 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
             if BLEManager.whoop5NotifyChars.contains(characteristic.uuid) {
                 // Same fold as the WHOOP 4.0 path above: byte runs dropped below the family minimum.
                 let completedFrames = reassembler.feed(bytes)
+                if supportTransportEnabled {
+                    supportCompletedFrameBytes += completedFrames.reduce(0) { $0 + $1.count }
+                    for frame in completedFrames {
+                        let offset = selectedModel.deviceFamily == .whoop5 ? 8 : 4
+                        if frame.count > offset { supportFrameTypes[String(frame[offset]), default: 0] += 1 }
+                    }
+                }
                 router.noteReassemblerDrops(reassembler.belowMinimumLengthDrops)
                 router.noteReassemblerHeaderDrops(reassembler.headerChecksumDrops)
                 for frame in completedFrames {

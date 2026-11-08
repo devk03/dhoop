@@ -33,6 +33,10 @@ enum LifeSyncReadinessProof {
         defer { ScreenIdle.hold(.supportCapture, false) }
         let collection = WhoopCollectionModel()
         func capture(_ phase: String) async {
+            if let bytes = try? JSONSerialization.data(withJSONObject: model.ble.collectionTransportEvidence(), options: [.sortedKeys]) {
+                let file = FileManager.default.temporaryDirectory.appendingPathComponent("whoop-transport-" + run.uuidString + "-" + phase + ".json")
+                try? bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
             await model.ble.flushStandardHRForLifecycle(reason: .explicit)
             await model.ble.flushPuffinCaptures()
             await collection.refresh(repo: model.repo, live: model.live)
