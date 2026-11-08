@@ -127,6 +127,16 @@ enum LifeSyncReadinessProof {
             await capture("rangeAfter")
             // Explicit manual retry after live HR has been released, bypassing only the normal sync cooldown.
             model.ble.syncNow()
+            if isolated, ProcessInfo.processInfo.arguments.contains("--whoop-history-abort-retry") {
+                do { try await Task.sleep(nanoseconds: 20_000_000_000) } catch { return }
+                await capture("historyBeforeAbort")
+                model.ble.abortBackfill()
+                do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
+                await capture("historyAborted")
+                model.ble.send(.getDataRange, payload: [0x00])
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+                model.ble.syncNow()
+            }
             do { try await Task.sleep(nanoseconds: 65_000_000_000) } catch { return }
             await capture("historyAfter")
         }

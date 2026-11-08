@@ -137,7 +137,7 @@ public final class FrameRouter {
             // Sparse receipt evidence: ordinary logging omits SUCCESS, so a Pending-only log
             // cannot establish that Hello never completed. Do not expose its identity/key body.
             if family == .whoop5, let command = parsed.cmdName,
-               ["GET_HELLO(", "TOGGLE_REALTIME_HR(", "SEND_HISTORICAL_DATA(", "GET_DATA_RANGE(",
+               ["GET_HELLO(", "TOGGLE_REALTIME_HR(", "SEND_HISTORICAL_DATA(", "ABORT_HISTORICAL_TRANSMITS(", "GET_DATA_RANGE(",
                 "START_RAW_DATA(", "STOP_RAW_DATA(", "TOGGLE_IMU_MODE("].contains(where: { command.hasPrefix($0) }) {
                 let origin = parsed.parsed["resp_seq"]?.intValue.map(String.init) ?? "unknown"
                 let result = parsed.parsed["result"]?.stringValue ?? "unknown"
@@ -608,7 +608,7 @@ public final class FrameRouter {
             }
             return "hello candidate revision=\(payload[0]) clockSeconds=\(u32(6)) opaqueState=\(payload[5]) prepBits=\(u32(103))"
         }
-        if command.hasPrefix("SEND_HISTORICAL_DATA(") {
+        if command.hasPrefix("SEND_HISTORICAL_DATA(") || command.hasPrefix("ABORT_HISTORICAL_TRANSMITS(") {
             let prefix = payload.prefix(3).map { String(format: "%02x", $0) }.joined()
             return "history response bodyPrefix=\(prefix) bodyBytesIncludingPadding=\(payload.count)"
         }

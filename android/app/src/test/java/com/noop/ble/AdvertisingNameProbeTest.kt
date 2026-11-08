@@ -2,6 +2,9 @@ package com.noop.ble
 
 import com.noop.protocol.CommandNames
 import com.noop.protocol.CommandNumber
+import com.noop.protocol.DeviceFamily
+import com.noop.protocol.Framing
+import com.noop.protocol.PacketType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -17,14 +20,12 @@ import org.junit.Test
  */
 class AdvertisingNameProbeTest {
 
-    /** SOF, len(LE u16), crc8, then the 5/MG inner block; payload starts at 13. */
+    /** Real format-1 WHOOP 5 envelope, including its format byte, declared length and both CRCs. */
     private fun whoop5Response(payload: ByteArray): ByteArray {
-        val head = ByteArray(13)
-        val length = 13 + payload.size
-        head[0] = 0xAA.toByte()
-        head[1] = (length and 0xFF).toByte()
-        head[2] = ((length shr 8) and 0xFF).toByte()
-        return head + payload
+        val frame = Framing.puffinCommandFrame(cmd = CommandNumber.GET_ADVERTISING_NAME.rawValue,
+            seq = 9, payload = byteArrayOf(7, 1) + payload, type = PacketType.COMMAND_RESPONSE.rawValue)
+        assertTrue(Framing.verifyFrame(frame, DeviceFamily.WHOOP5).ok)
+        return frame
     }
 
     @Test fun decodesAPrintableNameFromTheFiveMgEnvelope() {
@@ -54,17 +55,16 @@ class AdvertisingNameProbeTest {
 
     /**
      * The decode must read the 5/MG envelope, NOT the 4.0 one. Reading a 5/MG frame with the 4.0 helper
-     * does not fail, it returns four bytes of envelope dressed as payload, which is exactly the mistake
-     * bhelm/noop#4 was. A frame whose envelope bytes are printable would decode differently under each.
+     * must not admit a WHOOP 5 format/length header. Printable prefix bytes also catch a payload
+     * slice beginning at the WHOOP 4 offset inside an otherwise correct WHOOP 5 envelope.
      */
     @Test fun readsTheFiveMgOffsetNotTheFourPointZeroOne() {
-        val frame = whoop5Response("NAME".toByteArray())
-        // Bytes 9..12 are envelope on a 5/MG and would be payload under the 4.0 helper. Make them
-        // printable so the two offsets cannot agree by accident.
-        frame[9] = 'X'.code.toByte(); frame[10] = 'X'.code.toByte()
-        frame[11] = 'X'.code.toByte(); frame[12] = 'X'.code.toByte()
+        val frame = Framing.puffinCommandFrame(cmd = 'X'.code, seq = 'X'.code,
+            payload = byteArrayOf('X'.code.toByte(), 'X'.code.toByte()) + "NAME".toByteArray(),
+            type = PacketType.COMMAND_RESPONSE.rawValue)
+        assertTrue(Framing.verifyFrame(frame, DeviceFamily.WHOOP5).ok)
         assertEquals("NAME", advertisingNameFromWhoop5Response(frame))
-        assertEquals("XXXXNAME", String(whoop4CommandResponsePayload(frame)!!, Charsets.UTF_8))
+        assertNull(whoop4CommandResponsePayload(frame))
     }
 
     @Test fun theReadOpcodeIsKnownAndLabelled() {
