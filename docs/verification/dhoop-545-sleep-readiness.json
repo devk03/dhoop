@@ -16,7 +16,13 @@
   "testScope": "Synthetic HR/RR with beat-consistent timestamps, no motion or history. Production IntelligenceEngine must persist an estimated night, resting HR, and HRV, and expose it through allSleepSessions used by SleepView.",
   "hardware": {
     "installed": true,
-    "overnightCaptureActivation": "Waiting for unlock: iOS denied the setup launch while locked"
+    "overnightCaptureActivation": "Enabled and verified in persisted preferences after normal relaunch",
+    "captureScheduleLocal": {
+      "start": "22:00",
+      "end": "07:00",
+      "usesExistingQuietHours": true
+    },
+    "actualOvernightCollectionVerified": false
   },
   "limitations": [
     "Synthetic pipeline checks do not validate physiological accuracy or an actual worn night.",
