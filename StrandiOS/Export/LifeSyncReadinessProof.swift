@@ -1,5 +1,6 @@
 #if os(iOS)
 import Foundation
+import UIKit
 
 /// Explicit local support capture: dates/counts only, no measurements or credentials.
 /// An optional manual sync uses the existing guarded user action; default capture is read-only.
@@ -51,9 +52,14 @@ enum LifeSyncReadinessProof {
               let run = UUID(uuidString: String(value.dropFirst(prefix.count))) else { return }
         ScreenIdle.hold(.supportCapture, true)
         defer { ScreenIdle.hold(.supportCapture, false) }
+        let isolated = ProcessInfo.processInfo.arguments.contains("--whoop-isolated-collection")
+        defer { model.ble.finishCollectionSupportIsolation() }
         let collection = WhoopCollectionModel()
         func capture(_ phase: String) async {
-            if let bytes = try? JSONSerialization.data(withJSONObject: model.ble.collectionTransportEvidence(), options: [.sortedKeys]) {
+            var evidence = model.ble.collectionTransportEvidence()
+            evidence["appState"] = UIApplication.shared.applicationState.rawValue
+            evidence["build"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+            if let bytes = try? JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]) {
                 let file = FileManager.default.temporaryDirectory.appendingPathComponent("whoop-transport-" + run.uuidString + "-" + phase + ".json")
                 try? bytes.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             }
@@ -64,12 +70,16 @@ enum LifeSyncReadinessProof {
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("whoop-receipt-" + run.uuidString + "-" + phase + ".json")
             try? data.write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         }
-        for _ in 0..<20 {
+        for _ in 0..<(isolated ? 60 : 20) {
             if model.live.connected && model.live.historyReady { break }
             do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
         }
         await capture("before")
         guard model.live.connected, model.live.activeIsWhoop else { return }
+        if isolated {
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+            await capture("passiveAfter")
+        }
         if ProcessInfo.processInfo.arguments.contains("--whoop-status-only") {
             model.ble.probeBodyLocationAndStatus()
             do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
@@ -89,6 +99,7 @@ enum LifeSyncReadinessProof {
                 do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
             }
         }
+        await capture("armedBefore")
         do {
             model.startRealtimeHR()
             defer { model.stopRealtimeHR() }
@@ -98,6 +109,10 @@ enum LifeSyncReadinessProof {
                 do { try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) } catch { return }
                 await capture(phase)
             }
+        }
+        if isolated {
+            do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+            await capture("releasedAfter")
         }
         if ProcessInfo.processInfo.arguments.contains("--whoop-collection-settings") {
             if ProcessInfo.processInfo.arguments.contains("--whoop-raw-receipt-check"),
@@ -109,6 +124,7 @@ enum LifeSyncReadinessProof {
             model.ble.probeBodyLocationAndStatus()
             model.ble.send(.getDataRange, payload: [0x00])
             do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
+            await capture("rangeAfter")
             // Explicit manual retry after live HR has been released, bypassing only the normal sync cooldown.
             model.ble.syncNow()
             do { try await Task.sleep(nanoseconds: 65_000_000_000) } catch { return }

@@ -142,6 +142,11 @@ public final class FrameRouter {
                 let origin = parsed.parsed["resp_seq"]?.intValue.map(String.init) ?? "unknown"
                 let result = parsed.parsed["result"]?.stringValue ?? "unknown"
                 state.append(log: "WHOOP collection response: command=\(command) origin=\(origin) result=\(result) frameBytes=\(frame.count)")
+                if ProcessInfo.processInfo.arguments.contains("--whoop-isolated-collection"),
+                   let payload = Self.commandResponsePayload(in: frame, family: family),
+                   let detail = Self.collectionSupportDetail(command: command, payload: payload) {
+                    state.append(log: "WHOOP collection detail: \(detail)")
+                }
             }
             if let sequence = parsed.parsed["resp_seq"]?.intValue,
                let result = parsed.parsed["result"]?.stringValue,
@@ -592,6 +597,24 @@ public final class FrameRouter {
         return idx < frame.count ? Int(frame[idx]) : nil
     }
 
+    /// Privacy-limited support fields. The documented 50.42 Hello offsets remain candidates on other
+    /// firmware; identity/key blocks are deliberately excluded and these words never gate collection.
+    nonisolated static func collectionSupportDetail(command: String, payload: [UInt8]) -> String? {
+        if command.hasPrefix("GET_HELLO(") {
+            guard payload.count >= 107, [1, 3].contains(payload[0]) else { return "hello candidate fields unavailable" }
+            func u32(_ offset: Int) -> UInt32 {
+                UInt32(payload[offset]) | UInt32(payload[offset + 1]) << 8
+                    | UInt32(payload[offset + 2]) << 16 | UInt32(payload[offset + 3]) << 24
+            }
+            return "hello candidate revision=\(payload[0]) clockSeconds=\(u32(6)) opaqueState=\(payload[5]) prepBits=\(u32(103))"
+        }
+        if command.hasPrefix("SEND_HISTORICAL_DATA(") {
+            let prefix = payload.prefix(3).map { String(format: "%02x", $0) }.joined()
+            return "history response bodyPrefix=\(prefix) bodyBytesIncludingPadding=\(payload.count)"
+        }
+        return nil
+    }
+
     // MARK: - Alarm-readback decode (WHOOP 4.0, GET_ALARM_TIME cmd 67 - #401 close-out)
 
     /// The payload of a COMMAND_RESPONSE: the bytes after [type,seq,cmd,origin_seq,result] (payload
@@ -604,8 +627,12 @@ public final class FrameRouter {
     /// offset returns four bytes of envelope dressed as payload rather than failing visibly.
     nonisolated static func commandResponsePayload(in frame: [UInt8],
                                                    family: DeviceFamily = .whoop4) -> [UInt8]? {
-        guard frame.count > 2 else { return nil }
-        let length = Int(frame[1]) | (Int(frame[2]) << 8)        // crc32 starts here
+        guard frame.count >= 4 else { return nil }
+        // WHOOP 5 byte 1 is the FORMAT, not the low length byte. Its declared length includes CRC32
+        // and excludes the eight-byte header; WHOOP 4's length is the CRC32 start offset already.
+        let length = family == .whoop5
+            ? (Int(frame[2]) | Int(frame[3]) << 8) + 4
+            : Int(frame[1]) | Int(frame[2]) << 8
         let inner = (family == .whoop5) ? 8 : whoop4InnerOffset
         let start = inner + 5                                    // skip type,seq,cmd,origin_seq,result
         guard length <= frame.count, start < length else { return nil }

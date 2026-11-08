@@ -748,6 +748,13 @@ public final class BLEManager: NSObject, ObservableObject {
     private var cmdChannelFrames = 0
     // Opt-in transport evidence before parsing; no payloads or peripheral identifiers.
     private let supportTransportEnabled = ProcessInfo.processInfo.arguments.contains("--whoop-receipt-check")
+    // Explicit collection experiment only; a cancelled/suspended support task cannot suppress
+    // automatic history indefinitely. No preference is changed.
+    private var supportIsolationUntil: Date? = {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("--whoop-receipt-check") && args.contains("--whoop-isolated-collection")
+            ? Date().addingTimeInterval(360) : nil
+    }()
     private var supportRxBytes: [String: Int] = [:]
     private var supportRxCalls: [String: Int] = [:]
     private var supportReadErrors: [String: Int] = [:]
@@ -1710,14 +1717,27 @@ public final class BLEManager: NSObject, ObservableObject {
     }
 
     func collectionTransportEvidence() -> [String: Any] {
-        ["capturedAt": Date().timeIntervalSince1970, "epoch": supportTransportEpoch,
+        var notifications: [String: Bool] = [:]
+        for characteristic in whoop5NotifyCharacteristics + [cmdNotifyCharacteristic, eventNotifyCharacteristic,
+            dataNotifyCharacteristic, heartRateCharacteristic, batteryCharacteristic].compactMap({ $0 }) {
+            notifications[characteristic.uuid.uuidString] = characteristic.isNotifying
+        }
+        return ["capturedAt": Date().timeIntervalSince1970, "epoch": supportTransportEpoch,
          "connected": state.connected, "receivedBytesByCharacteristic": supportRxBytes,
+         "notifyingCharacteristics": notifications, "historyOffloadInFlight": backfilling,
          "receivedCallbacksByCharacteristic": supportRxCalls, "readErrorsByCharacteristic": supportReadErrors,
          "completedVendorFrameBytes": supportCompletedFrameBytes, "completedFrameTypes": supportFrameTypes,
          "reassemblyHeaderDrops": reassembler.headerChecksumDrops,
          "reassemblyMinimumLengthDrops": reassembler.belowMinimumLengthDrops,
          "rejectedFramesByReason": Dictionary(uniqueKeysWithValues: router.rejectTally.counts.map { ($0.key.rawValue, $0.value) })]
     }
+
+    nonisolated static func deferAutomaticSyncForSupport(trigger: BackfillTrigger, now: Date, until: Date?) -> Bool {
+        guard let until, now < until else { return false }
+        return trigger != .manual && trigger != .autoContinue
+    }
+
+    func finishCollectionSupportIsolation() { supportIsolationUntil = nil }
 
     /// USER-initiated connect (the Connect button, the scan flow, Add-a-WHOOP). The ONLY entry that
     /// re-arms a bond-loop give-up: a user gesture is an explicit "try again", so the streak + pause
@@ -4926,6 +4946,10 @@ public final class BLEManager: NSObject, ObservableObject {
     /// gate AND the BackfillPolicy rate-limiter for the trigger. On a go: records the attempt time
     /// (persisted) and starts the offload.
     func requestSync(_ trigger: BackfillTrigger) {
+        if Self.deferAutomaticSyncForSupport(trigger: trigger, now: Date(), until: supportIsolationUntil) {
+            log("Backfill: \(trigger) deferred during the bounded isolated collection experiment")
+            return
+        }
         guard BLEManager.shouldRunPeriodicBackfill(
             connected: state.connected, bonded: state.bonded, backfilling: backfilling) else { return }
         let now = Date().timeIntervalSince1970

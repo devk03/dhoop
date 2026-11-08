@@ -12376,14 +12376,15 @@ internal fun whoop4CommandResponsePayload(frame: ByteArray): ByteArray? {
  * The 5/MG COMMAND_RESPONSE payload. Twin of Swift `commandResponsePayload(in:family: .whoop5)`.
  *
  * The 5/MG inner block starts at 8 rather than the 4.0's 4 (the "+4 shift"), so the payload begins at
- * 13: SOF(1) + len(2) + crc8(1) + the shift, then [type,seq,cmd,origin_seq,result](5). Kept as its own
+ * 13: the eight-byte format/length/CRC16 header, then [type,seq,cmd,origin_seq,result](5). Kept as its own
  * function rather than a flag on the 4.0 one because reading a 5/MG frame with the 4.0 helper does not
  * fail — it returns four bytes of envelope dressed as payload, which is the failure mode that made
  * bhelm/noop#4 print REJECTED on a successful reboot.
  */
 internal fun whoop5CommandResponsePayload(frame: ByteArray): ByteArray? {
-    if (frame.size < 3) return null
-    val length = (frame[1].toInt() and 0xFF) or ((frame[2].toInt() and 0xFF) shl 8)
+    if (frame.size < 4) return null
+    // Format byte 1 is not the length. The declared length includes CRC32 but excludes the header.
+    val length = ((frame[2].toInt() and 0xFF) or ((frame[3].toInt() and 0xFF) shl 8)) + 4
     val start = 13
     if (length > frame.size || start >= length) return null
     return frame.copyOfRange(start, length)
