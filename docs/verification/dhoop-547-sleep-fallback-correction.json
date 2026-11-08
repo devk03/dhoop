@@ -1,0 +1,66 @@
+{
+  "build": "547",
+  "purpose": "Automatic provider-specific 8sleep fallback with a narrow temporal correction for unrelated HR-only estimates",
+  "verification": {
+    "targetedTests": {
+      "passed": 42,
+      "failed": 0,
+      "scheme": "DhoopGoalTests",
+      "suites": [
+        "SleepWebhookDeliveryTests",
+        "SleepWebhookTransportTests",
+        "SleepExportReadinessTests",
+        "SleepComparisonTests"
+      ]
+    },
+    "iOSReleaseBuild": "passed",
+    "sourceCommentLint": "passed",
+    "gitDiffCheck": "passed",
+    "bundleSigningAndAppGroup": "verified unchanged",
+    "physicalIPhoneInstalled": true
+  },
+  "delivery": {
+    "realFallbackReceipts": 6,
+    "latestNightProviderVerified": "8sleep via HealthKit",
+    "temporalDisjointnessConfirmedOnPhone": true,
+    "originalPendingBytesRetainedAcrossReceiverRejection": true,
+    "exactOriginalEventAcknowledgedAfterReceiverRepair": true,
+    "latestOutcome": "manual_preserved",
+    "pending": false,
+    "failures": 0,
+    "manualValuesPreserved": true,
+    "receiverTag": "7df0bfc",
+    "receiverDeployment": "8b625ba7-58b8-4d8e-a541-2f43a098da76",
+    "receiverCompatibility": "Retains the concurrently deployed workout changes and optional source-correction field."
+  },
+  "collectionInvestigation": {
+    "enabledOvernightCaptureWindowReadableHR": 0,
+    "enabledOvernightCaptureWindowUsableRR": 0,
+    "morningStandardHRReceiptAndPersistence": "observed",
+    "historicalOffload": "acknowledged; no sensor records returned",
+    "laterReconnects": "connection and encryption timeouts observed",
+    "controlledStreamModeComparison": "not established; baseline connection was unavailable at the support capture",
+    "overnightPreferences": "persisted enabled and overnight-only after installation"
+  },
+  "limitations": [
+    "The morning HR-only rest episode is not proof that the worn night was captured.",
+    "WHOOP overnight collection remains unresolved. Firmware/membership state is a hypothesis, not an established cause.",
+    "No physiological accuracy claim or guarantee of iOS background execution.",
+    "Existing manual tracker sleep values were deliberately retained."
+  ],
+  "safety": {
+    "databaseMigrations": false,
+    "healthDataDeleted": false,
+    "firmwareOrPairingChanged": false,
+    "wakeAlarmsChanged": false
+  },
+  "platformScope": "iOS personal summary export only; no shared analytic formulas or stored health values changed. Android is unchanged.",
+  "sourceSHA256": {
+    "StrandiOS/Export/SleepWebhookDelivery.swift": "713a0c41bec5f61e0e322b0b60ade8a59cf9c950e0b3926efc22b4000ac9cf4a",
+    "StrandiOS/Export/SleepWebhookClient.swift": "e0dfb4ac3b78ceecb39504783755b09db926fe43eea0838aebaf39dd1ad3aec1",
+    "StrandiOS/Export/LifeSyncReadinessProof.swift": "86216216e7a3687025c663958d88042e2367265f778c2747e9d423db7877a12b",
+    "StrandiOS/Health/SleepComparisonHealthReader.swift": "e5f06a285a4d42948a0c9d4a06074a634e1f2f2e1dcf1fad0321113ef36db871",
+    "GoalPreferenceTests/SleepWebhookDeliveryTests.swift": "9065854f8e4f7406b188a583653e1158dc468b5d3baaf0b42747a9998468a7c7",
+    "project.yml": "fd567640fcf724a609cb8a45ad151f44f01e437df8933a55e28949be43644ebb"
+  }
+}
