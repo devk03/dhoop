@@ -1,0 +1,107 @@
+{
+  "build": "544",
+  "scope": "Selected upstream NOOP reliability fixes; no broad merge or rebase",
+  "upstreamReviewed": "2a1de7609843b095505274ad6fc811757210be80",
+  "changes": [
+    {
+      "localCommit": "e1fd4c78",
+      "upstream": [
+        "0b05b84e",
+        "9b278013",
+        "35d052d6"
+      ],
+      "behavior": "Re-prove the encrypted bond on a re-entered Apple link; require the matching peripheral and the hello acknowledgement."
+    },
+    {
+      "localCommit": "7f65f741",
+      "upstream": [
+        "dda7401f"
+      ],
+      "behavior": "Use archived device HR only when higher-priority sources do not cover a historical day. Android already implements this ordering."
+    },
+    {
+      "localCommit": "bc6a2052",
+      "upstream": [
+        "c03d4da1"
+      ],
+      "behavior": "Claim scoring admission before awaiting storage; retain forced follow-up and persistence retry behavior."
+    }
+  ],
+  "excluded": [
+    {
+      "upstream": "2d0b01d8",
+      "reason": "Includes database migrations; not applied without approval."
+    },
+    {
+      "upstream": [
+        "7f1e42f7",
+        "f46671f6"
+      ],
+      "reason": "Dhoop has custom wear reconciliation and persistence recovery; avoid overlapping broad history repair and classification changes."
+    }
+  ],
+  "validation": {
+    "macOSAppTests": {
+      "passed": 46,
+      "failures": 0,
+      "command": "xcodebuild -project <generated-project>/Strand.xcodeproj -scheme Strand -configuration Debug -destination platform=macOS -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO -only-testing:StrandTests/ClientHelloOutcomeTests -only-testing:StrandTests/Whoop4BondAckTests -only-testing:StrandTests/DayOwnerUniversalLineTests -only-testing:StrandTests/IntelligenceRescoreAdmissionTests -only-testing:StrandTests/IntelligencePersistenceRetryTests -only-testing:StrandTests/IntelligenceForcedRescoreRearmTests test"
+    },
+    "analyticsTests": {
+      "passed": 13,
+      "failures": 0,
+      "command": "swift test --package-path Packages/StrandAnalytics --filter 'DayOwnerReadIntegrationTests|DayOwnerResolverEquivalenceTests|SleepWearEvidence'"
+    },
+    "iOSReleaseBuild": "passed",
+    "signingAndAppGroupIdentifiers": "verified unchanged",
+    "docCommentLint": "passed",
+    "androidTests": "Not run: Gradle 8.7 distribution download timed out; no Android production source changed."
+  },
+  "hardware": {
+    "installedBuild": "544",
+    "connected": true,
+    "readableHRPackets": [
+      0,
+      0,
+      0
+    ],
+    "storedHRToday": [
+      0,
+      0,
+      0
+    ],
+    "usableRRToday": [
+      0,
+      0,
+      0
+    ],
+    "requestedLiveWindowSeconds": 60,
+    "elapsedCaptureSeconds": 89.56,
+    "finalSnapshotSpacingSeconds": 0.027,
+    "vendorNotificationBytes": 632,
+    "reassembledVendorBytes": 632,
+    "frameTypes": {
+      "36": 13,
+      "48": 1
+    },
+    "standardHRCharacteristicCallbacks": 0,
+    "reassemblyHeaderDrops": 0,
+    "reassemblyMinimumLengthDrops": 0,
+    "rejectedFramesByReason": {},
+    "result": "No readable HR received or persisted. All received vendor bytes accounted for by complete frames. No evidence in this capture of the parser dropping sensor bytes.",
+    "limitation": "Delayed resume made midpoint and final snapshots nearly simultaneous; does not establish continuous execution, overnight reliability, or physiological accuracy."
+  },
+  "limitations": [
+    "No firmware or authorization changes.",
+    "No database migrations or forced full-history repair.",
+    "No claim that patches resolve the firmware 50.43.2.0 empty-history symptom.",
+    "The re-entered-link and cross-device paths are covered by unit tests, not a physical radio-cycle or second-strap test."
+  ],
+  "sourceSHA256": {
+    "Strand/BLE/BLEManager.swift": "61ca36bde78c61bc54d5e6295933ce4ee199f83ac82f1ba5fc083e0681d77efc",
+    "Strand/BLE/ClientHelloOutcome.swift": "5dbd9bfe12c9eded2dbca1e10ed0b4d16de952a7fe22cca4efa93004330df8c3",
+    "Strand/BLE/Whoop4BondAck.swift": "037fcabaea12b9081d5e13a42290feb4cdd17492afcd30fa9ee02de149488b0f",
+    "Strand/Data/IntelligenceEngine.swift": "5d933cb7b4eb48d8879922028af64e966e8dcdbed4b4c8b1c707e9e6b92dd404",
+    "StrandTests/IntelligenceRescoreAdmissionTests.swift": "d9322946085636515d2a98bb617830e8bf7025555a3133af404607c37351824d",
+    "project.yml": "ee0e078860c47b4ade29b8a6727c3f35e149cc0c5a288ff718a17144d929108c"
+  }
+}
