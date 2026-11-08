@@ -97,6 +97,45 @@ final class SleepWebhookDeliveryTests: XCTestCase {
             XCTAssertNil(SleepWebhookDelivery.endpointURL(url))
         }
     }
+    private func fallback(_ day: String = "2026-10-05", minutes: Double = 455.5) -> SleepWebhookSummary {
+        .init(wakeDate: day, sleepMinutes: minutes, method: "healthkit_import",
+              timeZone: "America/Los_Angeles", source: "8sleep")
+    }
+    func testEightSleepSourcePairsAndLegacySummaryDecoding() throws {
+        XCTAssertTrue(fallback().isValid)
+        var wrong = fallback(); wrong.source = "whoop"; XCTAssertFalse(wrong.isValid)
+        wrong = summary; wrong.source = "8sleep"; XCTAssertFalse(wrong.isValid)
+        let old = Data(#"{"wakeDate":"2026-10-05","sleepMinutes":455.5,"method":"dhoop_estimate","timeZone":"America/Los_Angeles"}"#.utf8)
+        let decoded = try JSONDecoder().decode(SleepWebhookSummary.self, from: old)
+        XCTAssertEqual(decoded, summary); XCTAssertEqual(decoded.effectiveSource, "whoop")
+    }
+    func testFallbackRetriesExactlyAndLaterWhoopReplacesItEvenAtSameDuration() throws {
+        var delivery = SleepWebhookDelivery(); try delivery.configure(endpoint: endpoint)
+        let first = try XCTUnwrap(delivery.prepare(fallback(), now: now))
+        XCTAssertEqual(first.event.source, "8sleep"); XCTAssertEqual(first.event.method, "healthkit_import")
+        var restored = try JSONDecoder().decode(SleepWebhookDelivery.self, from: JSONEncoder().encode(delivery))
+        try restored.validate()
+        let retry = try XCTUnwrap(restored.prepare(summary))
+        XCTAssertEqual(retry.bytes, first.bytes, "WHOOP arrival must not mutate an in-flight fallback")
+        try restored.accept(receipt(first.event)); XCTAssertNil(try restored.prepare(fallback()))
+        let replacement = try XCTUnwrap(restored.prepare(summary))
+        XCTAssertEqual(replacement.event.sleepMinutes, first.event.sleepMinutes)
+        XCTAssertEqual(replacement.event.source, "whoop")
+        XCTAssertGreaterThan(replacement.event.revision, first.event.revision)
+    }
+    func testSourcePriorityAndProcessingDoNotDowngradeWhoop() {
+        let eight = fallback(), whoop = summary
+        func selected(_ ready: [SleepWebhookSummary], present: Set<String>, ack: [String: SleepWebhookSummary] = [:]) -> [SleepWebhookSummary] {
+            SleepWebhookSourceSelection.candidates(readyWhoop: ready, presentWhoopDays: present,
+                eightSleep: [eight], acknowledged: ack)
+        }
+        XCTAssertEqual(selected([], present: []), [eight])
+        XCTAssertEqual(selected([whoop], present: [whoop.wakeDate]), [whoop])
+        XCTAssertTrue(selected([], present: [whoop.wakeDate]).isEmpty, "Wait for recorded WHOOP sleep to finish processing")
+        XCTAssertTrue(selected([], present: [], ack: [whoop.wakeDate: whoop]).isEmpty, "A transient read gap cannot downgrade an acknowledged WHOOP night")
+        XCTAssertEqual(selected([whoop], present: [whoop.wakeDate], ack: [eight.wakeDate: eight]), [whoop])
+    }
+
     func testSealedSetupRoundTripAndWrongPhoneTamperExpiryRejected() throws {
         let key = P256.KeyAgreement.PrivateKey()
         let invite = SleepWebhookSecureSetup.Invitation(version: 1, setupId: UUID().uuidString.lowercased(),

@@ -6,6 +6,8 @@ struct SleepWebhookSummary: Codable, Equatable, Sendable {
     let sleepMinutes: Double
     let method: String
     let timeZone: String
+    var source: String? = nil
+    var effectiveSource: String { source ?? "whoop" }
 
     var isValid: Bool {
         let formatter = DateFormatter()
@@ -16,7 +18,8 @@ struct SleepWebhookSummary: Codable, Equatable, Sendable {
         formatter.isLenient = false
         guard wakeDate.count == 10, wakeDate >= "0001-01-02", let date = formatter.date(from: wakeDate), formatter.string(from: date) == wakeDate else { return false }
         return sleepMinutes.isFinite && sleepMinutes > 0 && sleepMinutes <= 1440
-            && ["dhoop_estimate", "whoop_import"].contains(method)
+            && ((effectiveSource == "whoop" && ["dhoop_estimate", "whoop_import"].contains(method))
+                || (effectiveSource == "8sleep" && method == "healthkit_import"))
             && timeZone == "America/Los_Angeles"
     }
 }
@@ -34,7 +37,8 @@ struct SleepWebhookEvent: Codable, Equatable, Sendable {
     let generationDate: String
 
     var summary: SleepWebhookSummary {
-        SleepWebhookSummary(wakeDate: wakeDate, sleepMinutes: sleepMinutes, method: method, timeZone: timeZone)
+        SleepWebhookSummary(wakeDate: wakeDate, sleepMinutes: sleepMinutes, method: method, timeZone: timeZone,
+            source: source == "whoop" ? nil : source)
     }
 }
 
@@ -104,7 +108,7 @@ struct SleepWebhookDelivery: Codable, Sendable {
         revision += 1
         let event = SleepWebhookEvent(schemaVersion: 1, eventId: UUID().uuidString.lowercased(),
             installationId: installationId, revision: revision, wakeDate: summary.wakeDate,
-            sleepMinutes: summary.sleepMinutes, source: "whoop", method: summary.method,
+            sleepMinutes: summary.sleepMinutes, source: summary.effectiveSource, method: summary.method,
             timeZone: summary.timeZone, generationDate: ISO8601DateFormatter().string(from: now))
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let next = Pending(event: event, bytes: try encoder.encode(event))
@@ -157,7 +161,7 @@ extension SleepWebhookDelivery {
                   let decoded = try? JSONDecoder().decode(SleepWebhookEvent.self, from: pending.bytes),
                   decoded == pending.event, decoded.installationId == installationId,
                   decoded.revision <= revision, decoded.revision > 0,
-                  decoded.schemaVersion == 1, decoded.source == "whoop", decoded.summary.isValid,
+                  decoded.schemaVersion == 1, decoded.summary.isValid,
                   UUID(uuidString: decoded.eventId)?.uuidString.lowercased() == decoded.eventId,
                   decoded.generationDate.hasSuffix("Z"), ISO8601DateFormatter().date(from: decoded.generationDate) != nil else {
                 throw SleepWebhookFailure.invalidState
@@ -229,5 +233,21 @@ enum SleepWebhookPolicy {
     }
     static func retryDelay(failures: Int) -> TimeInterval {
         min(6 * 3600, 60 * pow(2, Double(min(max(failures - 1, 0), 9))))
+    }
+}
+
+/// One automatic source per wake date. Recorded WHOOP wins even while its processing is pending;
+/// temporary read gaps must not downgrade a previously acknowledged WHOOP night to a fallback.
+enum SleepWebhookSourceSelection {
+    static func candidates(readyWhoop: [SleepWebhookSummary], presentWhoopDays: Set<String>,
+                           eightSleep: [SleepWebhookSummary], acknowledged: [String: SleepWebhookSummary]) -> [SleepWebhookSummary] {
+        var days: [String: SleepWebhookSummary] = [:]
+        for row in readyWhoop where row.isValid && row.effectiveSource == "whoop" { days[row.wakeDate] = row }
+        for row in eightSleep where row.isValid && row.effectiveSource == "8sleep" {
+            guard days[row.wakeDate] == nil, !presentWhoopDays.contains(row.wakeDate),
+                  acknowledged[row.wakeDate]?.effectiveSource != "whoop" else { continue }
+            days[row.wakeDate] = row
+        }
+        return days.values.sorted { $0.wakeDate > $1.wakeDate }
     }
 }

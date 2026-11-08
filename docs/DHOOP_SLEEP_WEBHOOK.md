@@ -52,14 +52,23 @@ It orders revisions; `generationDate` must never be used to decide which deliver
 `generationDate` is an ISO 8601 UTC timestamp when the export event was created, not the sleep end.
 
 `sleepMinutes` is finite, greater than zero, and at most 1440. It includes fractional minutes.
-`source` is exactly `whoop`. `method` is `dhoop_estimate` or `whoop_import`:
+Supported source/method pairs are `whoop` with `dhoop_estimate` or `whoop_import`,
+and `8sleep` with `healthkit_import`:
 
 - `dhoop_estimate`: locally computed sleep with verified WHOOP input provenance. It is not an official
   WHOOP sleep score or a clinically validated measurement.
 - `whoop_import`: an imported WHOOP sleep record.
+- `healthkit_import`: provider-specific 8sleep sleep read through HealthKit. Generic Apple Health
+  daily totals may combine providers and must never be exported under the 8sleep label.
 
 Do not relabel Dhoop estimates as official WHOOP values or combine them with Apple Health values.
-Apple/Eight Sleep is not part of this first contract; add it only through an agreed extension.
+The agreed 8sleep extension retains schema version 1 and the existing acknowledgement fields.
+For each wake date, verified WHOOP takes priority; 8sleep fills dates with no recorded WHOOP night.
+A recorded WHOOP estimate awaiting processing withholds fallback. A higher-revision WHOOP event may
+replace automatic 8sleep later; 8sleep may never downgrade automatic WHOOP. Manual values and clears
+remain protected. A stale lower-priority event is consumed with an exact `accepted`/`stale` receipt.
+The sender's prior WHOOP checkpoints omit an optional source field and continue to default to WHOOP;
+in-flight event bytes are never regenerated to adopt the new contract.
 No raw HR, R–R, sleep-stage traces, serial numbers, MAC addresses, weight or protein are sent.
 
 `wakeDate` is a strictly validated Gregorian calendar date (`YYYY-MM-DD`). In this first integration
