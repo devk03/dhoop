@@ -1,0 +1,32 @@
+{
+  "build": "545",
+  "purpose": "Owner-approved overnight-only capture setup and HR-only sleep persistence verification",
+  "verification": {
+    "hrOnlyAnalyticsTests": {
+      "passed": 29,
+      "failed": 0
+    },
+    "appPersistenceAndScheduleTests": {
+      "passed": 15,
+      "failed": 0
+    },
+    "iOSReleaseBuild": "passed",
+    "sourceCommentLint": "passed"
+  },
+  "testScope": "Synthetic HR/RR with beat-consistent timestamps, no motion or history. Production IntelligenceEngine must persist an estimated night, resting HR, and HRV, and expose it through allSleepSessions used by SleepView.",
+  "hardware": {
+    "installed": true,
+    "overnightCaptureActivation": "Waiting for unlock: iOS denied the setup launch while locked"
+  },
+  "limitations": [
+    "Synthetic pipeline checks do not validate physiological accuracy or an actual worn night.",
+    "The last hardware capture received no readable HR; enabling capture does not itself repair sensor delivery.",
+    "The existing overnight-only schedule follows notification quiet hours, default 22:00 to 07:00 local time.",
+    "No firmware, authorization, wake-alarm, or database migrations were changed."
+  ],
+  "sourceSHA256": {
+    "StrandiOS/Export/LifeSyncReadinessProof.swift": "1f43263ddf65e79bb196d4839f7122896c2f8c1558a56ae2bdb1579d7d3f8906",
+    "StrandTests/IntelligenceHrOnlyPersistenceTests.swift": "64dfab0c3ae8a00ce82c0b473337420cc041ce53b42beedaaef9a7af8225d946",
+    "project.yml": "c41a813b39f9462486451ba997fc5629964f2fb9bd32fd792d9439cf3106027a"
+  }
+}
