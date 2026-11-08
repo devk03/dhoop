@@ -6,6 +6,26 @@ import Foundation
 @MainActor
 enum LifeSyncReadinessProof {
     static func runIfRequested(model: AppModel) async {
+        // Explicit owner-approved setup. Both choices persist; ordinary launches leave them alone.
+        if ProcessInfo.processInfo.arguments.contains("--enable-overnight-capture") {
+            let defaults = UserDefaults.standard
+            defaults.set(true, forKey: PuffinExperiment.continuousHrvOvernightOnlyKey)
+            defaults.set(true, forKey: PuffinExperiment.keepRealtimeForDataKey)
+            model.ble.setKeepRealtimeForData(true)
+            let report: [String: Any] = [
+                "enabled": PuffinExperiment.keepRealtimeForDataEnabled,
+                "overnightOnly": PuffinExperiment.continuousHrvOvernightOnlyEnabled,
+                "startMinutes": defaults.object(forKey: ContinuousHrvSchedule.quietStartKey) as? Int
+                    ?? ContinuousHrvSchedule.defaultStartMinutes,
+                "endMinutes": defaults.object(forKey: ContinuousHrvSchedule.quietEndKey) as? Int
+                    ?? ContinuousHrvSchedule.defaultEndMinutes,
+                "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) {
+                try? data.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("dhoop-overnight-capture-proof.json"),
+                                options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--whoop-receipt-check") {
             await checkWhoopReceipt(model: model)
             return
